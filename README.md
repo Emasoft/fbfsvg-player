@@ -1,25 +1,29 @@
 # SVG Video Player
 
-An animated SVG player with SMIL animation support built using Skia and SDL2 for macOS.
+A multi-platform animated SVG player with SMIL animation support built using Skia.
+
+## Supported Platforms
+
+| Platform | Architectures | GPU Backend | Windowing |
+|----------|---------------|-------------|-----------|
+| macOS | x64, arm64, universal | Metal | SDL2 |
+| Linux | x64, arm64 | OpenGL/EGL | SDL2 |
+| iOS | arm64, simulator (x64+arm64) | Metal | UIKit |
 
 ## Features
 
 - **SMIL Animation Support**: Full support for SVG animations via SMIL (Synchronized Multimedia Integration Language)
 - **Frame-by-Frame Playback**: Smooth frame-based rendering with configurable FPS
-- **Hardware Acceleration**: Uses Metal backend via Skia for GPU-accelerated rendering
+- **Hardware Acceleration**: Metal on Apple platforms, OpenGL/EGL on Linux
 - **Fullscreen Mode**: Toggle fullscreen with `--fullscreen` flag or `F` key
 - **Playback Controls**: Play, pause, seek, and speed control
 - **Pre-buffering**: Threaded rendering with consumer-producer pattern for smooth playback
-- **Universal Binary**: Supports both x86_64 and arm64 architectures on macOS
-
-## Requirements
-
-- macOS 11+ (Big Sur or later)
-- Apple Silicon (arm64) or Intel (x86_64)
-- Homebrew package manager
-- Xcode Command Line Tools
+- **Universal Binary**: Supports both x86_64 and arm64 on macOS
+- **iOS Integration**: Static library with C API for UIKit apps
 
 ## Quick Start
+
+### macOS
 
 ```bash
 # 1. Install system dependencies
@@ -35,21 +39,93 @@ make
 make run
 ```
 
+### Linux
+
+```bash
+# 1. Install system dependencies
+sudo apt-get update
+sudo apt-get install build-essential clang pkg-config
+sudo apt-get install libsdl2-dev libicu-dev
+sudo apt-get install libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev
+sudo apt-get install libfreetype6-dev libfontconfig1-dev libx11-dev
+
+# 2. Build Skia for Linux
+make skia-linux
+
+# 3. Build the SVG player
+make linux
+
+# 4. Run with a test SVG
+./build/svg_player_animated svg_input_samples/girl_hair.fbf.svg
+```
+
+### iOS
+
+```bash
+# 1. Build Skia for iOS (device + simulator)
+make skia-ios
+
+# 2. Build XCFramework
+make ios-xcframework
+
+# 3. Integrate into your Xcode project
+# Drag build/svg_player.xcframework into your project
+```
+
 ## Build Targets
+
+### General Targets
 
 | Target | Description |
 |--------|-------------|
-| `make` | Build release binary |
-| `make debug` | Build debug binary with symbols |
-| `make deps` | Install system dependencies (SDL2, ICU, pkg-config) |
-| `make skia` | Build Skia library (universal binary) |
+| `make` | Build for current platform |
+| `make deps` | Install platform dependencies |
+| `make skia` | Build Skia for current platform |
 | `make clean` | Remove build artifacts |
 | `make distclean` | Remove all artifacts including Skia |
-| `make run` | Build and run with test SVG |
-| `make run-fullscreen` | Build and run in fullscreen mode |
+| `make info` | Show build environment info |
 | `make help` | Show all available targets |
 
+### macOS Targets
+
+| Target | Description |
+|--------|-------------|
+| `make macos` | Build for current architecture |
+| `make macos-universal` | Build universal binary (x64 + arm64) |
+| `make macos-arm64` | Build for Apple Silicon |
+| `make macos-x64` | Build for Intel |
+| `make macos-debug` | Build with debug symbols |
+
+### Linux Targets
+
+| Target | Description |
+|--------|-------------|
+| `make linux` | Build for current architecture |
+| `make linux-debug` | Build with debug symbols |
+| `make linux-ci` | Build non-interactively (for CI) |
+
+### iOS Targets
+
+| Target | Description |
+|--------|-------------|
+| `make ios` | Build for iOS device (arm64) |
+| `make ios-device` | Build for iOS device |
+| `make ios-simulator` | Build for iOS simulator |
+| `make ios-simulator-universal` | Build universal simulator (x64 + arm64) |
+| `make ios-xcframework` | Build XCFramework (device + simulator) |
+
+### Skia Build Targets
+
+| Target | Description |
+|--------|-------------|
+| `make skia` | Build Skia for current platform |
+| `make skia-macos` | Build Skia for macOS (universal) |
+| `make skia-linux` | Build Skia for Linux |
+| `make skia-ios` | Build Skia XCFramework for iOS |
+
 ## Usage
+
+### Desktop (macOS/Linux)
 
 ```bash
 # Basic usage
@@ -62,7 +138,29 @@ make run
 ./build/svg_player_animated svg_input_samples/girl_hair.fbf.svg
 ```
 
-## Keyboard Controls
+### iOS Integration
+
+```c
+#include "svg_player_ios.h"
+
+// Create player
+SVGPlayerHandle player = SVGPlayer_Create();
+
+// Load SVG
+SVGPlayer_LoadSVG(player, "animation.svg");
+
+// Start playback
+SVGPlayer_SetPlaybackState(player, SVGPlaybackState_Playing);
+
+// In your CADisplayLink callback:
+SVGPlayer_Update(player, deltaTime);
+SVGPlayer_Render(player, pixelBuffer, width, height, scale);
+
+// Cleanup
+SVGPlayer_Destroy(player);
+```
+
+## Keyboard Controls (Desktop)
 
 | Key | Action |
 |-----|--------|
@@ -77,85 +175,121 @@ make run
 
 ```
 SKIA-BUILD-ARM64/
-├── src/                          # Main source code
-│   └── svg_player_animated.cpp   # SVG player application
-├── scripts/                      # Build scripts
-│   ├── install-deps.sh          # Install Homebrew dependencies
-│   └── build-skia.sh            # Build Skia library
-├── build/                        # Build output (gitignored)
-├── examples/                     # Example programs
-├── svg_input_samples/            # Sample SVG files for testing
-├── skia-build/                   # Skia build system (git submodule)
-│   ├── src/skia/                 # Skia source code
-│   ├── depot_tools/              # Chromium build tools
-│   └── build-macos-universal.sh  # Skia build script
-├── Makefile                      # Main build configuration
-└── README.md                     # This file
+├── src/                             # Main source code
+│   ├── svg_player_animated.cpp      # macOS version
+│   ├── svg_player_animated_linux.cpp # Linux version
+│   ├── svg_player_ios.cpp           # iOS library implementation
+│   ├── svg_player_ios.h             # iOS public API header
+│   └── platform.h                   # Cross-platform abstractions
+├── scripts/                         # Build scripts
+│   ├── build.sh                     # Master build script
+│   ├── build-macos.sh              # macOS build
+│   ├── build-macos-arch.sh         # macOS architecture-specific
+│   ├── build-linux.sh              # Linux build
+│   ├── build-ios.sh                # iOS build
+│   ├── build-skia.sh               # Skia for macOS
+│   ├── build-skia-linux.sh         # Skia for Linux
+│   └── install-deps.sh             # macOS dependencies
+├── build/                           # Build output (gitignored)
+├── svg_input_samples/               # Sample SVG files
+├── skia-build/                      # Skia build system (submodule)
+│   ├── src/skia/                    # Skia source code
+│   └── depot_tools/                 # Chromium build tools
+├── Makefile                         # Main build configuration
+└── README.md                        # This file
 ```
+
+## Platform-Specific Notes
+
+### macOS
+
+- Uses Metal for GPU-accelerated rendering
+- CoreText for font management
+- Mach APIs for CPU/thread monitoring
+- Homebrew for dependencies (SDL2, ICU)
+
+### Linux
+
+- Uses OpenGL/EGL for rendering
+- Fontconfig for font management
+- /proc filesystem for CPU monitoring
+- System packages for dependencies
+
+### iOS
+
+- Uses Metal for GPU-accelerated rendering
+- CoreText for fonts (shared with macOS)
+- Builds as static library for UIKit integration
+- No SDL2 - uses native UIKit windowing
 
 ## Dependencies
 
-### System Dependencies (via Homebrew)
+### macOS Dependencies (via Homebrew)
 
 - **SDL2**: Window creation and input handling
-- **ICU**: Unicode support (required by Skia)
+- **ICU**: Unicode support
 - **pkg-config**: Build configuration
 
-### Skia Libraries
+### Linux Dependencies (via apt)
 
-The following Skia static libraries are linked:
+- **libsdl2-dev**: Window creation and input handling
+- **libicu-dev**: Unicode support
+- **libgl1-mesa-dev**: OpenGL support
+- **libegl1-mesa-dev**: EGL support
+- **libfontconfig1-dev**: Font configuration
+- **libfreetype6-dev**: Font rendering
+- **libx11-dev**: X11 windowing
 
-- `libsvg.a` - SVG parsing and rendering
-- `libskia.a` - Core graphics library
-- `libskresources.a` - Resource management
-- `libskshaper.a` - Text shaping
-- `libharfbuzz.a` - Text layout
-- `libskunicode_core.a` / `libskunicode_icu.a` - Unicode support
-- `libexpat.a` - XML parsing
-- `libpng.a` / `libjpeg.a` / `libwebp.a` - Image codecs
-- `libzlib.a` / `libwuffs.a` - Compression
+### iOS Dependencies
 
-### macOS Frameworks
+- Xcode with iOS SDK
+- Skia built for iOS (device + simulator)
 
-- CoreGraphics, CoreText, CoreFoundation
-- Metal, MetalKit (GPU rendering)
-- Cocoa, ApplicationServices
-- IOKit, IOSurface, QuartzCore
-- OpenGL (fallback)
+## Troubleshooting
+
+### Skia libraries not found
+Run `make skia` (or `make skia-linux` / `make skia-ios`) to build Skia first.
+
+### SDL2 not found (macOS)
+Run `make deps` to install SDL2 via Homebrew.
+
+### SDL2 not found (Linux)
+Run `sudo apt-get install libsdl2-dev`.
+
+### ICU linking errors
+ICU is handled automatically by the build scripts. On macOS, it's a keg-only Homebrew package.
+
+### Architecture mismatch
+Verify library architectures with:
+```bash
+# macOS
+lipo -info skia-build/src/skia/out/release-macos/libskia.a
+
+# Linux
+file skia-build/src/skia/out/release-linux/libskia.a
+```
+
+### iOS simulator build fails
+Ensure you have Skia built for both simulator architectures:
+```bash
+make skia-ios-simulator
+```
 
 ## Building from Scratch
-
-If you need to rebuild everything from scratch:
 
 ```bash
 # Clean everything
 make distclean
 
-# Reinstall dependencies
+# Build for current platform
 make deps
-
-# Rebuild Skia (takes 30-60 minutes)
 make skia
-
-# Build the player
 make
-```
 
-## Troubleshooting
-
-### Skia libraries not found
-Run `make skia` to build the Skia libraries first.
-
-### SDL2 not found
-Run `make deps` to install SDL2 via Homebrew.
-
-### ICU linking errors
-ICU is a keg-only Homebrew package. The Makefile automatically detects its location.
-
-### Architecture mismatch
-The Skia build creates universal binaries. Verify with:
-```bash
-lipo -info skia-build/src/skia/out/release-macos/libskia.a
+# Or build for specific platform
+make deps
+make skia-linux
+make linux
 ```
 
 ## License

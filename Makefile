@@ -1,147 +1,297 @@
 # Makefile for SVG Video Player
-# Builds the animated SVG player using Skia and SDL2
+# Multi-platform build system for macOS, Linux, and iOS
+#
+# Supported platforms:
+#   - macOS (x64, arm64, universal)
+#   - Linux (x64, arm64)
+#   - iOS (device, simulator, XCFramework)
 
-# Compiler settings
-CXX := clang++
-CXXFLAGS := -std=c++17 -O2
-CXXFLAGS_DEBUG := -std=c++17 -g -O0 -DDEBUG
+# Detect host OS
+UNAME_S := $(shell uname -s)
+UNAME_M := $(shell uname -m)
 
 # Project structure
 SRC_DIR := src
 BUILD_DIR := build
+SCRIPTS_DIR := scripts
 SKIA_DIR := skia-build/src/skia
-
-# Output binary
-TARGET := $(BUILD_DIR)/svg_player_animated
-TARGET_DEBUG := $(BUILD_DIR)/svg_player_animated_debug
 
 # Source files
 MAIN_SRC := $(SRC_DIR)/svg_player_animated.cpp
 
-# ICU path (Homebrew keg-only package)
-ICU_PREFIX := $(shell brew --prefix icu4c 2>/dev/null || echo "/opt/homebrew/opt/icu4c")
+# Output binary (platform-specific)
+TARGET := $(BUILD_DIR)/svg_player_animated
 
-# Include paths
-INCLUDES := -I$(SKIA_DIR) \
-            -I$(SKIA_DIR)/include \
-            -I$(SKIA_DIR)/modules \
-            $(shell pkg-config --cflags sdl2)
+#==============================================================================
+# Platform Detection
+#==============================================================================
 
-# Skia static libraries (order matters for linking)
-SKIA_LIBS := $(SKIA_DIR)/out/release-macos/libsvg.a \
-             $(SKIA_DIR)/out/release-macos/libskia.a \
-             $(SKIA_DIR)/out/release-macos/libskresources.a \
-             $(SKIA_DIR)/out/release-macos/libskshaper.a \
-             $(SKIA_DIR)/out/release-macos/libharfbuzz.a \
-             $(SKIA_DIR)/out/release-macos/libskunicode_core.a \
-             $(SKIA_DIR)/out/release-macos/libskunicode_icu.a \
-             $(SKIA_DIR)/out/release-macos/libexpat.a \
-             $(SKIA_DIR)/out/release-macos/libpng.a \
-             $(SKIA_DIR)/out/release-macos/libzlib.a \
-             $(SKIA_DIR)/out/release-macos/libjpeg.a \
-             $(SKIA_DIR)/out/release-macos/libwebp.a \
-             $(SKIA_DIR)/out/release-macos/libwuffs.a
+ifeq ($(UNAME_S),Darwin)
+    PLATFORM := macos
+    ifeq ($(UNAME_M),arm64)
+        ARCH := arm64
+    else
+        ARCH := x64
+    endif
+else ifeq ($(UNAME_S),Linux)
+    PLATFORM := linux
+    ifeq ($(UNAME_M),aarch64)
+        ARCH := arm64
+    else
+        ARCH := x64
+    endif
+else
+    PLATFORM := unknown
+    ARCH := unknown
+endif
 
-# External libraries
-LDFLAGS := $(shell pkg-config --libs sdl2) \
-           -L$(ICU_PREFIX)/lib -licuuc -licui18n -licudata \
-           -liconv
+#==============================================================================
+# Default Target
+#==============================================================================
 
-# macOS frameworks
-FRAMEWORKS := -framework CoreGraphics \
-              -framework CoreText \
-              -framework CoreFoundation \
-              -framework ApplicationServices \
-              -framework Metal \
-              -framework MetalKit \
-              -framework Cocoa \
-              -framework IOKit \
-              -framework IOSurface \
-              -framework OpenGL \
-              -framework QuartzCore
-
-# Default target
 .PHONY: all
-all: $(TARGET)
+all:
+	@echo "Building for $(PLATFORM) ($(ARCH))..."
+	@./$(SCRIPTS_DIR)/build.sh
 
-# Create build directory
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
+#==============================================================================
+# macOS Targets
+#==============================================================================
 
-# Build release binary
-$(TARGET): $(MAIN_SRC) $(SKIA_LIBS) | $(BUILD_DIR)
-	@echo "Building SVG Video Player (release)..."
-	$(CXX) $(CXXFLAGS) $(INCLUDES) $< -o $@ $(SKIA_LIBS) $(LDFLAGS) $(FRAMEWORKS)
-	@echo "Build complete: $@"
+.PHONY: macos
+macos:
+	@./$(SCRIPTS_DIR)/build-macos.sh
 
-# Build debug binary
-.PHONY: debug
-debug: $(TARGET_DEBUG)
+.PHONY: macos-universal
+macos-universal:
+	@./$(SCRIPTS_DIR)/build-macos.sh --universal
 
-$(TARGET_DEBUG): $(MAIN_SRC) $(SKIA_LIBS) | $(BUILD_DIR)
-	@echo "Building SVG Video Player (debug)..."
-	$(CXX) $(CXXFLAGS_DEBUG) $(INCLUDES) $< -o $@ $(SKIA_LIBS) $(LDFLAGS) $(FRAMEWORKS)
-	@echo "Debug build complete: $@"
+.PHONY: macos-arm64
+macos-arm64:
+	@./$(SCRIPTS_DIR)/build-macos-arch.sh arm64
 
-# Check if Skia is built
-$(SKIA_LIBS):
-	@echo "ERROR: Skia libraries not found."
-	@echo "Run './scripts/build-skia.sh' to build Skia first."
-	@exit 1
+.PHONY: macos-x64
+macos-x64:
+	@./$(SCRIPTS_DIR)/build-macos-arch.sh x64
 
-# Install dependencies
-.PHONY: deps
-deps:
-	./scripts/install-deps.sh
+.PHONY: macos-debug
+macos-debug:
+	@./$(SCRIPTS_DIR)/build-macos.sh --debug
 
-# Build Skia
+#==============================================================================
+# Linux Targets
+#==============================================================================
+
+.PHONY: linux
+linux:
+	@./$(SCRIPTS_DIR)/build-linux.sh
+
+.PHONY: linux-debug
+linux-debug:
+	@./$(SCRIPTS_DIR)/build-linux.sh --debug
+
+.PHONY: linux-ci
+linux-ci:
+	@./$(SCRIPTS_DIR)/build-linux.sh -y
+
+#==============================================================================
+# iOS Targets
+#==============================================================================
+
+.PHONY: ios
+ios: ios-device
+
+.PHONY: ios-device
+ios-device:
+	@./$(SCRIPTS_DIR)/build-ios.sh --device
+
+.PHONY: ios-simulator
+ios-simulator:
+	@./$(SCRIPTS_DIR)/build-ios.sh --simulator
+
+.PHONY: ios-simulator-universal
+ios-simulator-universal:
+	@./$(SCRIPTS_DIR)/build-ios.sh --simulator --universal
+
+.PHONY: ios-xcframework
+ios-xcframework:
+	@./$(SCRIPTS_DIR)/build-ios.sh --xcframework
+
+#==============================================================================
+# Skia Build Targets
+#==============================================================================
+
 .PHONY: skia
 skia:
-	./scripts/build-skia.sh
+ifeq ($(PLATFORM),macos)
+	@./$(SCRIPTS_DIR)/build-skia.sh
+else ifeq ($(PLATFORM),linux)
+	@./$(SCRIPTS_DIR)/build-skia-linux.sh
+else
+	@echo "Skia build not supported on $(PLATFORM)"
+	@exit 1
+endif
 
-# Clean build artifacts
+.PHONY: skia-macos
+skia-macos:
+	@./$(SCRIPTS_DIR)/build-skia.sh
+
+.PHONY: skia-linux
+skia-linux:
+	@./$(SCRIPTS_DIR)/build-skia-linux.sh
+
+.PHONY: skia-ios
+skia-ios:
+	@cd skia-build && ./build-ios.sh --xcframework
+
+.PHONY: skia-ios-device
+skia-ios-device:
+	@cd skia-build && ./build-ios.sh --device
+
+.PHONY: skia-ios-simulator
+skia-ios-simulator:
+	@cd skia-build && ./build-ios.sh --simulator --universal
+
+#==============================================================================
+# Dependencies
+#==============================================================================
+
+.PHONY: deps
+deps:
+ifeq ($(PLATFORM),macos)
+	@./$(SCRIPTS_DIR)/install-deps.sh
+else ifeq ($(PLATFORM),linux)
+	@echo "Installing Linux dependencies..."
+	@echo "Run: sudo apt-get install build-essential clang pkg-config libsdl2-dev libicu-dev"
+	@echo "     sudo apt-get install libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev"
+	@echo "     sudo apt-get install libfreetype6-dev libfontconfig1-dev"
+else
+	@echo "Dependency installation not supported on $(PLATFORM)"
+endif
+
+.PHONY: deps-linux
+deps-linux:
+	@echo "=== Installing Linux Dependencies ==="
+	@echo "Run these commands:"
+	@echo "  sudo apt-get update"
+	@echo "  sudo apt-get install build-essential clang pkg-config"
+	@echo "  sudo apt-get install libsdl2-dev libicu-dev"
+	@echo "  sudo apt-get install libgl1-mesa-dev libegl1-mesa-dev libgles2-mesa-dev"
+	@echo "  sudo apt-get install libfreetype6-dev libfontconfig1-dev libx11-dev"
+
+#==============================================================================
+# Build Directory Management
+#==============================================================================
+
+$(BUILD_DIR):
+	@mkdir -p $(BUILD_DIR)
+
 .PHONY: clean
 clean:
-	rm -rf $(BUILD_DIR)
+	@rm -rf $(BUILD_DIR)
 	@echo "Build directory cleaned"
 
-# Clean everything (including Skia build)
 .PHONY: distclean
 distclean: clean
-	rm -rf skia-build/src/skia/out/release-macos
-	rm -rf skia-build/src/skia/out/release-macos-*
-	@echo "All build artifacts cleaned"
+	@rm -rf skia-build/src/skia/out/release-macos*
+	@rm -rf skia-build/src/skia/out/release-linux*
+	@rm -rf skia-build/src/skia/out/release-ios*
+	@rm -rf skia-build/src/skia/out/xcframeworks
+	@echo "All build artifacts cleaned (including Skia)"
 
-# Run the player with a test file
+#==============================================================================
+# Run Targets
+#==============================================================================
+
 .PHONY: run
-run: $(TARGET)
-	$(TARGET) svg_input_samples/girl_hair.fbf.svg
+run: all
+	@$(TARGET) svg_input_samples/girl_hair.fbf.svg
 
-# Run in fullscreen
 .PHONY: run-fullscreen
-run-fullscreen: $(TARGET)
-	$(TARGET) svg_input_samples/girl_hair.fbf.svg --fullscreen
+run-fullscreen: all
+	@$(TARGET) svg_input_samples/girl_hair.fbf.svg --fullscreen
 
-# Show help
+.PHONY: run-debug
+run-debug:
+	@./$(SCRIPTS_DIR)/build.sh --debug
+	@$(BUILD_DIR)/svg_player_animated svg_input_samples/girl_hair.fbf.svg
+
+#==============================================================================
+# Information
+#==============================================================================
+
+.PHONY: info
+info:
+	@echo "=== Build Environment ==="
+	@echo "Host OS:        $(UNAME_S)"
+	@echo "Host Arch:      $(UNAME_M)"
+	@echo "Platform:       $(PLATFORM)"
+	@echo "Architecture:   $(ARCH)"
+	@echo ""
+	@echo "=== Directories ==="
+	@echo "Source:         $(SRC_DIR)"
+	@echo "Build:          $(BUILD_DIR)"
+	@echo "Scripts:        $(SCRIPTS_DIR)"
+	@echo "Skia:           $(SKIA_DIR)"
+	@echo ""
+	@echo "=== Skia Libraries ==="
+ifeq ($(PLATFORM),macos)
+	@ls -la $(SKIA_DIR)/out/release-macos/*.a 2>/dev/null | head -5 || echo "Not built"
+else ifeq ($(PLATFORM),linux)
+	@ls -la $(SKIA_DIR)/out/release-linux/*.a 2>/dev/null | head -5 || echo "Not built"
+endif
+
+#==============================================================================
+# Help
+#==============================================================================
+
 .PHONY: help
 help:
-	@echo "SVG Video Player - Build System"
+	@echo "SVG Video Player - Multi-Platform Build System"
 	@echo ""
 	@echo "Usage: make [target]"
 	@echo ""
-	@echo "Targets:"
-	@echo "  all          Build release binary (default)"
-	@echo "  debug        Build debug binary with symbols"
-	@echo "  deps         Install system dependencies (Homebrew)"
-	@echo "  skia         Build Skia library (takes 30-60 min)"
-	@echo "  clean        Remove build artifacts"
-	@echo "  distclean    Remove all artifacts including Skia"
-	@echo "  run          Build and run with test SVG"
-	@echo "  run-fullscreen  Build and run in fullscreen mode"
-	@echo "  help         Show this help"
+	@echo "=== Quick Start ==="
+	@echo "  make deps           Install dependencies for current platform"
+	@echo "  make skia           Build Skia for current platform"
+	@echo "  make                Build SVG player for current platform"
+	@echo "  make run            Build and run with test SVG"
 	@echo ""
-	@echo "First time setup:"
-	@echo "  1. make deps    # Install SDL2, ICU, pkg-config"
-	@echo "  2. make skia    # Build Skia (one-time, ~30-60 min)"
-	@echo "  3. make         # Build SVG player"
-	@echo "  4. make run     # Test with sample SVG"
+	@echo "=== macOS Targets ==="
+	@echo "  make macos          Build for current macOS architecture"
+	@echo "  make macos-universal  Build universal binary (x64 + arm64)"
+	@echo "  make macos-arm64    Build for Apple Silicon"
+	@echo "  make macos-x64      Build for Intel"
+	@echo "  make macos-debug    Build with debug symbols"
+	@echo ""
+	@echo "=== Linux Targets ==="
+	@echo "  make linux          Build for current Linux architecture"
+	@echo "  make linux-debug    Build with debug symbols"
+	@echo "  make linux-ci       Build non-interactively (for CI)"
+	@echo ""
+	@echo "=== iOS Targets ==="
+	@echo "  make ios            Build for iOS device (arm64)"
+	@echo "  make ios-device     Build for iOS device (arm64)"
+	@echo "  make ios-simulator  Build for iOS simulator"
+	@echo "  make ios-simulator-universal  Build universal simulator"
+	@echo "  make ios-xcframework  Build XCFramework (device + simulator)"
+	@echo ""
+	@echo "=== Skia Targets ==="
+	@echo "  make skia           Build Skia for current platform"
+	@echo "  make skia-macos     Build Skia for macOS (universal)"
+	@echo "  make skia-linux     Build Skia for Linux"
+	@echo "  make skia-ios       Build Skia XCFramework for iOS"
+	@echo ""
+	@echo "=== Maintenance ==="
+	@echo "  make clean          Remove build artifacts"
+	@echo "  make distclean      Remove all artifacts including Skia"
+	@echo "  make info           Show build environment info"
+	@echo "  make help           Show this help"
+	@echo ""
+	@echo "=== First Time Setup ==="
+	@echo "  1. make deps        # Install platform dependencies"
+	@echo "  2. make skia        # Build Skia (one-time, ~30-60 min)"
+	@echo "  3. make             # Build SVG player"
+	@echo "  4. make run         # Test with sample SVG"
+	@echo ""
+	@echo "Current platform: $(PLATFORM) ($(ARCH))"
