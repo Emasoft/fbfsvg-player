@@ -1,0 +1,51 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Debug symbols
+*.dSYM/
+*.dSYM
+
+# Compiled binaries
+skia-build/examples/svg_player_animated
+skia-build/examples/svg_player
+skia-build/examples/svg_render
+skia-build/examples/simple_draw
+skia-build/examples/benchmark_svg
+skia-build/examples/skia_svg_bench
+skia-build/examples/skia_svg_batch
+
+# Output images
+*.png
+*.ppm
+!svg_input_samples/**/*.png
+
+# Skia build artifacts (large files)
+skia-build/src/
+skia-build/depot_tools/
+skia-build/out/
+
+# SERENA MCP logs (keep memories)
+.serena/logs/
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.dylib
+*.so
+
+# Temporary files
+*.tmp
+*.temp
+*.log
