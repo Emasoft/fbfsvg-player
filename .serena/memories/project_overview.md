@@ -22,17 +22,17 @@ This project contains a real-time SVG player with SMIL animation support, built 
 ## Directory Structure
 ```
 SKIA-BUILD-ARM64/
-├── skia-build/
-│   ├── examples/                    # Custom applications
-│   │   ├── svg_player_animated.cpp  # Main animated SVG player
-│   │   ├── svg_player.cpp           # Simple SVG viewer
-│   │   ├── svg_render.cpp           # SVG to PNG renderer
-│   │   └── *.cpp                    # Other examples
-│   ├── src/skia/                    # Skia library source
+├── examples/                        # Custom applications (project root)
+│   ├── svg_player_animated.cpp      # Main animated SVG player
+│   ├── svg_player.cpp               # Simple SVG viewer
+│   ├── svg_render.cpp               # SVG to PNG renderer
+│   └── *.cpp                        # Other examples
+├── skia-build/                      # Git submodule (github.com/jacobsologub/skia-build)
+│   ├── src/skia/                    # Skia library source (gitignored, fetched by fetch.sh)
 │   │   ├── include/                 # Skia headers
 │   │   ├── modules/svg/             # SVG module
 │   │   └── out/release-macos/       # Built static libraries
-│   ├── depot_tools/                 # Google's build tools
+│   ├── depot_tools/                 # Google's build tools (gitignored)
 │   ├── build-macos*.sh              # Build scripts
 │   └── README.md
 └── svg_input_samples/               # Test SVG files
@@ -47,6 +47,18 @@ SKIA-BUILD-ARM64/
 - `ThreadedRenderer`: Background rendering with double-buffering
 - `RollingAverage`: Performance metric calculator
 - `main()`: Event loop, animation timing, debug overlay
+
+## Build Command (from project root)
+```bash
+cd examples && clang++ -std=c++17 -O2 \
+  -I../skia-build/src/skia -I../skia-build/src/skia/include -I../skia-build/src/skia/modules \
+  $(pkg-config --cflags sdl2) svg_player_animated.cpp -o svg_player_animated \
+  ../skia-build/src/skia/out/release-macos/lib*.a \
+  $(pkg-config --libs sdl2) -L/opt/homebrew/opt/icu4c@78/lib -licuuc -licui18n -licudata \
+  -framework CoreGraphics -framework CoreText -framework CoreFoundation \
+  -framework ApplicationServices -framework Metal -framework MetalKit -framework Cocoa \
+  -framework IOKit -framework IOSurface -framework OpenGL -framework QuartzCore -liconv
+```
 
 ## Keyboard Controls
 - `V`: Toggle VSync
