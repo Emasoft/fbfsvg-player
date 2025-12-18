@@ -22,8 +22,14 @@ This project contains a real-time SVG player with SMIL animation support, built 
 ## Directory Structure
 ```
 SKIA-BUILD-ARM64/
-├── examples/                        # Custom applications (project root)
-│   ├── svg_player_animated.cpp      # Main animated SVG player
+├── src/                             # Main source code
+│   └── svg_player_animated.cpp      # Main animated SVG player application
+├── scripts/                         # Build automation scripts
+│   ├── install-deps.sh              # Install Homebrew dependencies
+│   └── build-skia.sh                # Build Skia library
+├── build/                           # Build output (gitignored)
+│   └── svg_player_animated          # Compiled binary
+├── examples/                        # Additional example programs
 │   ├── svg_player.cpp               # Simple SVG viewer
 │   ├── svg_render.cpp               # SVG to PNG renderer
 │   └── *.cpp                        # Other examples
@@ -35,10 +41,12 @@ SKIA-BUILD-ARM64/
 │   ├── depot_tools/                 # Google's build tools (gitignored)
 │   ├── build-macos*.sh              # Build scripts
 │   └── README.md
-└── svg_input_samples/               # Test SVG files
-    ├── girl_hair/
-    ├── seagull/
-    └── *.fbf.svg                    # FBF animation files
+├── svg_input_samples/               # Test SVG files
+│   ├── girl_hair/
+│   ├── seagull/
+│   └── *.fbf.svg                    # FBF animation files
+├── Makefile                         # Main build configuration
+└── README.md                        # Project documentation
 ```
 
 ## Main Components (svg_player_animated.cpp)
@@ -48,16 +56,20 @@ SKIA-BUILD-ARM64/
 - `RollingAverage`: Performance metric calculator
 - `main()`: Event loop, animation timing, debug overlay
 
-## Build Command (from project root)
+## Build Commands
 ```bash
-cd examples && clang++ -std=c++17 -O2 \
-  -I../skia-build/src/skia -I../skia-build/src/skia/include -I../skia-build/src/skia/modules \
-  $(pkg-config --cflags sdl2) svg_player_animated.cpp -o svg_player_animated \
-  ../skia-build/src/skia/out/release-macos/lib*.a \
-  $(pkg-config --libs sdl2) -L/opt/homebrew/opt/icu4c@78/lib -licuuc -licui18n -licudata \
-  -framework CoreGraphics -framework CoreText -framework CoreFoundation \
-  -framework ApplicationServices -framework Metal -framework MetalKit -framework Cocoa \
-  -framework IOKit -framework IOSurface -framework OpenGL -framework QuartzCore -liconv
+# Quick start
+make deps     # Install dependencies (SDL2, ICU, pkg-config)
+make skia     # Build Skia (one-time, ~30-60 min)
+make          # Build SVG player
+make run      # Run with test SVG
+
+# All build targets
+make          # Build release binary
+make debug    # Build debug binary
+make clean    # Remove build artifacts
+make distclean # Remove all including Skia
+make help     # Show all targets
 ```
 
 ## Keyboard Controls

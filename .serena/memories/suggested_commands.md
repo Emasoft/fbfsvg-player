@@ -2,48 +2,58 @@
 
 ## Building the SVG Player
 
-### Full build command (svg_player_animated):
+### Using Makefile (recommended):
 ```bash
-cd /Users/emanuelesabetta/Code/SKIA-BUILD-ARM64/examples && \
+cd /Users/emanuelesabetta/Code/SKIA-BUILD-ARM64
+
+# Install dependencies (Homebrew packages)
+make deps
+
+# Build Skia (one-time, takes 30-60 minutes)
+make skia
+
+# Build release binary
+make
+
+# Build debug binary
+make debug
+
+# Clean build artifacts
+make clean
+
+# Clean everything including Skia
+make distclean
+
+# Show all targets
+make help
+```
+
+### Manual build command (if needed):
+```bash
+cd /Users/emanuelesabetta/Code/SKIA-BUILD-ARM64
 clang++ -std=c++17 -O2 \
-  -I../skia-build/src/skia -I../skia-build/src/skia/include -I../skia-build/src/skia/modules \
-  $(pkg-config --cflags sdl2) svg_player_animated.cpp -o svg_player_animated \
-  ../skia-build/src/skia/out/release-macos/libsvg.a ../skia-build/src/skia/out/release-macos/libskia.a \
-  ../skia-build/src/skia/out/release-macos/libskresources.a ../skia-build/src/skia/out/release-macos/libskshaper.a \
-  ../skia-build/src/skia/out/release-macos/libharfbuzz.a ../skia-build/src/skia/out/release-macos/libskunicode_core.a \
-  ../skia-build/src/skia/out/release-macos/libskunicode_icu.a ../skia-build/src/skia/out/release-macos/libexpat.a \
-  ../skia-build/src/skia/out/release-macos/libpng.a ../skia-build/src/skia/out/release-macos/libzlib.a \
-  ../skia-build/src/skia/out/release-macos/libjpeg.a ../skia-build/src/skia/out/release-macos/libwebp.a \
-  ../skia-build/src/skia/out/release-macos/libwuffs.a \
-  $(pkg-config --libs sdl2) -L/opt/homebrew/opt/icu4c@78/lib -licuuc -licui18n -licudata \
+  -Iskia-build/src/skia -Iskia-build/src/skia/include -Iskia-build/src/skia/modules \
+  $(pkg-config --cflags sdl2) src/svg_player_animated.cpp -o build/svg_player_animated \
+  skia-build/src/skia/out/release-macos/lib*.a \
+  $(pkg-config --libs sdl2) -L$(brew --prefix icu4c)/lib -licuuc -licui18n -licudata \
   -framework CoreGraphics -framework CoreText -framework CoreFoundation \
   -framework ApplicationServices -framework Metal -framework MetalKit -framework Cocoa \
   -framework IOKit -framework IOSurface -framework OpenGL -framework QuartzCore -liconv
 ```
 
-Note: Build from project root since examples/ is now at root level and skia-build/ is a submodule.
-
-### Debug build (with symbols):
-Add `-g` flag and remove `-O2`:
-```bash
-clang++ -std=c++17 -g ...
-```
-
 ## Running the SVG Player
 
-### Basic usage:
+### Using Makefile:
 ```bash
-cd /Users/emanuelesabetta/Code/SKIA-BUILD-ARM64/examples
-./svg_player_animated ../svg_input_samples/girl_hair.fbf.svg
+make run              # Run with test SVG
+make run-fullscreen   # Run in fullscreen mode
 ```
 
-### Fullscreen mode:
+### Direct execution:
 ```bash
-./svg_player_animated ../svg_input_samples/seagull.fbf.svg --fullscreen
-```
-or
-```bash
-./svg_player_animated ../svg_input_samples/seagull.fbf.svg -f
+./build/svg_player_animated svg_input_samples/girl_hair.fbf.svg
+./build/svg_player_animated svg_input_samples/seagull.fbf.svg --fullscreen
+./build/svg_player_animated svg_input_samples/seagull.fbf.svg -f
 ```
 
 ## Test SVG Files
@@ -55,20 +65,16 @@ Located in `svg_input_samples/`:
 
 ## Building Skia from Source
 
-### Fetch Skia source:
+### Using scripts (recommended):
+```bash
+./scripts/build-skia.sh
+```
+
+### Manual build:
 ```bash
 cd skia-build
-./fetch.sh
-```
-
-### Build for macOS ARM64:
-```bash
-./build-macos-arm64.sh
-```
-
-### Build universal binary:
-```bash
-./build-macos.sh --universal
+./fetch.sh                    # Fetch Skia source
+./build-macos-universal.sh    # Build universal binary (x64 + arm64)
 ```
 
 ## System Utilities (macOS/Darwin)
@@ -80,10 +86,16 @@ pkg-config --cflags --libs sdl2
 
 ### Check ICU installation:
 ```bash
-brew list icu4c@78
+brew --prefix icu4c
+brew list icu4c
 ```
 
 ### List Skia static libraries:
 ```bash
 ls -la skia-build/src/skia/out/release-macos/*.a
+```
+
+### Verify architecture:
+```bash
+lipo -info skia-build/src/skia/out/release-macos/libskia.a
 ```
