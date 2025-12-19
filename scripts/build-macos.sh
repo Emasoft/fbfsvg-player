@@ -23,13 +23,15 @@ log_step() { echo -e "${CYAN}[STEP]${NC} $1"; }
 # Parse command line arguments
 build_universal=false
 build_type="release"
+non_interactive=false
 
 usage() {
     echo "Usage: $0 [OPTIONS]"
     echo "Options:"
-    echo "  --universal     Build universal binary (x64 + arm64)"
-    echo "  --debug         Build with debug symbols"
-    echo "  -h, --help      Show this help message"
+    echo "  --universal         Build universal binary (x64 + arm64)"
+    echo "  --debug             Build with debug symbols"
+    echo "  -y, --non-interactive  Run without prompts (for CI/CD)"
+    echo "  -h, --help          Show this help message"
     echo ""
     echo "Examples:"
     echo "  $0                    # Build for current architecture"
@@ -45,6 +47,10 @@ for arg in "$@"; do
             ;;
         --debug)
             build_type="debug"
+            shift
+            ;;
+        -y|--non-interactive)
+            non_interactive=true
             shift
             ;;
         -h|--help)

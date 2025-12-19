@@ -61,10 +61,22 @@ PUBLIC_HEADERS=(
 
 # Parse arguments
 CLEAN=false
+NON_INTERACTIVE=false
 for arg in "$@"; do
     case $arg in
         --clean)
             CLEAN=true
+            ;;
+        -y|--non-interactive)
+            NON_INTERACTIVE=true
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo "Options:"
+            echo "  --clean               Clean previous builds before building"
+            echo "  -y, --non-interactive Run without prompts (for CI/CD)"
+            echo "  -h, --help            Show this help message"
+            exit 0
             ;;
     esac
 done
