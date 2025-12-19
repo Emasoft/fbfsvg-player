@@ -76,12 +76,12 @@ mkdir -p "$BUILD_DIR"
 if [ "$build_universal" = true ]; then
     log_step "Building universal binaries (x64 + arm64)..."
 
-    # Build both architectures
+    # Build both architectures with specified build type
     log_step "Building for x64..."
-    "$SCRIPT_DIR/build-macos-arch.sh" x64
+    "$SCRIPT_DIR/build-macos-arch.sh" x64 "$build_type"
 
     log_step "Building for arm64..."
-    "$SCRIPT_DIR/build-macos-arch.sh" arm64
+    "$SCRIPT_DIR/build-macos-arch.sh" arm64 "$build_type"
 
     # Create universal binary using lipo
     log_step "Creating universal binary..."
@@ -108,7 +108,7 @@ if [ "$build_universal" = true ]; then
 else
     log_step "Building for current architecture ($current_arch)..."
 
-    "$SCRIPT_DIR/build-macos-arch.sh" "$current_arch"
+    "$SCRIPT_DIR/build-macos-arch.sh" "$current_arch" "$build_type"
 
     # Copy to generic name
     ARCH_BIN="$BUILD_DIR/svg_player_animated-macos-$current_arch"
@@ -129,6 +129,7 @@ if [ "$build_universal" = true ]; then
 else
     log_info "Architecture: $current_arch"
 fi
+log_info "Build type: $build_type"
 log_info "Output: $BUILD_DIR/svg_player_animated"
 echo ""
 log_info "Run with: $BUILD_DIR/svg_player_animated <svg_file>"

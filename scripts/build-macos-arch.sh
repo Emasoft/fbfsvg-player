@@ -1,8 +1,9 @@
 #!/bin/bash
 
 # build-macos-arch.sh - Build SVG player for specific macOS architecture
-# Usage: ./build-macos-arch.sh <arch>
+# Usage: ./build-macos-arch.sh <arch> [build_type]
 # Where <arch> is either "arm64" or "x64"
+# And <build_type> is either "release" (default) or "debug"
 
 set -e
 
@@ -97,17 +98,26 @@ check_skia() {
 # Parse arguments
 if [ $# -eq 0 ]; then
     log_error "Architecture required"
-    echo "Usage: $0 <arch>"
-    echo "  <arch>  Target architecture (arm64 or x64)"
+    echo "Usage: $0 <arch> [build_type]"
+    echo "  <arch>        Target architecture (arm64 or x64)"
+    echo "  [build_type]  Optional: release (default) or debug"
     exit 1
 fi
 
 arch=$1
+build_type="${2:-release}"
 
 # Validate architecture
 if [ "$arch" != "arm64" ] && [ "$arch" != "x64" ]; then
     log_error "Invalid architecture '$arch'"
     echo "Supported architectures: arm64, x64"
+    exit 1
+fi
+
+# Validate build type
+if [ "$build_type" != "release" ] && [ "$build_type" != "debug" ]; then
+    log_error "Invalid build type '$build_type'"
+    echo "Supported build types: release, debug"
     exit 1
 fi
 
@@ -128,7 +138,13 @@ fi
 
 # Compiler settings
 CXX="clang++"
-CXXFLAGS="-std=c++17 -O2"
+if [ "$build_type" = "debug" ]; then
+    CXXFLAGS="-std=c++17 -g -O0 -DDEBUG"
+    log_info "Build type: DEBUG"
+else
+    CXXFLAGS="-std=c++17 -O2 -DNDEBUG"
+    log_info "Build type: RELEASE"
+fi
 
 # Set architecture flag
 if [ "$arch" = "arm64" ]; then

@@ -271,8 +271,8 @@ else
     echo "Building RELEASE version"
 fi
 
-# Include paths (includes project root for shared/ directory)
-INCLUDES="-I$SDK_DIR -I$PROJECT_ROOT -I$SKIA_DIR -I$SKIA_DIR/include"
+# Include paths (includes project root for shared/ directory, and Skia modules for SVG support)
+INCLUDES="-I$SDK_DIR -I$PROJECT_ROOT -I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules"
 
 # Link flags for shared library
 LDFLAGS="-shared -Wl,--version-script=$SDK_DIR/libsvgplayer.map"
