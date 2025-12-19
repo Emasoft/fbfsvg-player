@@ -55,6 +55,83 @@ all:
 	@./$(SCRIPTS_DIR)/build.sh
 
 #==============================================================================
+# Multi-Platform Targets
+#==============================================================================
+
+# Build all Apple platforms (macOS + iOS) - requires macOS host
+.PHONY: all-apple
+all-apple:
+ifeq ($(PLATFORM),macos)
+	@echo "=== Building all Apple platforms ==="
+	@echo ""
+	@echo "[1/3] Building macOS universal binary..."
+	@./$(SCRIPTS_DIR)/build-macos.sh --universal
+	@echo ""
+	@echo "[2/3] Building iOS XCFramework..."
+	@./$(SCRIPTS_DIR)/build-ios-framework.sh
+	@echo ""
+	@echo "[3/3] Build complete!"
+	@echo ""
+	@echo "Outputs:"
+	@echo "  macOS: $(BUILD_DIR)/svg_player_animated"
+	@echo "  iOS:   $(BUILD_DIR)/SVGPlayer.xcframework/"
+else
+	@echo "Error: Apple platform builds require macOS host"
+	@exit 1
+endif
+
+# Build all Linux targets - requires Linux host or Docker
+.PHONY: all-linux
+all-linux:
+ifeq ($(PLATFORM),linux)
+	@echo "=== Building all Linux targets ==="
+	@echo ""
+	@echo "[1/2] Building Linux desktop player..."
+	@./$(SCRIPTS_DIR)/build-linux.sh -y
+	@echo ""
+	@echo "[2/2] Building Linux SDK..."
+	@./$(SCRIPTS_DIR)/build-linux-sdk.sh -y
+	@echo ""
+	@echo "Outputs:"
+	@echo "  Desktop: $(BUILD_DIR)/svg_player_animated"
+	@echo "  SDK:     $(BUILD_DIR)/linux/libsvgplayer.so"
+else
+	@echo "Linux builds require Linux host. Use Docker:"
+	@echo "  cd docker && docker-compose up -d"
+	@echo "  docker-compose exec dev make all-linux"
+endif
+
+# Build everything possible from current host
+.PHONY: all-platforms
+all-platforms:
+	@echo "=== Building all platforms from $(PLATFORM) host ==="
+	@echo ""
+ifeq ($(PLATFORM),macos)
+	@$(MAKE) all-apple
+	@echo ""
+	@echo "=== Linux builds require Docker ==="
+	@echo "To build Linux targets, run:"
+	@echo "  cd docker && docker-compose up -d"
+	@echo "  docker-compose exec dev make all-linux"
+else ifeq ($(PLATFORM),linux)
+	@$(MAKE) all-linux
+	@echo ""
+	@echo "Note: iOS/macOS builds require a macOS host"
+endif
+
+# Build everything via Docker (for CI/automation on any host with Docker)
+.PHONY: all-docker
+all-docker:
+	@echo "=== Building via Docker ==="
+	@echo "This builds Linux targets in Docker container"
+	@cd docker && docker-compose up -d && docker-compose exec -T dev make all-linux
+ifeq ($(PLATFORM),macos)
+	@echo ""
+	@echo "Also building Apple platforms natively..."
+	@$(MAKE) all-apple
+endif
+
+#==============================================================================
 # macOS Targets
 #==============================================================================
 
@@ -280,6 +357,12 @@ help:
 	@echo "  make skia           Build Skia for current platform"
 	@echo "  make                Build SVG player for current platform"
 	@echo "  make run            Build and run with test SVG"
+	@echo ""
+	@echo "=== Multi-Platform Builds ==="
+	@echo "  make all-platforms  Build everything possible from current host"
+	@echo "  make all-apple      Build macOS + iOS (requires macOS host)"
+	@echo "  make all-linux      Build Linux player + SDK (requires Linux/Docker)"
+	@echo "  make all-docker     Build Linux via Docker + Apple natively"
 	@echo ""
 	@echo "=== macOS Targets ==="
 	@echo "  make macos          Build for current macOS architecture"
