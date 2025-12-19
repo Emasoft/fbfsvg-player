@@ -184,13 +184,15 @@ check_system_dependencies() {
 detect_icu() {
     log_info "Detecting ICU installation..."
 
-    # Check pkg-config for ICU
+    # Check pkg-config for ICU (icu-data is not a valid module, libs are included via icu-uc)
     if command -v pkg-config >/dev/null 2>&1; then
         if pkg-config --exists icu-uc icu-i18n; then
             icu_version=$(pkg-config --modversion icu-uc 2>/dev/null)
             export ICU_CFLAGS=$(pkg-config --cflags icu-uc icu-i18n 2>/dev/null)
-            export ICU_LIBS=$(pkg-config --libs icu-uc icu-i18n icu-data 2>/dev/null)
+            # Note: icu-uc --libs already includes -licudata, do not use icu-data module
+            export ICU_LIBS=$(pkg-config --libs icu-uc icu-i18n 2>/dev/null)
             log_info "Found ICU via pkg-config"
+            log_info "ICU_LIBS: $ICU_LIBS"
             if [ -n "$icu_version" ]; then
                 log_info "ICU version: $icu_version"
             fi
@@ -206,6 +208,7 @@ detect_icu() {
                 export ICU_CFLAGS="-I$path/include"
                 export ICU_LIBS="-licuuc -licui18n -licudata"
                 log_info "Found ICU at: $ICU_ROOT"
+                log_info "ICU_LIBS: $ICU_LIBS"
                 return 0
             fi
         fi
@@ -306,23 +309,29 @@ TARGET="$BUILD_DIR/svg_player_animated"
 # Include paths
 INCLUDES="-I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules $(pkg-config --cflags sdl2) $ICU_CFLAGS"
 
-# Skia static libraries (order matters for linking)
+# Skia static libraries (order matters: dependents first, dependencies last)
+# SVG module and text support modules depend on Skia core
+# Unicode modules depend on ICU (system library linked separately)
 SKIA_LIBS="$SKIA_DIR/out/release-linux/libsvg.a \
-           $SKIA_DIR/out/release-linux/libskia.a \
-           $SKIA_DIR/out/release-linux/libskresources.a \
            $SKIA_DIR/out/release-linux/libskshaper.a \
-           $SKIA_DIR/out/release-linux/libharfbuzz.a \
-           $SKIA_DIR/out/release-linux/libskunicode_core.a \
+           $SKIA_DIR/out/release-linux/libskparagraph.a \
+           $SKIA_DIR/out/release-linux/libskresources.a \
            $SKIA_DIR/out/release-linux/libskunicode_icu.a \
+           $SKIA_DIR/out/release-linux/libskunicode_core.a \
+           $SKIA_DIR/out/release-linux/libharfbuzz.a \
+           $SKIA_DIR/out/release-linux/libskia.a \
            $SKIA_DIR/out/release-linux/libexpat.a \
            $SKIA_DIR/out/release-linux/libpng.a \
-           $SKIA_DIR/out/release-linux/libzlib.a \
            $SKIA_DIR/out/release-linux/libjpeg.a \
            $SKIA_DIR/out/release-linux/libwebp.a \
+           $SKIA_DIR/out/release-linux/libzlib.a \
            $SKIA_DIR/out/release-linux/libwuffs.a"
 
-# External libraries
-LDFLAGS="$(pkg-config --libs sdl2) $ICU_LIBS"
+# External libraries (SDL2 first, then ICU after Skia unicode modules)
+LDFLAGS="$(pkg-config --libs sdl2)"
+
+# ICU libraries must come after skunicode modules that depend on them
+ICU_LINK_FLAGS="$ICU_LIBS"
 
 # Linux-specific libraries
 LINUX_LIBS="-lGL -lEGL -lX11 -lXext -lpthread -ldl -lm -lfontconfig -lfreetype"
@@ -332,10 +341,12 @@ log_info "Compiler: $CXX"
 log_info "Target: $TARGET"
 
 # Build command - use Linux-specific source file
+# Link order: source -> Skia modules -> Skia core -> Skia deps -> ICU -> system libs
 $CXX $CXXFLAGS $INCLUDES \
     "$SRC_DIR/svg_player_animated_linux.cpp" \
     -o "$TARGET" \
     $SKIA_LIBS \
+    $ICU_LINK_FLAGS \
     $LDFLAGS \
     $LINUX_LIBS
 

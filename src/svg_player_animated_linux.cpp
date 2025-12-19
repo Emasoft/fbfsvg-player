@@ -35,6 +35,8 @@
 #include <thread>
 #include <atomic>
 #include <mutex>
+#include <condition_variable>
+#include <deque>
 
 // Linux APIs for real-time thread/CPU monitoring via /proc filesystem
 #include <dirent.h>
