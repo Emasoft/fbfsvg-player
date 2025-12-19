@@ -285,8 +285,10 @@ inline CPUStats getProcessCPUStats() {
     }
 #elif defined(PLATFORM_LINUX)
     #include "include/ports/SkFontMgr_fontconfig.h"
+    #include "include/ports/SkFontScanner_FreeType.h"  // FreeType scanner for FontConfig
     inline sk_sp<SkFontMgr> createPlatformFontMgr() {
-        return SkFontMgr_New_FontConfig(nullptr);
+        // FontConfig requires a FreeType font scanner as second parameter
+        return SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
     }
 #elif defined(PLATFORM_WINDOWS)
     #include "include/ports/SkFontMgr_win.h"

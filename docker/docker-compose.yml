@@ -1,0 +1,69 @@
+# docker-compose.yml - SVGPlayer Linux Development Environment
+#
+# Usage:
+#   docker-compose up -d      # Start container in background
+#   docker-compose exec dev bash  # Enter shell
+#   docker-compose down       # Stop and remove container
+#
+# For persistent development:
+#   docker-compose up -d && docker-compose exec dev bash
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: developer
+        USER_UID: 1000
+        USER_GID: 1000
+    image: svgplayer-linux-dev:latest
+    container_name: svgplayer-dev
+    hostname: svgplayer-dev
+
+    # Mount the project directory
+    volumes:
+      - ..:/workspace:cached
+      # Persist git configuration
+      - ~/.gitconfig:/home/developer/.gitconfig:ro
+      # Persist bash history
+      - svgplayer-bash-history:/home/developer/.bash_history_dir
+
+    # Keep container running
+    stdin_open: true
+    tty: true
+
+    # Increase shared memory for large parallel builds
+    shm_size: '2gb'
+
+    # Working directory
+    working_dir: /workspace
+
+    # Environment variables
+    environment:
+      - TERM=xterm-256color
+      - CC=clang
+      - CXX=clang++
+      # Skia build flags
+      - SKIA_BUILD_DIR=/workspace/skia-build
+      # depot_tools path
+      - PATH=/workspace/skia-build/depot_tools:/workspace/skia-build/src/skia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    # Resource limits (adjust as needed)
+    # Skia build requires significant memory for parallel compilation
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 12G
+        reservations:
+          cpus: '4'
+          memory: 6G
+
+    # Restart policy for persistent development
+    restart: unless-stopped
+
+# Named volumes for persistence
+volumes:
+  svgplayer-bash-history:
+    driver: local

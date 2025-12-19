@@ -21,6 +21,8 @@
 #include "modules/svg/include/SkSVGSVG.h"
 #include "modules/svg/include/SkSVGRenderContext.h"
 #include "modules/svg/include/SkSVGNode.h"
+#include "modules/skshaper/include/SkShaper_factory.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
 
 #include <chrono>
 #include <cstring>
@@ -43,6 +45,32 @@
 using SteadyClock = std::chrono::steady_clock;
 using DurationMs = std::chrono::duration<double, std::milli>;
 using DurationSec = std::chrono::duration<double>;
+
+// Global font manager and text shaping factory for SVG text rendering
+// These must be set up before any SVG DOM is created to ensure text elements render properly
+static sk_sp<SkFontMgr> g_fontMgr;
+static sk_sp<SkShapers::Factory> g_shaperFactory;
+static bool g_fontSupportInitialized = false;
+
+// Initialize font support for SVG text rendering (called automatically)
+static void ensureFontSupportInitialized() {
+    if (g_fontSupportInitialized) return;
+    // CoreText font manager for iOS (same as macOS)
+    g_fontMgr = SkFontMgr_New_CoreText(nullptr);
+    // Use the best available text shaper (CoreText on iOS)
+    g_shaperFactory = SkShapers::BestAvailable();
+    g_fontSupportInitialized = true;
+}
+
+// Create SVG DOM with proper font support for text rendering
+// This must be used instead of SkSVGDOM::MakeFromStream to enable SVG <text> elements
+static sk_sp<SkSVGDOM> makeSVGDOMWithFontSupport(SkStream& stream) {
+    ensureFontSupportInitialized();
+    return SkSVGDOM::Builder()
+        .setFontManager(g_fontMgr)
+        .setTextShapingFactory(g_shaperFactory)
+        .make(stream);
+}
 
 // SMIL Animation data structure
 struct SMILAnimation {
@@ -282,10 +310,10 @@ static bool updateSVGForAnimation(SVGPlayer* player, double time) {
         }
     }
 
-    // Re-parse SVG if content changed
+    // Re-parse SVG if content changed (with font support for text rendering)
     if (currentContent != player->svgContent) {
         auto stream = SkMemoryStream::MakeDirect(currentContent.c_str(), currentContent.size());
-        player->svgDom = SkSVGDOM::MakeFromStream(*stream);
+        player->svgDom = makeSVGDOMWithFontSupport(*stream);
         return player->svgDom != nullptr;
     }
 
@@ -342,9 +370,9 @@ bool SVGPlayer_LoadSVGData(SVGPlayerHandle player, const void* data, size_t leng
     // Store SVG content
     player->svgContent = std::string(static_cast<const char*>(data), length);
 
-    // Parse SVG
+    // Parse SVG with font support for proper text rendering in <text> elements
     auto stream = SkMemoryStream::MakeDirect(player->svgContent.c_str(), player->svgContent.size());
-    player->svgDom = SkSVGDOM::MakeFromStream(*stream);
+    player->svgDom = makeSVGDOMWithFontSupport(*stream);
 
     if (!player->svgDom) {
         player->lastError = "Failed to parse SVG";

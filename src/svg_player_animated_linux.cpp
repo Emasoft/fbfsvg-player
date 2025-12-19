@@ -13,10 +13,13 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypeface.h"
 #include "include/ports/SkFontMgr_fontconfig.h"  // Linux fontconfig font manager
+#include "include/ports/SkFontScanner_FreeType.h" // FreeType scanner for FontConfig
 #include "modules/svg/include/SkSVGDOM.h"
 #include "modules/svg/include/SkSVGSVG.h"
 #include "modules/svg/include/SkSVGRenderContext.h"
 #include "modules/svg/include/SkSVGNode.h"
+#include "modules/skshaper/include/SkShaper_factory.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
 #include "src/core/SkTaskGroup.h"  // Skia's high-level task management
 
 #include <SDL.h>
@@ -142,6 +145,28 @@ using SteadyClock = std::chrono::steady_clock;
 using Clock = std::chrono::high_resolution_clock;  // For performance measurement only
 using DurationMs = std::chrono::duration<double, std::milli>;
 using DurationSec = std::chrono::duration<double>;
+
+// Global font manager and text shaping factory for SVG text rendering
+// These must be set up before any SVG DOM is created to ensure text elements render properly
+static sk_sp<SkFontMgr> g_fontMgr;
+static sk_sp<SkShapers::Factory> g_shaperFactory;
+
+// Initialize font support for SVG text rendering (call once at startup)
+void initializeFontSupport() {
+    // FontConfig with FreeType scanner for Linux
+    g_fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+    // Use the best available text shaper (HarfBuzz on Linux if available)
+    g_shaperFactory = SkShapers::BestAvailable();
+}
+
+// Create SVG DOM with proper font support for text rendering
+// This must be used instead of SkSVGDOM::MakeFromStream to enable SVG <text> elements
+sk_sp<SkSVGDOM> makeSVGDOMWithFontSupport(SkStream& stream) {
+    return SkSVGDOM::Builder()
+        .setFontManager(g_fontMgr)
+        .setTextShapingFactory(g_shaperFactory)
+        .make(stream);
+}
 
 // SMIL Animation data structure
 struct SMILAnimation {
@@ -466,9 +491,10 @@ private:
         }
 
         // Parse SVG once per worker thread (first call only)
+        // Use makeSVGDOMWithFontSupport to ensure SVG text elements render properly
         if (!cache->dom) {
             auto stream = SkMemoryStream::MakeDirect(svgData.data(), svgData.size());
-            cache->dom = SkSVGDOM::MakeFromStream(*stream);
+            cache->dom = makeSVGDOMWithFontSupport(*stream);
             if (!cache->dom) return;
             cache->dom->setContainerSize(SkSize::Make(svgWidth, svgHeight));
         }
@@ -790,9 +816,10 @@ private:
                 }
 
                 // Recreate DOM if needed (or first time)
+                // Use makeSVGDOMWithFontSupport to ensure SVG text elements render properly
                 if (!threadDom) {
                     auto stream = SkMemoryStream::MakeDirect(localSvgData.data(), localSvgData.size());
-                    threadDom = SkSVGDOM::MakeFromStream(*stream);
+                    threadDom = makeSVGDOMWithFontSupport(*stream);
                 }
 
                 if (threadSurface && threadDom) {
@@ -1267,6 +1294,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Initialize font support for SVG text rendering (must be done before any SVG parsing)
+    initializeFontSupport();
+
     const char* inputPath = argv[1];
 
     // Parse optional arguments
@@ -1314,7 +1344,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    sk_sp<SkSVGDOM> svgDom = SkSVGDOM::MakeFromStream(*svgStream);
+    // Use makeSVGDOMWithFontSupport to ensure SVG text elements render properly
+    sk_sp<SkSVGDOM> svgDom = makeSVGDOMWithFontSupport(*svgStream);
     if (!svgDom) {
         std::cerr << "Failed to parse SVG: " << inputPath << std::endl;
         return 1;
@@ -1443,8 +1474,8 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "Display refresh rate: " << displayRefreshRate << " Hz" << std::endl;
 
-    // Setup font for debug overlay - Linux uses fontconfig
-    sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_FontConfig(nullptr);
+    // Setup font for debug overlay - Linux uses fontconfig with FreeType scanner
+    sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
     // Try common monospace fonts available on Linux
     sk_sp<SkTypeface> typeface = fontMgr->matchFamilyStyle("DejaVu Sans Mono", SkFontStyle::Normal());
     if (!typeface) {

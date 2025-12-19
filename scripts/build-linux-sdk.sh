@@ -1,0 +1,366 @@
+#!/bin/bash
+
+# build-linux-sdk.sh - Build SVGPlayer SDK for Linux
+# Usage: ./build-linux-sdk.sh [options]
+# Options:
+#   -y, --non-interactive    Skip confirmation prompts (useful for CI/automation)
+#   --debug                   Build debug version
+#   -h, --help               Show this help message
+
+set -e
+
+# Parse command line arguments
+non_interactive=false
+build_type="release"
+for arg in "$@"; do
+    case $arg in
+        -y|--non-interactive)
+            non_interactive=true
+            shift
+            ;;
+        --debug)
+            build_type="debug"
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [options]"
+            echo "Options:"
+            echo "  -y, --non-interactive    Skip confirmation prompts (useful for CI/automation)"
+            echo "  --debug                   Build debug version"
+            echo "  -h, --help               Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $arg"
+            echo "Use -h or --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Confirmation function for interactive mode
+confirm_continue() {
+    if [ "$non_interactive" = true ]; then
+        return 0  # Always continue in non-interactive mode
+    fi
+
+    local prompt="${1:-Continue anyway?}"
+    read -p "$prompt [Y/n] " -n 1 -r
+    echo    # Move to a new line
+    if [[ ! $REPLY =~ ^[Yy]$ ]] && [[ ! -z $REPLY ]]; then
+        return 1  # User said no
+    fi
+    return 0  # User said yes or just pressed enter
+}
+
+# Check for required OpenGL/EGL libraries
+check_gl_dependencies() {
+    echo "Checking for OpenGL/EGL dependencies..."
+
+    local missing_deps=()
+
+    # Check for EGL headers
+    if ! pkg-config --exists egl 2>/dev/null && ! [ -f /usr/include/EGL/egl.h ]; then
+        missing_deps+=("libegl1-mesa-dev")
+    fi
+
+    # Check for OpenGL ES headers
+    if ! pkg-config --exists glesv2 2>/dev/null && ! [ -f /usr/include/GLES2/gl2.h ]; then
+        missing_deps+=("libgles2-mesa-dev")
+    fi
+
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        echo "Missing OpenGL/EGL dependencies: ${missing_deps[*]}"
+        echo "To install: sudo apt-get install ${missing_deps[*]}"
+        return 1
+    else
+        echo "OpenGL/EGL dependencies found"
+        return 0
+    fi
+}
+
+# Check for system library dependencies
+check_system_dependencies() {
+    echo "Checking for system library dependencies..."
+
+    local missing_deps=()
+    local warnings=()
+
+    # Check for build essentials and compiler
+    local compiler_found=false
+
+    if command -v clang >/dev/null 2>&1 && command -v clang++ >/dev/null 2>&1; then
+        compiler_found=true
+        echo "Clang found (recommended)"
+    elif command -v gcc >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1; then
+        compiler_found=true
+        echo "GCC found - Warning: Clang is recommended for better performance"
+        echo "  To install Clang: sudo apt-get install clang"
+    fi
+
+    if [ "$compiler_found" = false ]; then
+        missing_deps+=("build-essential")
+    fi
+
+    # Check for FreeType
+    if ! pkg-config --exists freetype2 2>/dev/null && ! [ -f /usr/include/freetype2/ft2build.h ]; then
+        missing_deps+=("libfreetype6-dev")
+    else
+        echo "FreeType found"
+    fi
+
+    # Check for FontConfig
+    if ! pkg-config --exists fontconfig 2>/dev/null && ! [ -f /usr/include/fontconfig/fontconfig.h ]; then
+        warnings+=("libfontconfig1-dev")
+    else
+        echo "FontConfig found"
+    fi
+
+    # Check for libpng
+    if ! pkg-config --exists libpng 2>/dev/null && ! [ -f /usr/include/png.h ]; then
+        warnings+=("libpng-dev")
+    else
+        echo "libpng found"
+    fi
+
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        echo "Missing required dependencies: ${missing_deps[*]}"
+        echo "To install: sudo apt-get install ${missing_deps[*]}"
+        return 1
+    fi
+
+    if [ ${#warnings[@]} -gt 0 ]; then
+        echo "Optional system libraries not found: ${warnings[*]}"
+        echo "To install all: sudo apt-get install ${warnings[*]}"
+        echo ""
+
+        if ! confirm_continue "Do you want to continue without optional libraries?"; then
+            echo "Build cancelled by user."
+            exit 1
+        fi
+    fi
+
+    return 0
+}
+
+# Detect current architecture
+detect_architecture() {
+    current_arch=$(uname -m)
+    if [ "$current_arch" = "x86_64" ]; then
+        target_cpu="x64"
+    elif [ "$current_arch" = "aarch64" ]; then
+        target_cpu="arm64"
+    else
+        echo "Unsupported architecture: $current_arch"
+        exit 1
+    fi
+    echo "Detected architecture: $current_arch ($target_cpu)"
+}
+
+# Get compiler to use
+get_compiler() {
+    if command -v clang >/dev/null 2>&1 && command -v clang++ >/dev/null 2>&1; then
+        CC="clang"
+        CXX="clang++"
+        echo "Using Clang compiler"
+    elif command -v gcc >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1; then
+        CC="gcc"
+        CXX="g++"
+        echo "Using GCC compiler (warning: Clang is recommended)"
+    else
+        echo "No compiler found!"
+        exit 1
+    fi
+}
+
+# Main script starts here
+echo "=============================================="
+echo "SVGPlayer SDK for Linux - Build Script"
+echo "=============================================="
+echo ""
+
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SDK_DIR="$PROJECT_ROOT/linux-sdk/SVGPlayer"
+BUILD_DIR="$PROJECT_ROOT/build/linux"
+SKIA_DIR="$PROJECT_ROOT/skia-build/src/skia"
+SKIA_OUT="$SKIA_DIR/out/release-linux"
+
+echo "Project root: $PROJECT_ROOT"
+echo "SDK source:   $SDK_DIR"
+echo "Build output: $BUILD_DIR"
+echo "Skia path:    $SKIA_OUT"
+echo ""
+
+# Check if SDK source exists
+if [ ! -d "$SDK_DIR" ]; then
+    echo "Error: SDK source directory not found: $SDK_DIR"
+    exit 1
+fi
+
+# Check if Skia is built
+if [ ! -d "$SKIA_OUT" ]; then
+    echo "Error: Skia for Linux not built yet."
+    echo "Please run: cd skia-build && ./build-linux.sh"
+    exit 1
+fi
+
+if [ ! -f "$SKIA_OUT/libskia.a" ]; then
+    echo "Error: Skia static library not found: $SKIA_OUT/libskia.a"
+    echo "Please rebuild Skia for Linux."
+    exit 1
+fi
+
+echo "Skia static library found"
+
+# Check dependencies
+echo ""
+if ! check_system_dependencies; then
+    echo ""
+    echo "Missing required dependencies. Please install them before continuing."
+    exit 1
+fi
+
+echo ""
+if ! check_gl_dependencies; then
+    echo ""
+    echo "Missing OpenGL/EGL dependencies."
+
+    if ! confirm_continue "Do you want to try building anyway?"; then
+        echo "Build cancelled by user."
+        exit 1
+    fi
+    echo "Proceeding without OpenGL/EGL dependencies - build may fail!"
+fi
+
+echo ""
+echo "All required dependencies found. Proceeding with build..."
+echo ""
+
+# Detect architecture and compiler
+detect_architecture
+get_compiler
+
+# Create build directory
+rm -rf "$BUILD_DIR"
+mkdir -p "$BUILD_DIR"
+
+# Compiler flags
+CXXFLAGS="-std=c++17 -fPIC -fvisibility=hidden -fexceptions -frtti"
+if [ "$build_type" = "debug" ]; then
+    CXXFLAGS="$CXXFLAGS -g -O0 -DDEBUG"
+    echo "Building DEBUG version"
+else
+    CXXFLAGS="$CXXFLAGS -O2 -DNDEBUG"
+    echo "Building RELEASE version"
+fi
+
+# Include paths
+INCLUDES="-I$SDK_DIR -I$SKIA_DIR -I$SKIA_DIR/include"
+
+# Link flags for shared library
+LDFLAGS="-shared -Wl,--version-script=$SDK_DIR/libsvgplayer.map"
+if [ -f "$SDK_DIR/libsvgplayer.map" ]; then
+    echo "Using symbol version script"
+else
+    LDFLAGS="-shared"
+    echo "No version script found, exporting all symbols"
+fi
+
+# Libraries to link
+LIBS="-L$SKIA_OUT -lskia"
+
+# Add system libraries
+LIBS="$LIBS -lpthread -ldl -lm"
+
+# Add OpenGL/EGL if available
+if pkg-config --exists egl 2>/dev/null; then
+    LIBS="$LIBS $(pkg-config --libs egl)"
+fi
+if pkg-config --exists glesv2 2>/dev/null; then
+    LIBS="$LIBS $(pkg-config --libs glesv2)"
+fi
+
+# Add FreeType if available
+if pkg-config --exists freetype2 2>/dev/null; then
+    LIBS="$LIBS $(pkg-config --libs freetype2)"
+    CXXFLAGS="$CXXFLAGS $(pkg-config --cflags freetype2)"
+fi
+
+# Add FontConfig if available
+if pkg-config --exists fontconfig 2>/dev/null; then
+    LIBS="$LIBS $(pkg-config --libs fontconfig)"
+    CXXFLAGS="$CXXFLAGS $(pkg-config --cflags fontconfig)"
+fi
+
+echo ""
+echo "Compiling SVGPlayer..."
+echo "Compiler: $CXX"
+echo "Flags:    $CXXFLAGS"
+echo ""
+
+# Compile source file to object
+$CXX $CXXFLAGS $INCLUDES -c "$SDK_DIR/svg_player.cpp" -o "$BUILD_DIR/svg_player.o"
+
+if [ $? -ne 0 ]; then
+    echo "Compilation failed!"
+    exit 1
+fi
+
+echo "Linking shared library..."
+
+# Link shared library
+$CXX $LDFLAGS -o "$BUILD_DIR/libsvgplayer.so.1.0.0" "$BUILD_DIR/svg_player.o" $LIBS
+
+if [ $? -ne 0 ]; then
+    echo "Linking failed!"
+    exit 1
+fi
+
+# Create symlinks
+cd "$BUILD_DIR"
+ln -sf libsvgplayer.so.1.0.0 libsvgplayer.so.1
+ln -sf libsvgplayer.so.1 libsvgplayer.so
+cd - > /dev/null
+
+# Copy header file
+cp "$SDK_DIR/svg_player.h" "$BUILD_DIR/"
+
+# Create pkg-config file
+cat > "$BUILD_DIR/svgplayer.pc" << EOF
+prefix=/usr/local
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+
+Name: SVGPlayer
+Description: Cross-platform SVG Player library with SMIL animation support
+Version: 1.0.0
+Requires:
+Libs: -L\${libdir} -lsvgplayer
+Cflags: -I\${includedir}
+EOF
+
+echo ""
+echo "=============================================="
+echo "Build complete!"
+echo "=============================================="
+echo ""
+echo "Output files:"
+echo "  Library:     $BUILD_DIR/libsvgplayer.so"
+echo "  Header:      $BUILD_DIR/svg_player.h"
+echo "  pkg-config:  $BUILD_DIR/svgplayer.pc"
+echo ""
+echo "To install system-wide:"
+echo "  sudo cp $BUILD_DIR/libsvgplayer.so.1.0.0 /usr/local/lib/"
+echo "  sudo ln -sf /usr/local/lib/libsvgplayer.so.1.0.0 /usr/local/lib/libsvgplayer.so.1"
+echo "  sudo ln -sf /usr/local/lib/libsvgplayer.so.1 /usr/local/lib/libsvgplayer.so"
+echo "  sudo cp $BUILD_DIR/svg_player.h /usr/local/include/"
+echo "  sudo cp $BUILD_DIR/svgplayer.pc /usr/local/lib/pkgconfig/"
+echo "  sudo ldconfig"
+echo ""
+echo "To use in your project:"
+echo "  #include <svg_player.h>"
+echo "  Link with: -lsvgplayer"
+echo ""

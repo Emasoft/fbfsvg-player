@@ -1,0 +1,14 @@
+framework module SVGPlayer {
+    umbrella header "SVGPlayer.h"
+
+    export *
+    module * { export * }
+
+    // System frameworks required
+    link framework "UIKit"
+    link framework "Metal"
+    link framework "MetalKit"
+    link framework "CoreGraphics"
+    link framework "QuartzCore"
+    link framework "Foundation"
+}

@@ -117,6 +117,30 @@ ios-simulator-universal:
 ios-xcframework:
 	@./$(SCRIPTS_DIR)/build-ios.sh --xcframework
 
+.PHONY: ios-framework
+ios-framework:
+	@./$(SCRIPTS_DIR)/build-ios-framework.sh
+
+.PHONY: ios-framework-clean
+ios-framework-clean:
+	@./$(SCRIPTS_DIR)/build-ios-framework.sh --clean
+
+#==============================================================================
+# Linux SDK Targets
+#==============================================================================
+
+.PHONY: linux-sdk
+linux-sdk:
+	@./$(SCRIPTS_DIR)/build-linux-sdk.sh
+
+.PHONY: linux-sdk-debug
+linux-sdk-debug:
+	@./$(SCRIPTS_DIR)/build-linux-sdk.sh --debug
+
+.PHONY: linux-sdk-ci
+linux-sdk-ci:
+	@./$(SCRIPTS_DIR)/build-linux-sdk.sh -y
+
 #==============================================================================
 # Skia Build Targets
 #==============================================================================
@@ -268,6 +292,9 @@ help:
 	@echo "  make linux          Build for current Linux architecture"
 	@echo "  make linux-debug    Build with debug symbols"
 	@echo "  make linux-ci       Build non-interactively (for CI)"
+	@echo "  make linux-sdk      Build SVGPlayer shared library for Linux"
+	@echo "  make linux-sdk-debug  Build Linux SDK with debug symbols"
+	@echo "  make linux-sdk-ci   Build Linux SDK non-interactively"
 	@echo ""
 	@echo "=== iOS Targets ==="
 	@echo "  make ios            Build for iOS device (arm64)"
@@ -275,6 +302,8 @@ help:
 	@echo "  make ios-simulator  Build for iOS simulator"
 	@echo "  make ios-simulator-universal  Build universal simulator"
 	@echo "  make ios-xcframework  Build XCFramework (device + simulator)"
+	@echo "  make ios-framework  Build SVGPlayer.xcframework SDK"
+	@echo "  make ios-framework-clean  Clean and rebuild iOS framework"
 	@echo ""
 	@echo "=== Skia Targets ==="
 	@echo "  make skia           Build Skia for current platform"
