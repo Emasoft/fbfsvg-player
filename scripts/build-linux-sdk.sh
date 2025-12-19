@@ -268,11 +268,38 @@ else
     echo "No version script found, exporting all symbols"
 fi
 
-# Libraries to link
-LIBS="-L$SKIA_OUT -lskia"
+# Libraries to link - Skia and its modules
+# Order matters: link dependent libraries first, dependencies after
+LIBS="-L$SKIA_OUT"
 
-# Add system libraries
-LIBS="$LIBS -lpthread -ldl -lm"
+# SVG module and its dependencies
+LIBS="$LIBS -lsvg"
+
+# Text shaping and paragraph support for SVG <text> elements
+LIBS="$LIBS -lskshaper -lskparagraph"
+
+# Unicode support for text handling
+LIBS="$LIBS -lskunicode_icu -lskunicode_core"
+
+# HarfBuzz for text shaping (bundled with Skia)
+LIBS="$LIBS -lharfbuzz"
+
+# Main Skia library (must come after modules that depend on it)
+LIBS="$LIBS -lskia"
+
+# Additional Skia dependencies
+LIBS="$LIBS -lexpat -lpng -ljpeg -lwebp -lzlib -lwuffs"
+
+# Add ICU library for Unicode support (system installed)
+if pkg-config --exists icu-uc 2>/dev/null; then
+    LIBS="$LIBS $(pkg-config --libs icu-uc icu-i18n)"
+else
+    # Fallback to direct linking if pkg-config doesn't work
+    LIBS="$LIBS -licuuc -licui18n -licudata"
+fi
+
+# Add system libraries last
+LIBS="$LIBS -lpthread -ldl -lm -lstdc++"
 
 # Add OpenGL/EGL if available
 if pkg-config --exists egl 2>/dev/null; then

@@ -1,11 +1,12 @@
-// svg_player.cpp - Cross-platform SVG Player implementation
+// svg_player.cpp - Cross-platform SVG Player implementation for Linux
 //
-// This is a stub implementation. The actual rendering logic will be
-// implemented using Skia when the cross-platform core is complete.
+// This implementation uses Skia for SVG rendering with FontConfig/FreeType
+// for font support on Linux systems.
 
 #define SVG_PLAYER_BUILDING_DLL
 #include "svg_player.h"
 
+// Standard library includes
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
@@ -16,15 +17,123 @@
 #include <chrono>
 #include <fstream>
 #include <sstream>
+#include <mutex>
+#include <vector>
+
+// Skia core includes
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkData.h"
+#include "include/core/SkFontMgr.h"
+#include "include/core/SkStream.h"
+#include "include/core/SkSurface.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPixmap.h"
+
+// Skia SVG module includes
+#include "modules/svg/include/SkSVGDOM.h"
+#include "modules/svg/include/SkSVGSVG.h"
+#include "modules/svg/include/SkSVGRenderContext.h"
+#include "modules/svg/include/SkSVGNode.h"
+
+// Skia text shaping includes
+#include "modules/skshaper/include/SkShaper_factory.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
+
+// Linux-specific font support: FontConfig + FreeType
+#include "include/ports/SkFontMgr_fontconfig.h"
+#include "include/ports/SkFontScanner_FreeType.h"
 
 // Version string
 static const char* VERSION_STRING = "1.0.0";
 
-// Internal player structure
+// Use steady_clock for animation timing (monotonic, immune to system clock changes)
+using SteadyClock = std::chrono::steady_clock;
+using DurationMs = std::chrono::duration<double, std::milli>;
+using DurationSec = std::chrono::duration<double>;
+
+// Global font manager and text shaping factory for SVG text rendering
+// These must be set up before any SVG DOM is created to ensure text elements render properly
+static sk_sp<SkFontMgr> g_fontMgr;
+static sk_sp<SkShapers::Factory> g_shaperFactory;
+static bool g_fontSupportInitialized = false;
+
+// Initialize font support for SVG text rendering (called automatically)
+static void ensureFontSupportInitialized() {
+    if (g_fontSupportInitialized) return;
+    // FontConfig font manager with FreeType scanner for Linux
+    g_fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+    // Use the best available text shaper
+    g_shaperFactory = SkShapers::BestAvailable();
+    g_fontSupportInitialized = true;
+}
+
+// Create SVG DOM with proper font support for text rendering
+// This must be used instead of SkSVGDOM::MakeFromStream to enable SVG <text> elements
+static sk_sp<SkSVGDOM> makeSVGDOMWithFontSupport(SkStream& stream) {
+    ensureFontSupportInitialized();
+    return SkSVGDOM::Builder()
+        .setFontManager(g_fontMgr)
+        .setTextShapingFactory(g_shaperFactory)
+        .make(stream);
+}
+
+// SMIL Animation data structure for frame-based animation
+struct SMILAnimation {
+    std::string targetId;
+    std::string attributeName;
+    std::vector<std::string> values;
+    double duration;
+    bool repeat;
+    std::string calcMode;
+
+    std::string getCurrentValue(double elapsedSeconds) const {
+        if (values.empty()) return "";
+        if (duration <= 0) return values[0];
+
+        double t = elapsedSeconds;
+        if (repeat) {
+            t = fmod(elapsedSeconds, duration);
+        } else if (elapsedSeconds >= duration) {
+            return values.back();
+        }
+
+        double valueTime = duration / values.size();
+        size_t index = static_cast<size_t>(t / valueTime);
+        if (index >= values.size()) index = values.size() - 1;
+
+        return values[index];
+    }
+
+    size_t getCurrentFrameIndex(double elapsedSeconds) const {
+        if (values.empty()) return 0;
+        if (duration <= 0) return 0;
+
+        double t = elapsedSeconds;
+        if (repeat) {
+            t = fmod(elapsedSeconds, duration);
+        } else if (elapsedSeconds >= duration) {
+            return values.size() - 1;
+        }
+
+        double valueTime = duration / values.size();
+        size_t index = static_cast<size_t>(t / valueTime);
+        if (index >= values.size()) index = values.size() - 1;
+
+        return index;
+    }
+};
+
+// Internal player structure with Skia SVG DOM
 struct SVGPlayer {
+    // Skia SVG DOM and resources
+    sk_sp<SkSVGDOM> svgDom;
+    std::string svgContent;
+    std::vector<SMILAnimation> animations;
+
     // Loading state
     bool loaded;
-    std::string svgData;
     std::string filePath;
 
     // Size info
@@ -51,6 +160,9 @@ struct SVGPlayer {
 
     // Statistics
     SVGRenderStats stats;
+    std::chrono::time_point<SteadyClock> lastFrameTime;
+    int frameCount;
+    double fpsAccumulator;
 
     // Error handling
     std::string lastError;
@@ -59,8 +171,8 @@ struct SVGPlayer {
     std::unordered_set<std::string> subscribedElements;
     std::string lastHitElement;
 
-    // Timing
-    std::chrono::high_resolution_clock::time_point lastRenderStart;
+    // Thread safety
+    std::mutex renderMutex;
 
     SVGPlayer() {
         loaded = false;
@@ -80,9 +192,182 @@ struct SVGPlayer {
         currentTime = 0;
         totalFrames = 0;
         frameRate = 60.0f;
+        frameCount = 0;
+        fpsAccumulator = 0.0;
         memset(&stats, 0, sizeof(stats));
+        lastFrameTime = SteadyClock::now();
     }
 };
+
+// Forward declarations for internal functions
+static bool parseSMILAnimations(SVGPlayer* player, const std::string& svgContent);
+static bool updateSVGForAnimation(SVGPlayer* player, double time);
+
+// ============================================================================
+// SMIL Animation Parsing
+// ============================================================================
+
+// Parse SMIL animations from SVG content
+static bool parseSMILAnimations(SVGPlayer* player, const std::string& svgContent) {
+    player->animations.clear();
+    player->duration = 0.0;
+
+    // Find all <animate> elements
+    size_t pos = 0;
+    while ((pos = svgContent.find("<animate", pos)) != std::string::npos) {
+        SMILAnimation anim;
+
+        // Find the end of this animate element
+        size_t endPos = svgContent.find(">", pos);
+        if (endPos == std::string::npos) break;
+
+        std::string animTag = svgContent.substr(pos, endPos - pos + 1);
+
+        // Parse xlink:href attribute (target element)
+        size_t hrefPos = animTag.find("xlink:href=\"");
+        if (hrefPos != std::string::npos) {
+            size_t hrefStart = hrefPos + 12;
+            size_t hrefEnd = animTag.find("\"", hrefStart);
+            if (hrefEnd != std::string::npos) {
+                std::string href = animTag.substr(hrefStart, hrefEnd - hrefStart);
+                if (!href.empty() && href[0] == '#') {
+                    anim.targetId = href.substr(1);
+                }
+            }
+        }
+
+        // Parse attributeName
+        size_t attrPos = animTag.find("attributeName=\"");
+        if (attrPos != std::string::npos) {
+            size_t attrStart = attrPos + 15;
+            size_t attrEnd = animTag.find("\"", attrStart);
+            if (attrEnd != std::string::npos) {
+                anim.attributeName = animTag.substr(attrStart, attrEnd - attrStart);
+            }
+        }
+
+        // Parse values
+        size_t valuesPos = animTag.find("values=\"");
+        if (valuesPos != std::string::npos) {
+            size_t valuesStart = valuesPos + 8;
+            size_t valuesEnd = animTag.find("\"", valuesStart);
+            if (valuesEnd != std::string::npos) {
+                std::string valuesStr = animTag.substr(valuesStart, valuesEnd - valuesStart);
+                // Split by semicolon
+                std::istringstream iss(valuesStr);
+                std::string value;
+                while (std::getline(iss, value, ';')) {
+                    // Trim whitespace
+                    size_t start = value.find_first_not_of(" \t\n\r");
+                    size_t end = value.find_last_not_of(" \t\n\r");
+                    if (start != std::string::npos && end != std::string::npos) {
+                        anim.values.push_back(value.substr(start, end - start + 1));
+                    }
+                }
+            }
+        }
+
+        // Parse duration
+        size_t durPos = animTag.find("dur=\"");
+        if (durPos != std::string::npos) {
+            size_t durStart = durPos + 5;
+            size_t durEnd = animTag.find("\"", durStart);
+            if (durEnd != std::string::npos) {
+                std::string durStr = animTag.substr(durStart, durEnd - durStart);
+                // Parse duration string (e.g., "2s", "500ms")
+                if (durStr.back() == 's') {
+                    if (durStr.size() > 2 && durStr.substr(durStr.size() - 2) == "ms") {
+                        anim.duration = std::stod(durStr.substr(0, durStr.size() - 2)) / 1000.0;
+                    } else {
+                        anim.duration = std::stod(durStr.substr(0, durStr.size() - 1));
+                    }
+                }
+            }
+        }
+
+        // Parse repeatCount
+        size_t repeatPos = animTag.find("repeatCount=\"");
+        if (repeatPos != std::string::npos) {
+            size_t repeatStart = repeatPos + 13;
+            size_t repeatEnd = animTag.find("\"", repeatStart);
+            if (repeatEnd != std::string::npos) {
+                std::string repeatStr = animTag.substr(repeatStart, repeatEnd - repeatStart);
+                anim.repeat = (repeatStr == "indefinite");
+            }
+        }
+
+        // Parse calcMode
+        size_t calcPos = animTag.find("calcMode=\"");
+        if (calcPos != std::string::npos) {
+            size_t calcStart = calcPos + 10;
+            size_t calcEnd = animTag.find("\"", calcStart);
+            if (calcEnd != std::string::npos) {
+                anim.calcMode = animTag.substr(calcStart, calcEnd - calcStart);
+            }
+        }
+
+        // Add animation if valid
+        if (!anim.values.empty() && anim.duration > 0) {
+            player->animations.push_back(anim);
+            if (anim.duration > player->duration) {
+                player->duration = anim.duration;
+            }
+        }
+
+        pos = endPos + 1;
+    }
+
+    return !player->animations.empty();
+}
+
+// Update SVG DOM for current animation time
+static bool updateSVGForAnimation(SVGPlayer* player, double time) {
+    if (!player->svgDom || player->animations.empty()) {
+        return false;
+    }
+
+    // For each animation, update the SVG content
+    std::string currentContent = player->svgContent;
+
+    for (const auto& anim : player->animations) {
+        if (anim.attributeName == "xlink:href" && !anim.targetId.empty()) {
+            std::string currentValue = anim.getCurrentValue(time);
+            if (!currentValue.empty()) {
+                // Find the use element with matching id and update its xlink:href
+                std::string searchPattern = "id=\"" + anim.targetId + "\"";
+                size_t usePos = currentContent.find(searchPattern);
+                if (usePos != std::string::npos) {
+                    // Find the xlink:href attribute in this element
+                    size_t elemStart = currentContent.rfind("<", usePos);
+                    size_t elemEnd = currentContent.find(">", usePos);
+                    if (elemStart != std::string::npos && elemEnd != std::string::npos) {
+                        std::string elemTag = currentContent.substr(elemStart, elemEnd - elemStart + 1);
+
+                        // Update xlink:href
+                        size_t hrefPos = elemTag.find("xlink:href=\"");
+                        if (hrefPos != std::string::npos) {
+                            size_t hrefStart = hrefPos + 12;
+                            size_t hrefEnd = elemTag.find("\"", hrefStart);
+                            if (hrefEnd != std::string::npos) {
+                                std::string newElemTag = elemTag.substr(0, hrefStart) + currentValue + elemTag.substr(hrefEnd);
+                                currentContent = currentContent.substr(0, elemStart) + newElemTag + currentContent.substr(elemEnd + 1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Re-parse SVG if content changed (with font support for text rendering)
+    if (currentContent != player->svgContent) {
+        auto stream = SkMemoryStream::MakeDirect(currentContent.c_str(), currentContent.size());
+        player->svgDom = makeSVGDOMWithFontSupport(*stream);
+        return player->svgDom != nullptr;
+    }
+
+    return true;
+}
 
 // ============================================================================
 // Lifecycle Functions
@@ -90,6 +375,8 @@ struct SVGPlayer {
 
 SVG_PLAYER_API SVGPlayerHandle SVGPlayer_Create(void) {
     try {
+        // Ensure font support is initialized on first player creation
+        ensureFontSupportInitialized();
         return new SVGPlayer();
     } catch (...) {
         return nullptr;
@@ -116,6 +403,8 @@ SVG_PLAYER_API bool SVGPlayer_LoadSVG(SVGPlayerHandle player, const char* filepa
         return false;
     }
 
+    std::lock_guard<std::mutex> lock(player->renderMutex);
+
     // Read file into memory
     std::ifstream file(filepath, std::ios::binary | std::ios::ate);
     if (!file.is_open()) {
@@ -134,25 +423,56 @@ SVG_PLAYER_API bool SVGPlayer_LoadSVG(SVGPlayerHandle player, const char* filepa
         return false;
     }
 
-    player->svgData = std::move(buffer);
+    player->svgContent = std::move(buffer);
     player->filePath = filepath;
 
-    // TODO: Parse SVG using Skia's SkSVGDOM
-    // For now, set placeholder values
-    player->loaded = true;
-    player->width = 800;
-    player->height = 600;
-    player->viewBoxX = 0;
-    player->viewBoxY = 0;
-    player->viewBoxWidth = 800;
-    player->viewBoxHeight = 600;
-    player->duration = 5.0;  // Placeholder: 5 seconds
-    player->totalFrames = (int)(player->duration * player->frameRate);
+    // Parse SVG using Skia's SkSVGDOM with font support
+    auto stream = SkMemoryStream::MakeDirect(player->svgContent.c_str(), player->svgContent.size());
+    player->svgDom = makeSVGDOMWithFontSupport(*stream);
+
+    if (!player->svgDom) {
+        player->lastError = "Failed to parse SVG";
+        return false;
+    }
+
+    // Get SVG dimensions from root element
+    const SkSVGSVG* root = player->svgDom->getRoot();
+    if (root) {
+        SkSize containerSize = SkSize::Make(1920, 1080); // Default container
+        player->svgDom->setContainerSize(containerSize);
+
+        // Try to get intrinsic size
+        auto intrinsic = root->intrinsicSize(SkSVGLengthContext(containerSize));
+        player->width = static_cast<int>(intrinsic.width());
+        player->height = static_cast<int>(intrinsic.height());
+
+        if (player->width <= 0 || player->height <= 0) {
+            player->width = 1920;
+            player->height = 1080;
+        }
+
+        // Set viewBox values
+        player->viewBoxX = 0;
+        player->viewBoxY = 0;
+        player->viewBoxWidth = static_cast<float>(player->width);
+        player->viewBoxHeight = static_cast<float>(player->height);
+    }
+
+    // Parse SMIL animations
+    parseSMILAnimations(player, player->svgContent);
+
+    // Set default duration if no animations found
+    if (player->duration <= 0) {
+        player->duration = 1.0;
+    }
+
+    player->totalFrames = static_cast<int>(player->duration * player->frameRate);
     player->currentTime = 0;
     player->playbackState = SVGPlaybackState_Stopped;
     player->completedLoops = 0;
-
+    player->loaded = true;
     player->lastError.clear();
+
     return true;
 }
 
@@ -162,42 +482,88 @@ SVG_PLAYER_API bool SVGPlayer_LoadSVGData(SVGPlayerHandle player, const void* da
         return false;
     }
 
-    player->svgData.assign(static_cast<const char*>(data), length);
+    std::lock_guard<std::mutex> lock(player->renderMutex);
+
+    // Store SVG content
+    player->svgContent.assign(static_cast<const char*>(data), length);
     player->filePath.clear();
 
-    // TODO: Parse SVG using Skia's SkSVGDOM
-    // For now, set placeholder values
-    player->loaded = true;
-    player->width = 800;
-    player->height = 600;
-    player->viewBoxX = 0;
-    player->viewBoxY = 0;
-    player->viewBoxWidth = 800;
-    player->viewBoxHeight = 600;
-    player->duration = 5.0;
-    player->totalFrames = (int)(player->duration * player->frameRate);
+    // Parse SVG using Skia's SkSVGDOM with font support
+    auto stream = SkMemoryStream::MakeDirect(player->svgContent.c_str(), player->svgContent.size());
+    player->svgDom = makeSVGDOMWithFontSupport(*stream);
+
+    if (!player->svgDom) {
+        player->lastError = "Failed to parse SVG";
+        return false;
+    }
+
+    // Get SVG dimensions from root element
+    const SkSVGSVG* root = player->svgDom->getRoot();
+    if (root) {
+        SkSize containerSize = SkSize::Make(1920, 1080); // Default container
+        player->svgDom->setContainerSize(containerSize);
+
+        // Try to get intrinsic size
+        auto intrinsic = root->intrinsicSize(SkSVGLengthContext(containerSize));
+        player->width = static_cast<int>(intrinsic.width());
+        player->height = static_cast<int>(intrinsic.height());
+
+        if (player->width <= 0 || player->height <= 0) {
+            player->width = 1920;
+            player->height = 1080;
+        }
+
+        // Set viewBox values
+        player->viewBoxX = 0;
+        player->viewBoxY = 0;
+        player->viewBoxWidth = static_cast<float>(player->width);
+        player->viewBoxHeight = static_cast<float>(player->height);
+    }
+
+    // Parse SMIL animations
+    parseSMILAnimations(player, player->svgContent);
+
+    // Set default duration if no animations found
+    if (player->duration <= 0) {
+        player->duration = 1.0;
+    }
+
+    player->totalFrames = static_cast<int>(player->duration * player->frameRate);
     player->currentTime = 0;
     player->playbackState = SVGPlaybackState_Stopped;
     player->completedLoops = 0;
-
+    player->loaded = true;
     player->lastError.clear();
+
     return true;
 }
 
 SVG_PLAYER_API void SVGPlayer_Unload(SVGPlayerHandle player) {
     if (!player) return;
 
-    player->svgData.clear();
+    std::lock_guard<std::mutex> lock(player->renderMutex);
+
+    // Release Skia SVG DOM
+    player->svgDom.reset();
+    player->svgContent.clear();
+    player->animations.clear();
     player->filePath.clear();
     player->loaded = false;
     player->width = 0;
     player->height = 0;
+    player->viewBoxX = 0;
+    player->viewBoxY = 0;
+    player->viewBoxWidth = 0;
+    player->viewBoxHeight = 0;
     player->duration = 0;
     player->currentTime = 0;
     player->totalFrames = 0;
     player->playbackState = SVGPlaybackState_Stopped;
     player->completedLoops = 0;
+    player->playingForward = true;
     player->subscribedElements.clear();
+    player->lastHitElement.clear();
+    player->lastError.clear();
 }
 
 SVG_PLAYER_API bool SVGPlayer_IsLoaded(SVGPlayerHandle player) {
@@ -479,47 +845,85 @@ SVG_PLAYER_API bool SVGPlayer_Render(SVGPlayerHandle player,
         return false;
     }
 
+    if (!player->svgDom) {
+        player->lastError = "SVG DOM not loaded";
+        return false;
+    }
+
+    std::lock_guard<std::mutex> lock(player->renderMutex);
+
     auto renderStart = std::chrono::high_resolution_clock::now();
 
-    // TODO: Implement actual Skia rendering
-    // For now, fill with a gradient pattern to verify the buffer is being written
-    uint8_t* buffer = static_cast<uint8_t*>(pixelBuffer);
-    float progress = SVGPlayer_GetProgress(player);
-
-    for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-            int idx = (y * width + x) * 4;
-
-            // Create a simple animated gradient
-            float fx = (float)x / width;
-            float fy = (float)y / height;
-
-            // Animated color based on progress
-            uint8_t r = (uint8_t)(128 + 127 * sin(progress * 6.28 + fx * 3.14));
-            uint8_t g = (uint8_t)(128 + 127 * sin(progress * 6.28 + fy * 3.14));
-            uint8_t b = (uint8_t)(128 + 127 * sin(progress * 6.28 + (fx + fy) * 1.57));
-
-            buffer[idx + 0] = r;  // R
-            buffer[idx + 1] = g;  // G
-            buffer[idx + 2] = b;  // B
-            buffer[idx + 3] = 255; // A
-        }
+    // Update SVG DOM for current animation frame if animations exist
+    if (!player->animations.empty()) {
+        updateSVGForAnimation(player, player->currentTime);
     }
+
+    // Create SkImageInfo for the pixel buffer (RGBA_8888 format)
+    SkImageInfo imageInfo = SkImageInfo::Make(
+        width, height,
+        kRGBA_8888_SkColorType,
+        kPremul_SkAlphaType
+    );
+
+    // Calculate row bytes (stride) for the pixel buffer
+    size_t rowBytes = static_cast<size_t>(width) * 4;
+
+    // Create a raster surface that wraps the pixel buffer directly
+    // This allows rendering directly to the caller's buffer without copying
+    sk_sp<SkSurface> surface = SkSurfaces::WrapPixels(
+        imageInfo,
+        pixelBuffer,
+        rowBytes
+    );
+
+    if (!surface) {
+        player->lastError = "Failed to create render surface";
+        return false;
+    }
+
+    SkCanvas* canvas = surface->getCanvas();
+    if (!canvas) {
+        player->lastError = "Failed to get canvas from surface";
+        return false;
+    }
+
+    // Clear canvas with transparent white background
+    canvas->clear(SK_ColorWHITE);
+
+    // Apply scale transform if needed
+    if (scale != 1.0f) {
+        canvas->scale(scale, scale);
+    }
+
+    // Set the container size for proper SVG scaling
+    SkSize containerSize = SkSize::Make(
+        static_cast<SkScalar>(width) / scale,
+        static_cast<SkScalar>(height) / scale
+    );
+    player->svgDom->setContainerSize(containerSize);
+
+    // Render the SVG DOM to the canvas
+    player->svgDom->render(canvas);
+
+    // Note: For raster surfaces, rendering is synchronous - no flush needed
+    // The pixel buffer is immediately updated after render() returns
 
     auto renderEnd = std::chrono::high_resolution_clock::now();
     player->stats.renderTimeMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
-    player->stats.elementsRendered = 1; // Placeholder
 
-    // Calculate FPS
-    static double lastRenderTime = 0;
-    double currentRenderTime = std::chrono::duration<double>(renderEnd.time_since_epoch()).count();
-    if (lastRenderTime > 0) {
-        double delta = currentRenderTime - lastRenderTime;
-        if (delta > 0) {
-            player->stats.fps = 1.0 / delta;
-        }
+    // Count rendered elements (estimate from SVG DOM)
+    const SkSVGSVG* root = player->svgDom->getRoot();
+    player->stats.elementsRendered = root ? 1 : 0;
+
+    // Calculate FPS from frame timing
+    auto now = SteadyClock::now();
+    double deltaMs = std::chrono::duration<double, std::milli>(now - player->lastFrameTime).count();
+    if (deltaMs > 0) {
+        player->stats.fps = 1000.0 / deltaMs;
     }
-    lastRenderTime = currentRenderTime;
+    player->lastFrameTime = now;
+    player->frameCount++;
 
     return true;
 }
