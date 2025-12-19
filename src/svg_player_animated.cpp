@@ -11,7 +11,7 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypeface.h"
-#include "include/ports/SkFontMgr_mac_ct.h"
+// Note: Platform-specific font manager is provided by platform.h
 #include "modules/svg/include/SkSVGDOM.h"
 #include "modules/svg/include/SkSVGSVG.h"
 #include "modules/svg/include/SkSVGRenderContext.h"
@@ -37,72 +37,12 @@
 // Shared animation controller for cross-platform SMIL parsing and playback
 #include "../shared/SVGAnimationController.h"
 
+// Cross-platform abstractions for CPU monitoring, font management, etc.
+#include "platform.h"
+
 // Use shared types from the animation controller
 using svgplayer::SMILAnimation;
 using svgplayer::AnimationState;
-
-// macOS APIs for real-time thread/CPU monitoring
-#include <mach/mach.h>
-#include <mach/thread_info.h>
-#include <mach/task.h>
-#include <mach/mach_time.h>
-
-// Real-time CPU/thread monitoring for macOS
-// Returns: {total_threads, active_threads, cpu_usage_percent}
-struct CPUStats {
-    int totalThreads;      // Total threads in process
-    int activeThreads;     // Threads currently running (not idle/waiting)
-    double cpuUsagePercent; // Overall CPU usage percentage
-};
-
-CPUStats getProcessCPUStats() {
-    CPUStats stats = {0, 0, 0.0};
-
-    task_t task = mach_task_self();
-    thread_array_t threadList;
-    mach_msg_type_number_t threadCount;
-
-    // Get all threads in the current process
-    kern_return_t kr = task_threads(task, &threadList, &threadCount);
-    if (kr != KERN_SUCCESS) {
-        return stats;
-    }
-
-    stats.totalThreads = static_cast<int>(threadCount);
-    double totalCPU = 0.0;
-
-    // Check each thread's state and CPU usage
-    for (mach_msg_type_number_t i = 0; i < threadCount; i++) {
-        thread_basic_info_data_t info;
-        mach_msg_type_number_t infoCount = THREAD_BASIC_INFO_COUNT;
-
-        kr = thread_info(threadList[i], THREAD_BASIC_INFO,
-                        (thread_info_t)&info, &infoCount);
-
-        if (kr == KERN_SUCCESS) {
-            // Thread is active if it's running or runnable (not sleeping/waiting)
-            if (info.run_state == TH_STATE_RUNNING) {
-                stats.activeThreads++;
-            }
-
-            // Calculate CPU usage for this thread
-            // cpu_usage is in units of 1/TH_USAGE_SCALE (typically 1000)
-            if (!(info.flags & TH_FLAGS_IDLE)) {
-                totalCPU += static_cast<double>(info.cpu_usage) / TH_USAGE_SCALE * 100.0;
-            }
-        }
-
-        // Deallocate thread port
-        mach_port_deallocate(task, threadList[i]);
-    }
-
-    // Deallocate thread list
-    vm_deallocate(task, (vm_address_t)threadList,
-                  threadCount * sizeof(thread_t));
-
-    stats.cpuUsagePercent = totalCPU;
-    return stats;
-}
 
 // CRITICAL: Use steady_clock for animation timing
 // - steady_clock is MONOTONIC (never goes backwards, immune to system clock changes)
@@ -121,9 +61,9 @@ static sk_sp<SkShapers::Factory> g_shaperFactory;
 
 // Initialize font support for SVG text rendering (call once at startup)
 void initializeFontSupport() {
-    // CoreText font manager for macOS (works for both macOS and iOS)
-    g_fontMgr = SkFontMgr_New_CoreText(nullptr);
-    // Use the best available text shaper (CoreText on macOS)
+    // Platform-specific font manager (CoreText on macOS/iOS, FontConfig on Linux)
+    g_fontMgr = createPlatformFontMgr();
+    // Use the best available text shaper
     g_shaperFactory = SkShapers::BestAvailable();
 }
 
@@ -1166,8 +1106,8 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "Display refresh rate: " << displayRefreshRate << " Hz" << std::endl;
 
-    // Setup font for debug overlay
-    sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_CoreText(nullptr);
+    // Setup font for debug overlay (platform-specific font manager)
+    sk_sp<SkFontMgr> fontMgr = createPlatformFontMgr();
     sk_sp<SkTypeface> typeface = fontMgr->matchFamilyStyle("Menlo", SkFontStyle::Normal());
     if (!typeface) {
         typeface = fontMgr->matchFamilyStyle("Courier", SkFontStyle::Normal());

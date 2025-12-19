@@ -12,8 +12,7 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypeface.h"
-#include "include/ports/SkFontMgr_fontconfig.h"  // Linux fontconfig font manager
-#include "include/ports/SkFontScanner_FreeType.h" // FreeType scanner for FontConfig
+// Note: Platform-specific font manager is provided by platform.h
 #include "modules/svg/include/SkSVGDOM.h"
 #include "modules/svg/include/SkSVGSVG.h"
 #include "modules/svg/include/SkSVGRenderContext.h"
@@ -41,109 +40,12 @@
 // Shared animation controller for cross-platform SMIL parsing and playback
 #include "../shared/SVGAnimationController.h"
 
+// Cross-platform abstractions for CPU monitoring, font management, etc.
+#include "platform.h"
+
 // Use shared types from the animation controller
 using svgplayer::SMILAnimation;
 using svgplayer::AnimationState;
-
-// Linux APIs for real-time thread/CPU monitoring via /proc filesystem
-#include <dirent.h>
-#include <unistd.h>
-#include <sys/types.h>
-
-// Real-time CPU/thread monitoring for Linux
-// Returns: {total_threads, active_threads, cpu_usage_percent}
-struct CPUStats {
-    int totalThreads;      // Total threads in process
-    int activeThreads;     // Threads currently running (not idle/waiting)
-    double cpuUsagePercent; // Overall CPU usage percentage
-};
-
-CPUStats getProcessCPUStats() {
-    CPUStats stats = {0, 0, 0.0};
-
-    // Count threads from /proc/self/task
-    DIR* taskDir = opendir("/proc/self/task");
-    if (taskDir) {
-        struct dirent* entry;
-        while ((entry = readdir(taskDir)) != nullptr) {
-            if (entry->d_name[0] != '.') {
-                stats.totalThreads++;
-            }
-        }
-        closedir(taskDir);
-    }
-
-    // Read CPU stats from /proc/self/stat
-    std::ifstream statFile("/proc/self/stat");
-    if (statFile.is_open()) {
-        std::string line;
-        std::getline(statFile, line);
-
-        // Parse the stat line - format: pid (comm) state ...
-        // Fields 14 and 15 are utime and stime (user and system CPU time)
-        std::istringstream iss(line);
-        std::string token;
-
-        // Skip to field 14 (utime)
-        for (int i = 0; i < 13 && iss >> token; i++) {
-            // Skip comm field which is in parentheses
-            if (i == 1 && token[0] == '(') {
-                // Read until closing parenthesis
-                while (token.back() != ')' && iss >> token) {}
-            }
-        }
-
-        long utime = 0, stime = 0;
-        if (iss >> utime >> stime) {
-            // Convert jiffies to percentage
-            // This is a simplified calculation
-            static long lastUtime = 0, lastStime = 0;
-            static auto lastTime = std::chrono::steady_clock::now();
-
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration<double>(now - lastTime).count();
-
-            if (elapsed > 0.1) {  // Update every 100ms
-                long ticksPerSec = sysconf(_SC_CLK_TCK);
-                double cpuTime = static_cast<double>((utime - lastUtime) + (stime - lastStime)) / ticksPerSec;
-                stats.cpuUsagePercent = (cpuTime / elapsed) * 100.0;
-
-                lastUtime = utime;
-                lastStime = stime;
-                lastTime = now;
-            }
-        }
-        statFile.close();
-    }
-
-    // Estimate active threads (simplified - count threads in R state)
-    DIR* taskDirAgain = opendir("/proc/self/task");
-    if (taskDirAgain) {
-        struct dirent* entry;
-        while ((entry = readdir(taskDirAgain)) != nullptr) {
-            if (entry->d_name[0] != '.') {
-                std::string statPath = "/proc/self/task/" + std::string(entry->d_name) + "/stat";
-                std::ifstream threadStat(statPath);
-                if (threadStat.is_open()) {
-                    std::string line;
-                    std::getline(threadStat, line);
-                    // Check if thread state is 'R' (running)
-                    size_t pos = line.rfind(')');
-                    if (pos != std::string::npos && pos + 2 < line.size()) {
-                        char state = line[pos + 2];
-                        if (state == 'R') {
-                            stats.activeThreads++;
-                        }
-                    }
-                    threadStat.close();
-                }
-            }
-        }
-        closedir(taskDirAgain);
-    }
-
-    return stats;
-}
 
 // CRITICAL: Use steady_clock for animation timing
 // - steady_clock is MONOTONIC (never goes backwards, immune to system clock changes)
@@ -162,9 +64,9 @@ static sk_sp<SkShapers::Factory> g_shaperFactory;
 
 // Initialize font support for SVG text rendering (call once at startup)
 void initializeFontSupport() {
-    // FontConfig with FreeType scanner for Linux
-    g_fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
-    // Use the best available text shaper (HarfBuzz on Linux if available)
+    // Platform-specific font manager (FontConfig on Linux, CoreText on macOS/iOS)
+    g_fontMgr = createPlatformFontMgr();
+    // Use the best available text shaper
     g_shaperFactory = SkShapers::BestAvailable();
 }
 
@@ -1182,8 +1084,8 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "Display refresh rate: " << displayRefreshRate << " Hz" << std::endl;
 
-    // Setup font for debug overlay - Linux uses fontconfig with FreeType scanner
-    sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+    // Setup font for debug overlay (platform-specific font manager)
+    sk_sp<SkFontMgr> fontMgr = createPlatformFontMgr();
     // Try common monospace fonts available on Linux
     sk_sp<SkTypeface> typeface = fontMgr->matchFamilyStyle("DejaVu Sans Mono", SkFontStyle::Normal());
     if (!typeface) {
