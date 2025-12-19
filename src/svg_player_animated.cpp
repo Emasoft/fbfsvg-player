@@ -1223,7 +1223,8 @@ int main(int argc, char* argv[]) {
     int totalCores = parallelRenderer.totalCores;
     int availableCores = parallelRenderer.getWorkerCount();
 
-    // Initialize parallel renderer with SVG data and animation info (starts in Off mode, P cycles to PreBuffer first)
+    // Initialize parallel renderer with SVG data and animation info
+    // PreBuffer mode is started by default for best animation performance
     if (!animations.empty()) {
         parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
                                    animations[0].targetId, animations[0].attributeName, animations[0].values);
@@ -1231,11 +1232,18 @@ int main(int argc, char* argv[]) {
         parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
     }
 
+    // Start parallel renderer in PreBuffer mode by default (best for animations)
+    parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+
     // Threaded renderer keeps UI responsive by moving all rendering to background thread
     // Main thread ONLY handles events and blits completed frames - NEVER blocks on rendering
     ThreadedRenderer threadedRenderer;
     threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
     threadedRenderer.start();
+
+    // Initialize cached mode state to reflect PreBuffer is ON by default
+    threadedRenderer.cachedPreBufferMode = true;
+    threadedRenderer.cachedActiveWorkers = parallelRenderer.activeWorkers.load();
 
     // Set total animation frames so PreBuffer mode can pre-render ahead
     if (!animations.empty()) {
@@ -1244,6 +1252,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "\nCPU cores detected: " << totalCores << std::endl;
     std::cout << "Skia thread pool size: " << availableCores << " (1 reserved for system)" << std::endl;
+    std::cout << "PreBuffer mode: ON (default)" << std::endl;
     std::cout << "UI thread: Non-blocking (render thread active)" << std::endl;
 
     std::cout << "\nControls:" << std::endl;
@@ -1356,6 +1365,10 @@ int main(int argc, char* argv[]) {
 
                         SDL_DestroyTexture(texture);
                         SDL_DestroyRenderer(renderer);
+
+                        // Set VSync hint BEFORE creating renderer (critical for Metal on macOS)
+                        // This hint must be set before renderer creation to take effect
+                        SDL_SetHint(SDL_HINT_RENDER_VSYNC, vsyncEnabled ? "1" : "0");
 
                         Uint32 flags = SDL_RENDERER_ACCELERATED;
                         if (vsyncEnabled) {
