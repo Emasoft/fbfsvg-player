@@ -26,6 +26,9 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+// Shared type definitions (SVGPlaybackState, SVGRepeatMode, SVGRenderStats, SVGSize, etc.)
+#include "../../shared/SVGTypes.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -53,34 +56,7 @@ extern "C" {
 // Opaque handle to SVG player instance
 typedef struct SVGPlayer* SVGPlayerHandle;
 
-// Animation playback state
-typedef enum {
-    SVGPlaybackState_Stopped = 0,
-    SVGPlaybackState_Playing,
-    SVGPlaybackState_Paused
-} SVGPlaybackState;
-
-// Repeat mode for animation playback
-typedef enum {
-    SVGRepeatMode_None = 0,    // Play once and stop
-    SVGRepeatMode_Loop,        // Loop continuously
-    SVGRepeatMode_Reverse,     // Ping-pong (forward then backward)
-    SVGRepeatMode_Count        // Loop specific number of times
-} SVGRepeatMode;
-
-// Rendering statistics
-typedef struct {
-    double renderTimeMs;       // Time to render last frame in milliseconds
-    double updateTimeMs;       // Time to update animation in milliseconds
-    double animationTimeMs;    // Current animation time in milliseconds
-    int currentFrame;          // Current frame index (0-based)
-    int totalFrames;           // Total frames in animation
-    double fps;                // Current frames per second
-    size_t peakMemoryBytes;    // Peak memory usage in bytes (if available)
-    int elementsRendered;      // Number of SVG elements rendered
-} SVGRenderStats;
-
-// SVG size information
+// Extended SVG size information (Linux SDK provides more detail than base SVGSize)
 typedef struct {
     int width;                 // Width in SVG units
     int height;                // Height in SVG units

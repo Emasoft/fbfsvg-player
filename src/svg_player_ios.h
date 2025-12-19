@@ -17,28 +17,15 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+// Shared type definitions (SVGPlaybackState, SVGRepeatMode, SVGRenderStats, etc.)
+#include "../shared/SVGTypes.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 // Opaque handle to SVG player instance
 typedef struct SVGPlayer* SVGPlayerHandle;
-
-// Animation playback state
-typedef enum {
-    SVGPlaybackState_Stopped,
-    SVGPlaybackState_Playing,
-    SVGPlaybackState_Paused
-} SVGPlaybackState;
-
-// Rendering statistics
-typedef struct {
-    double renderTimeMs;      // Time to render last frame
-    double animationTimeMs;   // Current animation time
-    int currentFrame;         // Current frame index
-    int totalFrames;          // Total frames in animation
-    double fps;               // Current frames per second
-} SVGRenderStats;
 
 // Create a new SVG player instance
 // Returns NULL on failure
