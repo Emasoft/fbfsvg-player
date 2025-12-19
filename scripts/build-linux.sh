@@ -298,6 +298,7 @@ fi
 # Directories
 SKIA_DIR="$PROJECT_ROOT/skia-build/src/skia"
 SRC_DIR="$PROJECT_ROOT/src"
+SHARED_DIR="$PROJECT_ROOT/shared"
 BUILD_DIR="$PROJECT_ROOT/build"
 
 # Create build directory
@@ -306,8 +307,8 @@ mkdir -p "$BUILD_DIR"
 # Output binary name
 TARGET="$BUILD_DIR/svg_player_animated"
 
-# Include paths
-INCLUDES="-I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules $(pkg-config --cflags sdl2) $ICU_CFLAGS"
+# Include paths (includes shared/ for SVGAnimationController)
+INCLUDES="-I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules -I$PROJECT_ROOT $(pkg-config --cflags sdl2) $ICU_CFLAGS"
 
 # Skia static libraries (order matters: dependents first, dependencies last)
 # SVG module and text support modules depend on Skia core
@@ -336,14 +337,17 @@ ICU_LINK_FLAGS="$ICU_LIBS"
 # Linux-specific libraries
 LINUX_LIBS="-lGL -lEGL -lX11 -lXext -lpthread -ldl -lm -lfontconfig -lfreetype"
 
-log_info "Compiling $SRC_DIR/svg_player_animated_linux.cpp..."
+log_info "Compiling SVG player with shared animation controller..."
+log_info "Sources: $SRC_DIR/svg_player_animated_linux.cpp"
+log_info "         $SHARED_DIR/SVGAnimationController.cpp"
 log_info "Compiler: $CXX"
 log_info "Target: $TARGET"
 
-# Build command - use Linux-specific source file
+# Build command - use Linux-specific source file with shared animation controller
 # Link order: source -> Skia modules -> Skia core -> Skia deps -> ICU -> system libs
 $CXX $CXXFLAGS $INCLUDES \
     "$SRC_DIR/svg_player_animated_linux.cpp" \
+    "$SHARED_DIR/SVGAnimationController.cpp" \
     -o "$TARGET" \
     $SKIA_LIBS \
     $ICU_LINK_FLAGS \

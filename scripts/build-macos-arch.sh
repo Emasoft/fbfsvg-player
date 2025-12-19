@@ -140,6 +140,7 @@ fi
 # Directories
 SKIA_DIR="$PROJECT_ROOT/skia-build/src/skia"
 SRC_DIR="$PROJECT_ROOT/src"
+SHARED_DIR="$PROJECT_ROOT/shared"
 BUILD_DIR="$PROJECT_ROOT/build"
 
 # Create build directory
@@ -148,8 +149,8 @@ mkdir -p "$BUILD_DIR"
 # Output binary name
 TARGET="$BUILD_DIR/svg_player_animated-macos-$arch"
 
-# Include paths
-INCLUDES="-I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules $(pkg-config --cflags sdl2)"
+# Include paths (includes shared/ for SVGAnimationController)
+INCLUDES="-I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules -I$PROJECT_ROOT $(pkg-config --cflags sdl2)"
 
 # Skia static libraries (order matters for linking)
 SKIA_LIBS="$SKIA_DIR/out/release-macos/libsvg.a \
@@ -182,12 +183,15 @@ FRAMEWORKS="-framework CoreGraphics \
             -framework OpenGL \
             -framework QuartzCore"
 
-log_info "Compiling $SRC_DIR/svg_player_animated.cpp..."
+log_info "Compiling SVG player with shared animation controller..."
+log_info "Sources: $SRC_DIR/svg_player_animated.cpp"
+log_info "         $SHARED_DIR/SVGAnimationController.cpp"
 log_info "Target: $TARGET"
 
-# Build command
+# Build command - includes shared animation controller
 $CXX $CXXFLAGS $ARCH_FLAG $INCLUDES \
     "$SRC_DIR/svg_player_animated.cpp" \
+    "$SHARED_DIR/SVGAnimationController.cpp" \
     -o "$TARGET" \
     $SKIA_LIBS \
     $LDFLAGS \

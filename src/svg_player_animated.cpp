@@ -34,6 +34,13 @@
 #include <atomic>
 #include <mutex>
 
+// Shared animation controller for cross-platform SMIL parsing and playback
+#include "../shared/SVGAnimationController.h"
+
+// Use shared types from the animation controller
+using svgplayer::SMILAnimation;
+using svgplayer::AnimationState;
+
 // macOS APIs for real-time thread/CPU monitoring
 #include <mach/mach.h>
 #include <mach/thread_info.h>
@@ -129,54 +136,8 @@ sk_sp<SkSVGDOM> makeSVGDOMWithFontSupport(SkStream& stream) {
         .make(stream);
 }
 
-// SMIL Animation data structure
-struct SMILAnimation {
-    std::string targetId;           // ID of element to animate
-    std::string attributeName;      // Attribute to animate (e.g., "xlink:href")
-    std::vector<std::string> values; // Discrete values to cycle through
-    double duration;                 // Duration in seconds
-    bool repeat;                     // Whether to repeat indefinitely
-    std::string calcMode;           // "discrete", "linear", etc.
-
-    // Get current value based on elapsed time
-    std::string getCurrentValue(double elapsedSeconds) const {
-        if (values.empty()) return "";
-        if (duration <= 0) return values[0];
-
-        // Handle repeat
-        double t = elapsedSeconds;
-        if (repeat) {
-            t = fmod(elapsedSeconds, duration);
-        } else if (elapsedSeconds >= duration) {
-            return values.back();
-        }
-
-        // For discrete calcMode, each value gets equal time
-        double valueTime = duration / values.size();
-        size_t index = static_cast<size_t>(t / valueTime);
-        if (index >= values.size()) index = values.size() - 1;
-
-        return values[index];
-    }
-
-    size_t getCurrentFrameIndex(double elapsedSeconds) const {
-        if (values.empty()) return 0;
-        if (duration <= 0) return 0;
-
-        double t = elapsedSeconds;
-        if (repeat) {
-            t = fmod(elapsedSeconds, duration);
-        } else if (elapsedSeconds >= duration) {
-            return values.size() - 1;
-        }
-
-        double valueTime = duration / values.size();
-        size_t index = static_cast<size_t>(t / valueTime);
-        if (index >= values.size()) index = values.size() - 1;
-
-        return index;
-    }
-};
+// SMILAnimation struct is now provided by shared/SVGAnimationController.h
+// Using declaration at top: using svgplayer::SMILAnimation;
 
 // Parallel rendering modes
 // NOTE: Tile-based modes (TileParallel, PreBufferTiled) have been removed because:
@@ -873,288 +834,58 @@ private:
     }
 };
 
-// Parse duration string (e.g., "1.5s", "500ms") to seconds
-double parseDuration(const std::string& durStr) {
-    if (durStr.empty()) return 0;
+// ============================================================================
+// Animation Parsing Functions - Now using shared SVGAnimationController
+// These wrapper functions maintain backward compatibility with existing code
+// while delegating to the shared implementation.
+// ============================================================================
 
-    double value = 0;
-    std::string unit;
-
-    size_t i = 0;
-    while (i < durStr.size() && (isdigit(durStr[i]) || durStr[i] == '.')) {
-        i++;
-    }
-
-    value = std::stod(durStr.substr(0, i));
-    unit = durStr.substr(i);
-
-    if (unit == "ms") {
-        return value / 1000.0;
-    } else if (unit == "s" || unit.empty()) {
-        return value;
-    } else if (unit == "min") {
-        return value * 60.0;
-    }
-
-    return value;
-}
-
-// Simple string search helper
-size_t findLastOf(const std::string& str, const std::string& pattern, size_t endPos) {
-    size_t lastPos = std::string::npos;
-    size_t pos = 0;
-    while ((pos = str.find(pattern, pos)) != std::string::npos && pos < endPos) {
-        lastPos = pos;
-        pos++;
-    }
-    return lastPos;
-}
-
-// Extract attribute value from a tag string
-std::string extractAttribute(const std::string& tag, const std::string& attrName) {
-    std::string searchStr = attrName + "=\"";
-    size_t start = tag.find(searchStr);
-    if (start == std::string::npos) return "";
-
-    start += searchStr.length();
-    size_t end = tag.find('"', start);
-    if (end == std::string::npos) return "";
-
-    return tag.substr(start, end - start);
-}
-
-// Convert <symbol> elements to <g> elements since Skia doesn't support <symbol>
-// This is necessary for seagull.fbf.svg and similar files that use <symbol>
-std::string convertSymbolsToGroups(const std::string& content) {
-    std::string result = content;
-
-    // Replace opening <symbol tags with <g
-    // Note: We need to be careful about preserving the id and other attributes
-    size_t pos = 0;
-    while ((pos = result.find("<symbol", pos)) != std::string::npos) {
-        // Find the end of the opening tag
-        size_t tagEnd = result.find(">", pos);
-        if (tagEnd == std::string::npos) break;
-
-        // Check if it's self-closing (unlikely for symbol)
-        bool selfClosing = (result[tagEnd - 1] == '/');
-
-        // Replace <symbol with <g
-        result.replace(pos, 7, "<g");
-
-        // If not self-closing, also need to replace </symbol> with </g>
-        if (!selfClosing) {
-            size_t closePos = result.find("</symbol>", pos);
-            if (closePos != std::string::npos) {
-                result.replace(closePos, 9, "</g>");
-            }
-        }
-
-        pos += 2; // Move past "<g"
-    }
-
-    return result;
-}
+// Global SVGAnimationController instance for parsing
+// The controller handles all SMIL parsing and preprocessing
+static svgplayer::SVGAnimationController g_animController;
 
 // Pre-process SVG to inject IDs into <use> elements that contain <animate> but lack IDs
 // Returns the modified SVG content and populates the provided map with synthetic IDs
+// NOTE: This wrapper uses the shared controller's preprocessSVG method
 std::string preprocessSVGForAnimation(const std::string& content,
                                        std::map<size_t, std::string>& syntheticIds) {
-    // First convert <symbol> to <g> since Skia doesn't support <symbol>
-    std::string result = convertSymbolsToGroups(content);
+    // Use the shared controller to load and preprocess the content
+    // The controller handles <symbol> to <g> conversion and synthetic ID injection
+    g_animController.loadFromContent(content);
 
-    int syntheticIdCounter = 0;
-    size_t searchPos = 0;
+    // Note: synthetic IDs are now managed internally by the controller
+    // The map parameter is kept for API compatibility but may not be populated
+    // in the same way as before (controller stores them internally)
 
-    // Find all <use elements that contain <animate> but don't have an id
-    while ((searchPos = result.find("<use", searchPos)) != std::string::npos) {
-        // Find the end of this <use> tag (could be > or /> or have children)
-        size_t tagEnd = result.find(">", searchPos);
-        if (tagEnd == std::string::npos) break;
-
-        std::string useTag = result.substr(searchPos, tagEnd - searchPos + 1);
-
-        // Check if this <use> already has an id
-        bool hasId = (useTag.find(" id=") != std::string::npos ||
-                      useTag.find("\tid=") != std::string::npos ||
-                      useTag.find("\nid=") != std::string::npos);
-
-        if (!hasId) {
-            // Check if there's an <animate> before the closing </use> or before next <use>
-            size_t closeUsePos = result.find("</use>", tagEnd);
-            size_t nextUsePos = result.find("<use", tagEnd + 1);
-
-            // Find <animate> between this <use> tag and its closing
-            size_t animatePos = result.find("<animate", tagEnd);
-
-            bool hasAnimateChild = false;
-            if (animatePos != std::string::npos) {
-                if (closeUsePos != std::string::npos && animatePos < closeUsePos) {
-                    hasAnimateChild = true;
-                } else if (closeUsePos == std::string::npos &&
-                           (nextUsePos == std::string::npos || animatePos < nextUsePos)) {
-                    // Self-closing animate inside use (unusual but possible)
-                    hasAnimateChild = true;
-                }
-            }
-
-            if (hasAnimateChild) {
-                // Inject a synthetic ID into this <use> element
-                std::string syntheticId = "_smil_target_" + std::to_string(syntheticIdCounter++);
-
-                // Insert id="syntheticId" after "<use"
-                size_t insertPos = searchPos + 4; // After "<use"
-                std::string toInsert = " id=\"" + syntheticId + "\"";
-                result.insert(insertPos, toInsert);
-
-                // Store the mapping (use original position as key for identification)
-                syntheticIds[searchPos] = syntheticId;
-
-                std::cout << "Injected synthetic ID: " << syntheticId << " into <use> element" << std::endl;
-
-                // Adjust searchPos to account for inserted text
-                searchPos = tagEnd + toInsert.length() + 1;
-                continue;
-            }
-        }
-
-        searchPos = tagEnd + 1;
-    }
-
-    return result;
+    return g_animController.getProcessedContent();
 }
 
 // Extract SMIL animations from SVG content string (after preprocessing)
+// NOTE: This wrapper uses the shared controller's parsed animations
 std::vector<SMILAnimation> extractAnimationsFromContent(const std::string& content) {
-    std::vector<SMILAnimation> animations;
+    // Load content into controller (also preprocesses it)
+    g_animController.loadFromContent(content);
 
-    // Find all <animate> tags
-    std::string animateStart = "<animate";
-    size_t pos = 0;
-
-    while ((pos = content.find(animateStart, pos)) != std::string::npos) {
-        // Find the end of this animate tag
-        size_t tagEnd = content.find(">", pos);
-        if (tagEnd == std::string::npos) break;
-
-        // Handle self-closing tags
-        if (content[tagEnd - 1] == '/') {
-            tagEnd--;
-        }
-
-        std::string animateTag = content.substr(pos, tagEnd - pos + 1);
-
-        SMILAnimation anim;
-
-        // Extract attributes using simple string search
-        anim.attributeName = extractAttribute(animateTag, "attributeName");
-
-        // Extract values and split by semicolon
-        std::string valuesStr = extractAttribute(animateTag, "values");
-        if (!valuesStr.empty()) {
-            std::stringstream ss(valuesStr);
-            std::string value;
-            while (std::getline(ss, value, ';')) {
-                // Trim leading and trailing whitespace (critical for panther_bird.fbf.svg)
-                size_t start = value.find_first_not_of(" \t\n\r");
-                size_t end = value.find_last_not_of(" \t\n\r");
-                if (start != std::string::npos && end != std::string::npos) {
-                    std::string trimmed = value.substr(start, end - start + 1);
-                    if (!trimmed.empty()) {
-                        anim.values.push_back(trimmed);
-                    }
-                }
-            }
-        }
-
-        // Extract duration
-        std::string durStr = extractAttribute(animateTag, "dur");
-        if (!durStr.empty()) {
-            anim.duration = parseDuration(durStr);
-        }
-
-        // Extract repeatCount
-        std::string repeatStr = extractAttribute(animateTag, "repeatCount");
-        if (!repeatStr.empty()) {
-            anim.repeat = (repeatStr == "indefinite");
-            if (!anim.repeat && !repeatStr.empty()) {
-                try {
-                    anim.repeat = (std::stod(repeatStr) > 1);
-                } catch (...) {}
-            }
-        }
-
-        // Extract calcMode
-        anim.calcMode = extractAttribute(animateTag, "calcMode");
-        if (anim.calcMode.empty()) {
-            anim.calcMode = "discrete"; // Default to discrete for frame-by-frame animation
-        }
-
-        // Find the IMMEDIATE parent element (prefer <use> over <g>)
-        // Look backwards from animate position to find the closest opening tag
-        std::string before = content.substr(0, pos);
-
-        // Find the closest <use> or other element containing this <animate>
-        size_t lastUsePos = findLastOf(before, "<use", before.length());
-
-        // Check if this <use> contains our animate (not closed before it)
-        if (lastUsePos != std::string::npos) {
-            // Make sure the <use> wasn't closed before our animate
-            size_t useCloseAfterUse = before.find("</use>", lastUsePos);
-            if (useCloseAfterUse != std::string::npos) {
-                // The <use> was closed, so animate is not inside it
-                lastUsePos = std::string::npos;
-            }
-        }
-
-        size_t parentPos = std::string::npos;
-
-        if (lastUsePos != std::string::npos) {
-            // Prefer <use> as the direct parent for xlink:href animations
-            parentPos = lastUsePos;
-        } else {
-            // Fall back to <g> if no <use> found
-            size_t lastGPos = findLastOf(before, "<g ", before.length());
-            parentPos = lastGPos;
-        }
-
-        if (parentPos != std::string::npos) {
-            // Find end of this tag
-            size_t parentTagEnd = before.find(">", parentPos);
-            if (parentTagEnd != std::string::npos) {
-                std::string parentTag = before.substr(parentPos, parentTagEnd - parentPos);
-                anim.targetId = extractAttribute(parentTag, "id");
-            }
-        }
-
-        if (!anim.values.empty() && !anim.targetId.empty()) {
-            animations.push_back(anim);
-            std::cout << "Found animation: target=" << anim.targetId
-                      << ", attr=" << anim.attributeName
-                      << ", frames=" << anim.values.size()
-                      << ", duration=" << std::fixed << std::setprecision(4) << anim.duration << "s"
-                      << ", mode=" << anim.calcMode << std::endl;
-        }
-
-        pos = tagEnd + 1;
-    }
-
-    return animations;
+    // Return the parsed animations from the controller
+    return g_animController.getAnimations();
 }
 
 // Original interface - reads file and extracts animations
+// NOTE: This wrapper uses the shared controller's loadFromFile method
 std::vector<SMILAnimation> extractAnimations(const std::string& svgPath) {
-    std::ifstream file(svgPath);
-    if (!file.is_open()) {
+    // Use the shared controller to load and parse the file
+    if (!g_animController.loadFromFile(svgPath)) {
         std::cerr << "Cannot open file for animation parsing: " << svgPath << std::endl;
         return {};
     }
 
-    std::stringstream buffer;
-    buffer << file.rdbuf();
-    std::string content = buffer.str();
+    return g_animController.getAnimations();
+}
 
-    return extractAnimationsFromContent(content);
+// Get the preprocessed SVG content from the controller
+// Call this after extractAnimations() or extractAnimationsFromContent()
+const std::string& getProcessedSVGContent() {
+    return g_animController.getProcessedContent();
 }
 
 // Rolling average calculator
