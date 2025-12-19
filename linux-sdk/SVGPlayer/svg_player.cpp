@@ -20,6 +20,13 @@
 #include <mutex>
 #include <vector>
 
+// Shared animation controller for cross-platform SMIL parsing and playback
+#include "shared/SVGAnimationController.h"
+
+// Use shared types from the animation controller
+using svgplayer::SMILAnimation;
+using svgplayer::AnimationState;
+
 // Skia core includes
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
@@ -79,51 +86,7 @@ static sk_sp<SkSVGDOM> makeSVGDOMWithFontSupport(SkStream& stream) {
         .make(stream);
 }
 
-// SMIL Animation data structure for frame-based animation
-struct SMILAnimation {
-    std::string targetId;
-    std::string attributeName;
-    std::vector<std::string> values;
-    double duration;
-    bool repeat;
-    std::string calcMode;
-
-    std::string getCurrentValue(double elapsedSeconds) const {
-        if (values.empty()) return "";
-        if (duration <= 0) return values[0];
-
-        double t = elapsedSeconds;
-        if (repeat) {
-            t = fmod(elapsedSeconds, duration);
-        } else if (elapsedSeconds >= duration) {
-            return values.back();
-        }
-
-        double valueTime = duration / values.size();
-        size_t index = static_cast<size_t>(t / valueTime);
-        if (index >= values.size()) index = values.size() - 1;
-
-        return values[index];
-    }
-
-    size_t getCurrentFrameIndex(double elapsedSeconds) const {
-        if (values.empty()) return 0;
-        if (duration <= 0) return 0;
-
-        double t = elapsedSeconds;
-        if (repeat) {
-            t = fmod(elapsedSeconds, duration);
-        } else if (elapsedSeconds >= duration) {
-            return values.size() - 1;
-        }
-
-        double valueTime = duration / values.size();
-        size_t index = static_cast<size_t>(t / valueTime);
-        if (index >= values.size()) index = values.size() - 1;
-
-        return index;
-    }
-};
+// SMILAnimation struct is now defined in shared/SVGAnimationController.h
 
 // Internal player structure with Skia SVG DOM
 struct SVGPlayer {
@@ -131,6 +94,9 @@ struct SVGPlayer {
     sk_sp<SkSVGDOM> svgDom;
     std::string svgContent;
     std::vector<SMILAnimation> animations;
+
+    // Shared animation controller for parsing
+    svgplayer::SVGAnimationController animController;
 
     // Loading state
     bool loaded;
@@ -207,115 +173,26 @@ static bool updateSVGForAnimation(SVGPlayer* player, double time);
 // SMIL Animation Parsing
 // ============================================================================
 
-// Parse SMIL animations from SVG content
+// Parse SMIL animations from SVG content using shared animation controller
 static bool parseSMILAnimations(SVGPlayer* player, const std::string& svgContent) {
     player->animations.clear();
     player->duration = 0.0;
 
-    // Find all <animate> elements
-    size_t pos = 0;
-    while ((pos = svgContent.find("<animate", pos)) != std::string::npos) {
-        SMILAnimation anim;
-
-        // Find the end of this animate element
-        size_t endPos = svgContent.find(">", pos);
-        if (endPos == std::string::npos) break;
-
-        std::string animTag = svgContent.substr(pos, endPos - pos + 1);
-
-        // Parse xlink:href attribute (target element)
-        size_t hrefPos = animTag.find("xlink:href=\"");
-        if (hrefPos != std::string::npos) {
-            size_t hrefStart = hrefPos + 12;
-            size_t hrefEnd = animTag.find("\"", hrefStart);
-            if (hrefEnd != std::string::npos) {
-                std::string href = animTag.substr(hrefStart, hrefEnd - hrefStart);
-                if (!href.empty() && href[0] == '#') {
-                    anim.targetId = href.substr(1);
-                }
-            }
-        }
-
-        // Parse attributeName
-        size_t attrPos = animTag.find("attributeName=\"");
-        if (attrPos != std::string::npos) {
-            size_t attrStart = attrPos + 15;
-            size_t attrEnd = animTag.find("\"", attrStart);
-            if (attrEnd != std::string::npos) {
-                anim.attributeName = animTag.substr(attrStart, attrEnd - attrStart);
-            }
-        }
-
-        // Parse values
-        size_t valuesPos = animTag.find("values=\"");
-        if (valuesPos != std::string::npos) {
-            size_t valuesStart = valuesPos + 8;
-            size_t valuesEnd = animTag.find("\"", valuesStart);
-            if (valuesEnd != std::string::npos) {
-                std::string valuesStr = animTag.substr(valuesStart, valuesEnd - valuesStart);
-                // Split by semicolon
-                std::istringstream iss(valuesStr);
-                std::string value;
-                while (std::getline(iss, value, ';')) {
-                    // Trim whitespace
-                    size_t start = value.find_first_not_of(" \t\n\r");
-                    size_t end = value.find_last_not_of(" \t\n\r");
-                    if (start != std::string::npos && end != std::string::npos) {
-                        anim.values.push_back(value.substr(start, end - start + 1));
-                    }
-                }
-            }
-        }
-
-        // Parse duration
-        size_t durPos = animTag.find("dur=\"");
-        if (durPos != std::string::npos) {
-            size_t durStart = durPos + 5;
-            size_t durEnd = animTag.find("\"", durStart);
-            if (durEnd != std::string::npos) {
-                std::string durStr = animTag.substr(durStart, durEnd - durStart);
-                // Parse duration string (e.g., "2s", "500ms")
-                if (durStr.back() == 's') {
-                    if (durStr.size() > 2 && durStr.substr(durStr.size() - 2) == "ms") {
-                        anim.duration = std::stod(durStr.substr(0, durStr.size() - 2)) / 1000.0;
-                    } else {
-                        anim.duration = std::stod(durStr.substr(0, durStr.size() - 1));
-                    }
-                }
-            }
-        }
-
-        // Parse repeatCount
-        size_t repeatPos = animTag.find("repeatCount=\"");
-        if (repeatPos != std::string::npos) {
-            size_t repeatStart = repeatPos + 13;
-            size_t repeatEnd = animTag.find("\"", repeatStart);
-            if (repeatEnd != std::string::npos) {
-                std::string repeatStr = animTag.substr(repeatStart, repeatEnd - repeatStart);
-                anim.repeat = (repeatStr == "indefinite");
-            }
-        }
-
-        // Parse calcMode
-        size_t calcPos = animTag.find("calcMode=\"");
-        if (calcPos != std::string::npos) {
-            size_t calcStart = calcPos + 10;
-            size_t calcEnd = animTag.find("\"", calcStart);
-            if (calcEnd != std::string::npos) {
-                anim.calcMode = animTag.substr(calcStart, calcEnd - calcStart);
-            }
-        }
-
-        // Add animation if valid
-        if (!anim.values.empty() && anim.duration > 0) {
-            player->animations.push_back(anim);
-            if (anim.duration > player->duration) {
-                player->duration = anim.duration;
-            }
-        }
-
-        pos = endPos + 1;
+    // Use the shared animation controller to parse
+    if (!player->animController.loadFromContent(svgContent)) {
+        return false;
     }
+
+    // Get the preprocessed content (with <symbol> to <g> conversion and synthetic IDs)
+    player->svgContent = player->animController.getProcessedContent();
+
+    // Copy animations from controller
+    player->animations = player->animController.getAnimations();
+
+    // Set duration from controller
+    player->duration = player->animController.getDuration();
+    player->totalFrames = player->animController.getTotalFrames();
+    player->frameRate = player->animController.getFrameRate();
 
     return !player->animations.empty();
 }

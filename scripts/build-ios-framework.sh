@@ -39,9 +39,10 @@ FRAMEWORK_BUILD_DIR="$BUILD_DIR/framework-build"
 IOS_SDK_DIR="$PROJECT_ROOT/ios-sdk/SVGPlayer"
 SKIA_DIR="$PROJECT_ROOT/skia-build/src/skia"
 
-# Source files
+# Source files (includes shared animation controller)
 CPP_SOURCES=(
     "$PROJECT_ROOT/src/svg_player_ios.cpp"
+    "$PROJECT_ROOT/shared/SVGAnimationController.cpp"
 )
 
 OBJC_SOURCES=(
@@ -150,7 +151,7 @@ compile_sources() {
         fi
     fi
 
-    # Common compiler flags
+    # Common compiler flags (includes project root for shared/ directory)
     local common_flags=(
         -std=c++17
         -O2
@@ -162,6 +163,7 @@ compile_sources() {
         -fPIC
         -I"$SKIA_DIR"
         -I"$SKIA_DIR/include"
+        -I"$PROJECT_ROOT"
         -I"$PROJECT_ROOT/src"
         -I"$IOS_SDK_DIR"
     )

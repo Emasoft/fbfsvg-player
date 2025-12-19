@@ -183,12 +183,14 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SDK_DIR="$PROJECT_ROOT/linux-sdk/SVGPlayer"
+SHARED_DIR="$PROJECT_ROOT/shared"
 BUILD_DIR="$PROJECT_ROOT/build/linux"
 SKIA_DIR="$PROJECT_ROOT/skia-build/src/skia"
 SKIA_OUT="$SKIA_DIR/out/release-linux"
 
 echo "Project root: $PROJECT_ROOT"
 echo "SDK source:   $SDK_DIR"
+echo "Shared src:   $SHARED_DIR"
 echo "Build output: $BUILD_DIR"
 echo "Skia path:    $SKIA_OUT"
 echo ""
@@ -198,6 +200,19 @@ if [ ! -d "$SDK_DIR" ]; then
     echo "Error: SDK source directory not found: $SDK_DIR"
     exit 1
 fi
+
+# Check if shared source exists
+if [ ! -d "$SHARED_DIR" ]; then
+    echo "Error: Shared source directory not found: $SHARED_DIR"
+    exit 1
+fi
+
+if [ ! -f "$SHARED_DIR/SVGAnimationController.cpp" ]; then
+    echo "Error: Shared animation controller not found: $SHARED_DIR/SVGAnimationController.cpp"
+    exit 1
+fi
+
+echo "Shared animation controller found"
 
 # Check if Skia is built
 if [ ! -d "$SKIA_OUT" ]; then
@@ -256,8 +271,8 @@ else
     echo "Building RELEASE version"
 fi
 
-# Include paths
-INCLUDES="-I$SDK_DIR -I$SKIA_DIR -I$SKIA_DIR/include"
+# Include paths (includes project root for shared/ directory)
+INCLUDES="-I$SDK_DIR -I$PROJECT_ROOT -I$SKIA_DIR -I$SKIA_DIR/include"
 
 # Link flags for shared library
 LDFLAGS="-shared -Wl,--version-script=$SDK_DIR/libsvgplayer.map"
@@ -322,23 +337,35 @@ if pkg-config --exists fontconfig 2>/dev/null; then
 fi
 
 echo ""
-echo "Compiling SVGPlayer..."
+echo "Compiling SVGPlayer with shared animation controller..."
 echo "Compiler: $CXX"
 echo "Flags:    $CXXFLAGS"
+echo "Sources:  $SDK_DIR/svg_player.cpp"
+echo "          $SHARED_DIR/SVGAnimationController.cpp"
 echo ""
 
-# Compile source file to object
+# Compile SDK source file to object
+echo "Compiling svg_player.cpp..."
 $CXX $CXXFLAGS $INCLUDES -c "$SDK_DIR/svg_player.cpp" -o "$BUILD_DIR/svg_player.o"
 
 if [ $? -ne 0 ]; then
-    echo "Compilation failed!"
+    echo "Compilation of svg_player.cpp failed!"
+    exit 1
+fi
+
+# Compile shared animation controller to object
+echo "Compiling SVGAnimationController.cpp..."
+$CXX $CXXFLAGS $INCLUDES -c "$SHARED_DIR/SVGAnimationController.cpp" -o "$BUILD_DIR/SVGAnimationController.o"
+
+if [ $? -ne 0 ]; then
+    echo "Compilation of SVGAnimationController.cpp failed!"
     exit 1
 fi
 
 echo "Linking shared library..."
 
-# Link shared library
-$CXX $LDFLAGS -o "$BUILD_DIR/libsvgplayer.so.1.0.0" "$BUILD_DIR/svg_player.o" $LIBS
+# Link shared library with both object files
+$CXX $LDFLAGS -o "$BUILD_DIR/libsvgplayer.so.1.0.0" "$BUILD_DIR/svg_player.o" "$BUILD_DIR/SVGAnimationController.o" $LIBS
 
 if [ $? -ne 0 ]; then
     echo "Linking failed!"

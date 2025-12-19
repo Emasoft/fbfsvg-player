@@ -154,6 +154,7 @@ build_ios_arch() {
     # Directories
     SKIA_DIR="$PROJECT_ROOT/skia-build/src/skia"
     SRC_DIR="$PROJECT_ROOT/src"
+    SHARED_DIR="$PROJECT_ROOT/shared"
     BUILD_DIR="$PROJECT_ROOT/build/ios-$target-$arch"
 
     mkdir -p "$BUILD_DIR"
@@ -176,14 +177,17 @@ build_ios_arch() {
               -fvisibility=hidden \
               -DIOS_BUILD"
 
-    # Include paths
-    INCLUDES="-I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules"
+    # Include paths (includes project root for shared/ directory)
+    INCLUDES="-I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules -I$PROJECT_ROOT"
 
     # Output object files (we'll create a static library)
     OBJ_FILE="$BUILD_DIR/svg_player_ios.o"
+    SHARED_OBJ_FILE="$BUILD_DIR/SVGAnimationController.o"
     LIB_FILE="$BUILD_DIR/libsvg_player.a"
 
     log_info "Compiling for $PLATFORM ($arch)..."
+    log_info "Sources: $SRC_DIR/svg_player_ios.cpp"
+    log_info "         $SHARED_DIR/SVGAnimationController.cpp"
 
     # Compile the iOS-specific source file
     # This file provides a C-compatible API for UIKit integration
@@ -193,9 +197,15 @@ build_ios_arch() {
         -o "$OBJ_FILE" \
         -DIOS_BUILD
 
-    # Create static library
-    ar rcs "$LIB_FILE" "$OBJ_FILE"
-    rm -f "$OBJ_FILE"
+    # Compile the shared animation controller
+    $CXX $CXXFLAGS $INCLUDES \
+        -c "$SHARED_DIR/SVGAnimationController.cpp" \
+        -o "$SHARED_OBJ_FILE" \
+        -DIOS_BUILD
+
+    # Create static library with both object files
+    ar rcs "$LIB_FILE" "$OBJ_FILE" "$SHARED_OBJ_FILE"
+    rm -f "$OBJ_FILE" "$SHARED_OBJ_FILE"
 
     # Copy header file for integration
     cp "$SRC_DIR/svg_player_ios.h" "$BUILD_DIR/"
