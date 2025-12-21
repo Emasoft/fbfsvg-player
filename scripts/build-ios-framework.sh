@@ -25,10 +25,11 @@ YELLOW='\033[0;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_step() { echo -e "${CYAN}[STEP]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+# Log to stderr so output doesn't get captured by $() in function calls
+log_info() { echo -e "${GREEN}[INFO]${NC} $1" >&2; }
+log_step() { echo -e "${CYAN}[STEP]${NC} $1" >&2; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1" >&2; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
 # Configuration
 SDK_NAME="SVGPlayer"

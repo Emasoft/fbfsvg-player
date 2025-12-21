@@ -197,7 +197,7 @@ static bool updateSVGForAnimation(SVGPlayer* player, double time) {
 
 // Public API Implementation
 
-SVGPlayerHandle SVGPlayer_Create(void) {
+SVGPlayerRef SVGPlayer_Create(void) {
     try {
         return new SVGPlayer();
     } catch (...) {
@@ -205,13 +205,13 @@ SVGPlayerHandle SVGPlayer_Create(void) {
     }
 }
 
-void SVGPlayer_Destroy(SVGPlayerHandle player) {
+void SVGPlayer_Destroy(SVGPlayerRef player) {
     if (player) {
         delete player;
     }
 }
 
-bool SVGPlayer_LoadSVG(SVGPlayerHandle player, const char* filepath) {
+bool SVGPlayer_LoadSVG(SVGPlayerRef player, const char* filepath) {
     if (!player || !filepath) {
         if (player) player->lastError = "Invalid parameters";
         return false;
@@ -234,7 +234,7 @@ bool SVGPlayer_LoadSVG(SVGPlayerHandle player, const char* filepath) {
     return SVGPlayer_LoadSVGData(player, player->svgContent.c_str(), player->svgContent.size());
 }
 
-bool SVGPlayer_LoadSVGData(SVGPlayerHandle player, const void* data, size_t length) {
+bool SVGPlayer_LoadSVGData(SVGPlayerRef player, const void* data, size_t length) {
     if (!player || !data || length == 0) {
         if (player) player->lastError = "Invalid parameters";
         return false;
@@ -282,7 +282,7 @@ bool SVGPlayer_LoadSVGData(SVGPlayerHandle player, const void* data, size_t leng
     return true;
 }
 
-bool SVGPlayer_GetSize(SVGPlayerHandle player, int* width, int* height) {
+bool SVGPlayer_GetSize(SVGPlayerRef player, int* width, int* height) {
     if (!player || !player->svgDom) {
         return false;
     }
@@ -292,7 +292,7 @@ bool SVGPlayer_GetSize(SVGPlayerHandle player, int* width, int* height) {
     return true;
 }
 
-void SVGPlayer_SetPlaybackState(SVGPlayerHandle player, SVGPlaybackState state) {
+void SVGPlayer_SetPlaybackState(SVGPlayerRef player, SVGPlaybackState state) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->renderMutex);
@@ -303,18 +303,18 @@ void SVGPlayer_SetPlaybackState(SVGPlayerHandle player, SVGPlaybackState state) 
     }
 }
 
-SVGPlaybackState SVGPlayer_GetPlaybackState(SVGPlayerHandle player) {
+SVGPlaybackState SVGPlayer_GetPlaybackState(SVGPlayerRef player) {
     if (!player) return SVGPlaybackState_Stopped;
     return player->playbackState;
 }
 
-void SVGPlayer_Update(SVGPlayerHandle player, double deltaTime) {
-    if (!player) return;
+bool SVGPlayer_Update(SVGPlayerRef player, double deltaTime) {
+    if (!player) return false;
 
     std::lock_guard<std::mutex> lock(player->renderMutex);
 
     if (player->playbackState != SVGPlaybackState_Playing) {
-        return;
+        return true;  // Not an error, just not playing
     }
 
     player->animationTime += deltaTime;
@@ -329,9 +329,10 @@ void SVGPlayer_Update(SVGPlayerHandle player, double deltaTime) {
 
     // Update animation
     updateSVGForAnimation(player, player->animationTime);
+    return true;
 }
 
-void SVGPlayer_SeekTo(SVGPlayerHandle player, double timeSeconds) {
+void SVGPlayer_SeekTo(SVGPlayerRef player, double timeSeconds) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->renderMutex);
@@ -348,7 +349,7 @@ void SVGPlayer_SeekTo(SVGPlayerHandle player, double timeSeconds) {
     updateSVGForAnimation(player, player->animationTime);
 }
 
-bool SVGPlayer_Render(SVGPlayerHandle player, void* pixelBuffer, int width, int height, float scale) {
+bool SVGPlayer_Render(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale) {
     if (!player || !pixelBuffer || width <= 0 || height <= 0) {
         if (player) player->lastError = "Invalid render parameters";
         return false;
@@ -433,29 +434,29 @@ bool SVGPlayer_Render(SVGPlayerHandle player, void* pixelBuffer, int width, int 
     return true;
 }
 
-SVGRenderStats SVGPlayer_GetStats(SVGPlayerHandle player) {
+SVGRenderStats SVGPlayer_GetStats(SVGPlayerRef player) {
     if (!player) {
         return {};
     }
     return player->stats;
 }
 
-double SVGPlayer_GetDuration(SVGPlayerHandle player) {
+double SVGPlayer_GetDuration(SVGPlayerRef player) {
     if (!player) return 0.0;
     return player->animationDuration;
 }
 
-bool SVGPlayer_IsLooping(SVGPlayerHandle player) {
+bool SVGPlayer_IsLooping(SVGPlayerRef player) {
     if (!player) return false;
     return player->looping;
 }
 
-void SVGPlayer_SetLooping(SVGPlayerHandle player, bool looping) {
+void SVGPlayer_SetLooping(SVGPlayerRef player, bool looping) {
     if (!player) return;
     player->looping = looping;
 }
 
-const char* SVGPlayer_GetLastError(SVGPlayerHandle player) {
+const char* SVGPlayer_GetLastError(SVGPlayerRef player) {
     if (!player) return "Invalid player handle";
     return player->lastError.c_str();
 }

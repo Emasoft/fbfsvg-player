@@ -179,6 +179,9 @@ echo "SVGPlayer SDK for Linux - Build Script"
 echo "=============================================="
 echo ""
 
+# Detect architecture early so we can select the correct Skia build
+detect_architecture
+
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -186,7 +189,8 @@ SDK_DIR="$PROJECT_ROOT/linux-sdk/SVGPlayer"
 SHARED_DIR="$PROJECT_ROOT/shared"
 BUILD_DIR="$PROJECT_ROOT/build/linux"
 SKIA_DIR="$PROJECT_ROOT/skia-build/src/skia"
-SKIA_OUT="$SKIA_DIR/out/release-linux"
+# Select architecture-specific Skia build (release-linux-arm64 or release-linux-x64)
+SKIA_OUT="$SKIA_DIR/out/release-linux-${target_cpu}"
 
 echo "Project root: $PROJECT_ROOT"
 echo "SDK source:   $SDK_DIR"
@@ -253,8 +257,7 @@ echo ""
 echo "All required dependencies found. Proceeding with build..."
 echo ""
 
-# Detect architecture and compiler
-detect_architecture
+# Get compiler (architecture already detected early)
 get_compiler
 
 # Create build directory

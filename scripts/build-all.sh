@@ -198,17 +198,25 @@ fi
 if [ "$SKIP_LINUX" = false ]; then
     section_header "Building Linux SDK (via Docker)"
 
-    # Check if Docker container is running
-    if docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" ps --status running 2>/dev/null | grep -q "dev"; then
-        log_info "Docker container already running"
+    # Detect host architecture for selecting the right container
+    HOST_ARCH=$(uname -m)
+    if [ "$HOST_ARCH" = "arm64" ] || [ "$HOST_ARCH" = "aarch64" ]; then
+        DOCKER_SERVICE="dev-arm64"
     else
-        log_info "Starting Docker container..."
-        docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" up -d
+        DOCKER_SERVICE="dev-x64"
+    fi
+
+    # Check if Docker container is running
+    if docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" ps --status running 2>/dev/null | grep -q "$DOCKER_SERVICE"; then
+        log_info "Docker container ($DOCKER_SERVICE) already running"
+    else
+        log_info "Starting Docker container ($DOCKER_SERVICE)..."
+        docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" up -d "$DOCKER_SERVICE"
         sleep 2
     fi
 
     # Run Linux SDK build inside container
-    if docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" exec -T dev bash -c "cd /workspace && ./scripts/build-linux-sdk.sh -y"; then
+    if docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" exec -T "$DOCKER_SERVICE" bash -c "cd /workspace && ./scripts/build-linux-sdk.sh -y"; then
         BUILD_RESULTS["Linux"]="SUCCESS"
         log_success "Linux SDK build completed"
     else
@@ -277,7 +285,8 @@ if [ "$SKIP_TESTS" = false ]; then
     [ "$SKIP_LINUX" = true ] && TEST_ARGS="$TEST_ARGS --skip-linux"
 
     if [ -f "$SCRIPT_DIR/test-all.sh" ]; then
-        if "$SCRIPT_DIR/test-all.sh" $TEST_ARGS; then
+        # Explicitly use bash for associative array support
+        if bash "$SCRIPT_DIR/test-all.sh" $TEST_ARGS; then
             log_success "All tests passed!"
         else
             log_error "Some tests failed"

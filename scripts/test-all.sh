@@ -285,17 +285,25 @@ if [ "$TEST_LINUX" = true ]; then
             log_warning "Docker daemon not running - skipping Linux tests"
             record_result "linux_docker" false
         else
-            # Check if container is running
-            if docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" ps --status running 2>/dev/null | grep -q "dev"; then
-                log_info "Docker container is running"
+            # Detect host architecture for selecting the right container
+            HOST_ARCH=$(uname -m)
+            if [ "$HOST_ARCH" = "arm64" ] || [ "$HOST_ARCH" = "aarch64" ]; then
+                DOCKER_SERVICE="dev-arm64"
             else
-                log_info "Starting Docker container..."
-                docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" up -d
+                DOCKER_SERVICE="dev-x64"
+            fi
+
+            # Check if container is running
+            if docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" ps --status running 2>/dev/null | grep -q "$DOCKER_SERVICE"; then
+                log_info "Docker container ($DOCKER_SERVICE) is running"
+            else
+                log_info "Starting Docker container ($DOCKER_SERVICE)..."
+                docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" up -d "$DOCKER_SERVICE"
                 sleep 2
             fi
 
             # Run tests inside container
-            if docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" exec -T dev bash -c "
+            if docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" exec -T "$DOCKER_SERVICE" bash -c "
                 cd /workspace
                 if [ -f build/linux/libsvgplayer.so ]; then
                     file build/linux/libsvgplayer.so | grep -q 'ELF' && \
