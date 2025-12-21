@@ -1,15 +1,29 @@
 # docker-compose.yml - SVGPlayer Linux Development Environment
 #
-# Usage:
-#   docker-compose up -d      # Start container in background
-#   docker-compose exec dev bash  # Enter shell
-#   docker-compose down       # Stop and remove container
+# Multi-architecture support for ARM64 and x86_64 builds
 #
-# For persistent development:
-#   docker-compose up -d && docker-compose exec dev bash
+# Usage:
+#   ARM64 (native on Apple Silicon):
+#     docker-compose up -d dev-arm64
+#     docker-compose exec dev-arm64 bash
+#
+#   x86_64 (emulated via QEMU on Apple Silicon):
+#     docker-compose up -d dev-x64
+#     docker-compose exec dev-x64 bash
+#
+#   Build both architectures:
+#     docker-compose up -d
+#     docker-compose exec dev-arm64 ./scripts/build-linux.sh
+#     docker-compose exec dev-x64 ./scripts/build-linux.sh
+#
+#   Stop all:
+#     docker-compose down
 
 services:
-  dev:
+  # =============================================================================
+  # ARM64 Development Container (native on Apple Silicon)
+  # =============================================================================
+  dev-arm64:
     build:
       context: .
       dockerfile: Dockerfile
@@ -17,40 +31,30 @@ services:
         USERNAME: developer
         USER_UID: 1000
         USER_GID: 1000
-    image: svgplayer-linux-dev:latest
-    container_name: svgplayer-dev
-    hostname: svgplayer-dev
+    platform: linux/arm64
+    image: svgplayer-linux-dev:arm64
+    container_name: svgplayer-dev-arm64
+    hostname: svgplayer-dev-arm64
 
-    # Mount the project directory
     volumes:
       - ..:/workspace:cached
-      # Persist git configuration
       - ~/.gitconfig:/home/developer/.gitconfig:ro
-      # Persist bash history
-      - svgplayer-bash-history:/home/developer/.bash_history_dir
+      - svgplayer-bash-history-arm64:/home/developer/.bash_history_dir
 
-    # Keep container running
     stdin_open: true
     tty: true
-
-    # Increase shared memory for large parallel builds
     shm_size: '2gb'
-
-    # Working directory
     working_dir: /workspace
 
-    # Environment variables
     environment:
       - TERM=xterm-256color
       - CC=clang
       - CXX=clang++
-      # Skia build flags
       - SKIA_BUILD_DIR=/workspace/skia-build
-      # depot_tools path
+      - SKIA_OUT_DIR=release-linux-arm64
+      - TARGET_ARCH=arm64
       - PATH=/workspace/skia-build/depot_tools:/workspace/skia-build/src/skia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-    # Resource limits (adjust as needed)
-    # Skia build requires significant memory for parallel compilation
     deploy:
       resources:
         limits:
@@ -60,10 +64,67 @@ services:
           cpus: '4'
           memory: 6G
 
-    # Restart policy for persistent development
     restart: unless-stopped
 
-# Named volumes for persistence
+  # =============================================================================
+  # x86_64 Development Container (QEMU emulation on Apple Silicon)
+  # Note: Build times will be slower due to emulation
+  # =============================================================================
+  dev-x64:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: developer
+        USER_UID: 1000
+        USER_GID: 1000
+    platform: linux/amd64
+    image: svgplayer-linux-dev:x64
+    container_name: svgplayer-dev-x64
+    hostname: svgplayer-dev-x64
+
+    volumes:
+      - ..:/workspace:cached
+      - ~/.gitconfig:/home/developer/.gitconfig:ro
+      - svgplayer-bash-history-x64:/home/developer/.bash_history_dir
+
+    stdin_open: true
+    tty: true
+    shm_size: '2gb'
+    working_dir: /workspace
+
+    environment:
+      - TERM=xterm-256color
+      - CC=clang
+      - CXX=clang++
+      - SKIA_BUILD_DIR=/workspace/skia-build
+      - SKIA_OUT_DIR=release-linux-x64
+      - TARGET_ARCH=x64
+      - PATH=/workspace/skia-build/depot_tools:/workspace/skia-build/src/skia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 12G
+        reservations:
+          cpus: '4'
+          memory: 6G
+
+    restart: unless-stopped
+
+  # =============================================================================
+  # Legacy alias for backward compatibility (points to ARM64)
+  # =============================================================================
+  dev:
+    extends:
+      service: dev-arm64
+    container_name: svgplayer-dev
+    hostname: svgplayer-dev
+
+# Named volumes for persistence (separate per architecture)
 volumes:
-  svgplayer-bash-history:
+  svgplayer-bash-history-arm64:
+    driver: local
+  svgplayer-bash-history-x64:
     driver: local

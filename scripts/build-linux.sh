@@ -304,8 +304,8 @@ BUILD_DIR="$PROJECT_ROOT/build"
 # Create build directory
 mkdir -p "$BUILD_DIR"
 
-# Output binary name
-TARGET="$BUILD_DIR/svg_player_animated"
+# Output binary name (includes architecture suffix for multi-arch support)
+TARGET="$BUILD_DIR/svg_player_animated_linux_$target_cpu"
 
 # Include paths (includes shared/ for SVGAnimationController)
 INCLUDES="-I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules -I$PROJECT_ROOT $(pkg-config --cflags sdl2) $ICU_CFLAGS"

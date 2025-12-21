@@ -30,7 +30,8 @@
     #define CREATE_FONT_MANAGER() SkFontMgr_New_DirectWrite()
 #else
     #include "include/ports/SkFontMgr_fontconfig.h"
-    #define CREATE_FONT_MANAGER() SkFontMgr_New_FontConfig(nullptr)
+    #include "include/ports/SkFontScanner_FreeType.h"
+    #define CREATE_FONT_MANAGER() SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType())
 #endif
 
 #include <mutex>
@@ -225,7 +226,7 @@ bool parseSVG(SVGPlayer* player, const char* data, size_t length) {
     player->svgDom->setContainerSize(containerSize);
 
     // Initialize animation controller with SVG content
-    bool hasAnimations = player->controller->loadFromString(player->originalSvgData);
+    bool hasAnimations = player->controller->loadFromContent(player->originalSvgData);
 
     // Reset playback state
     player->completedLoops = 0;
@@ -243,7 +244,7 @@ void updateSVGForCurrentTime(SVGPlayer* player) {
     if (!player || !player->controller) return;
 
     // Get current animated SVG content
-    std::string animatedSvg = player->controller->getCurrentSVGContent();
+    std::string animatedSvg = player->controller->getProcessedContent();
     if (animatedSvg.empty()) {
         animatedSvg = player->originalSvgData;
     }
@@ -937,8 +938,8 @@ bool SVGPlayer_Render(SVGPlayerRef player,
         // This would draw FPS, frame info, timing, memory usage, etc.
     }
 
-    // Flush to ensure all drawing is complete
-    surface->flushAndSubmit();
+    // Note: No flush needed for raster surfaces backed by WrapPixels
+    // The pixels are written directly to the buffer during render()
 
     // Update statistics
     auto renderEnd = std::chrono::high_resolution_clock::now();
