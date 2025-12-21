@@ -16,26 +16,39 @@ Multi-platform animated SVG player with SMIL animation support built using Skia.
 
 ```
 SKIA-BUILD-ARM64/
-├── src/                         # Core source code (shared logic)
+├── shared/                      # UNIFIED CROSS-PLATFORM API (single source of truth)
+│   ├── svg_player_api.h         # Master C API header - all platforms use this
+│   ├── svg_player_api.cpp       # Platform-independent implementation
+│   ├── SVGAnimationController.h/.cpp # Core animation logic (C++17)
+│   ├── SVGTypes.h               # Shared type definitions
+│   └── platform.h               # Platform abstractions
+│
+├── src/                         # Desktop players (source)
 │   ├── svg_player_animated.cpp  # macOS desktop player
-│   ├── svg_player_animated_linux.cpp  # Linux desktop player
-│   ├── svg_player_ios.cpp       # iOS C API implementation
-│   ├── svg_player_ios.h         # iOS C API header (SHARED)
-│   └── platform.h               # Cross-platform abstractions
+│   ├── svg_player_animated_linux.cpp # Linux desktop player
+│   └── svg_player_ios.h         # iOS header (forwards to shared/)
 │
 ├── ios-sdk/SVGPlayer/           # iOS SDK components
 │   ├── SVGPlayer.h              # Umbrella header
 │   ├── SVGPlayerView.h/.mm      # @IBDesignable UIView
-│   ├── SVGPlayerController.h/.mm # Obj-C wrapper around C API
+│   ├── SVGPlayerController.h/.mm # Obj-C wrapper (uses shared/svg_player_api.h)
 │   ├── SVGPlayerMetalRenderer.h/.mm # Metal rendering
 │   ├── module.modulemap         # Swift module map
 │   └── Info.plist               # Framework info
 │
+├── macos-sdk/SVGPlayer/         # macOS SDK components
+│   ├── svg_player.h             # Forwards to shared/svg_player_api.h
+│   ├── SVGPlayerController.h/.mm # Obj-C wrapper for AppKit
+│   └── (future: SVGPlayerView)  # NSView wrapper
+│
 ├── linux-sdk/SVGPlayer/         # Linux SDK components
-│   ├── svg_player.h             # Public C API header
-│   ├── svg_player.cpp           # Implementation
+│   ├── svg_player.h             # Forwards to shared/svg_player_api.h
+│   ├── svg_player.cpp           # Implementation (includes shared/svg_player_api.cpp)
 │   ├── libsvgplayer.map         # Symbol version script
 │   └── examples/                # Usage examples
+│
+├── windows-sdk/SVGPlayer/       # Windows SDK (stub only)
+│   └── svg_player.h             # Stub header (forwards to shared/svg_player_api.h)
 │
 ├── docker/                      # Linux development environment
 │   ├── Dockerfile               # Ubuntu 24.04 with all deps
@@ -165,29 +178,32 @@ sudo chown -R developer:developer /workspace
 
 ## Shared Components Architecture
 
-### Core C API (Foundation)
+### Unified C API (Single Source of Truth)
 
-The `svg_player_ios.h` header defines the core C API used by all platforms:
+The `shared/svg_player_api.h` header is the **single source of truth** for all platforms:
 
 ```
-src/svg_player_ios.h  (MASTER - defines the C API contract)
+shared/svg_player_api.h  (MASTER - the only API definition)
        │
-       ├──► ios-sdk/SVGPlayer/  (Wraps C API in Obj-C/Swift)
-       │    └── SVGPlayerController wraps SVGPlayer_* functions
-       │
-       └──► linux-sdk/SVGPlayer/  (Implements same C API)
-            └── svg_player.h mirrors the API contract
+       ├──► ios-sdk/      (SVGPlayerController wraps C API)
+       ├──► macos-sdk/    (SVGPlayerController wraps C API)
+       ├──► linux-sdk/    (svg_player.h forwards to shared/)
+       └──► windows-sdk/  (svg_player.h forwards to shared/ - stub)
 ```
 
-### API Synchronization Rules
+All platform SDK headers simply `#include "../../shared/svg_player_api.h"`.
 
-**CRITICAL**: The following files must stay synchronized:
+### API Modification Rules
+
+**CRITICAL**: Only modify `shared/svg_player_api.h` when changing the public API.
+Platform SDK headers are thin forwarders and should rarely need changes.
 
 | File | Role | When to Update |
 |------|------|----------------|
-| `src/svg_player_ios.h` | Master C API definition | When adding/changing API |
-| `linux-sdk/SVGPlayer/svg_player.h` | Linux API header | Mirror changes from master |
-| `ios-sdk/SVGPlayer/SVGPlayerController.h` | iOS Obj-C wrapper | Update to expose new APIs |
+| `shared/svg_player_api.h` | Master C API definition | When adding/changing API |
+| `shared/svg_player_api.cpp` | Implementation | When adding/changing API |
+| `*-sdk/SVGPlayer/svg_player.h` | Platform forwarder | Rarely (platform extensions only) |
+| `*-sdk/SVGPlayer/SVGPlayerController.h` | Obj-C wrapper | To expose new APIs to Obj-C/Swift |
 
 ### Shared Type Definitions
 
@@ -224,6 +240,30 @@ typedef struct {
 
 ---
 
+## Development Phase Policy
+
+**CRITICAL - NO BACKWARD COMPATIBILITY CODE**
+
+This project is in **pre-alpha development**. The following rules apply:
+
+1. **NO backward compatibility aliases** - No `typedef OldName NewName` for legacy support
+2. **NO fallback code** - Code either works as intended or fails immediately
+3. **NO legacy function wrappers** - Only one version of each function exists
+4. **NO deprecated APIs** - Remove old APIs entirely when changing them
+5. **NO commented-out legacy code** - Delete, don't comment out
+
+**Rationale**: No public release has been made. Backward compatibility adds complexity
+without benefit. When the API is finalized for 1.0, backward compatibility may be added.
+
+**If you need to change an API**:
+1. Update `shared/svg_player_api.h` directly
+2. Update implementations in `shared/svg_player_api.cpp`
+3. Update all callers (iOS/macOS/Linux SDK wrappers)
+4. Test on all platforms
+5. Commit as a single atomic change
+
+---
+
 ## Safe Development Workflow
 
 ### Before Making Changes
@@ -250,54 +290,55 @@ typedef struct {
 
 ### Making API Changes
 
-When modifying the public API:
+When modifying the public API (unified API only):
 
-1. **Update master header first**
+1. **Update master header**
    ```bash
-   # Edit src/svg_player_ios.h
+   # Edit shared/svg_player_api.h
    ```
 
-2. **Update Linux SDK header to match**
+2. **Update master implementation**
    ```bash
-   # Edit linux-sdk/SVGPlayer/svg_player.h
-   # Ensure function signatures match exactly
+   # Edit shared/svg_player_api.cpp
    ```
 
-3. **Update iOS wrapper if needed**
+3. **Update Obj-C wrappers if exposing to Swift/Obj-C**
    ```bash
    # Edit ios-sdk/SVGPlayer/SVGPlayerController.h/.mm
+   # Edit macos-sdk/SVGPlayer/SVGPlayerController.h/.mm
    ```
 
-4. **Update implementations**
+4. **Test on all platforms**
    ```bash
-   # Edit src/svg_player_ios.cpp (iOS)
-   # Edit linux-sdk/SVGPlayer/svg_player.cpp (Linux)
-   ```
+   # Build and test all platforms with single command:
+   ./scripts/build-all.sh
 
-5. **Test on all platforms**
-   ```bash
-   # macOS/iOS
-   make ios-framework
-
-   # Linux (via Docker)
-   cd docker && docker-compose exec dev bash -c 'cd /workspace && ./scripts/build-linux-sdk.sh'
+   # Or individually:
+   make macos              # macOS desktop player
+   make ios-framework      # iOS XCFramework
+   ./scripts/build-linux-sdk.sh  # Linux (in Docker)
    ```
 
 ### Commit Guidelines
 
 ```bash
-# Stage related files together
-git add src/svg_player_ios.h
-git add linux-sdk/SVGPlayer/svg_player.h
+# Stage unified API files together
+git add shared/svg_player_api.h
+git add shared/svg_player_api.cpp
+
+# Stage Obj-C wrappers if changed
 git add ios-sdk/SVGPlayer/SVGPlayerController.h
+git add ios-sdk/SVGPlayer/SVGPlayerController.mm
+git add macos-sdk/SVGPlayer/SVGPlayerController.h
+git add macos-sdk/SVGPlayer/SVGPlayerController.mm
 
 # Use descriptive commit messages
 git commit -m "$(cat <<'EOF'
 Add SVGPlayer_GetElementBounds API
 
-- Added to src/svg_player_ios.h (master)
-- Synced to linux-sdk/SVGPlayer/svg_player.h
-- Exposed via SVGPlayerController for iOS
+- Added to shared/svg_player_api.h (unified API)
+- Implemented in shared/svg_player_api.cpp
+- Exposed via SVGPlayerController for iOS/macOS
 EOF
 )"
 ```
@@ -444,8 +485,12 @@ If you get linker errors about undefined symbols:
 
 | File/Directory | Owner | Notes |
 |----------------|-------|-------|
-| `src/svg_player_ios.h` | API Team | Master API definition |
+| `shared/svg_player_api.h` | API Team | **Master API definition (single source of truth)** |
+| `shared/svg_player_api.cpp` | API Team | **Master implementation** |
+| `shared/SVGTypes.h` | API Team | Shared type definitions |
 | `ios-sdk/` | iOS Team | iOS-specific wrappers |
+| `macos-sdk/` | macOS Team | macOS-specific wrappers |
 | `linux-sdk/` | Linux Team | Linux implementation |
+| `windows-sdk/` | Windows Team | Windows stub (pending implementation) |
 | `docker/` | DevOps | Container configuration |
 | `skia-build/` | Build System | Managed by scripts |

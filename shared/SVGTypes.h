@@ -58,6 +58,50 @@ typedef struct {
     int height;                // Height in pixels
 } SVGSize;
 
+// Extended size information including viewBox details
+typedef struct {
+    int width;                 // Width in SVG units
+    int height;                // Height in SVG units
+    float viewBoxX;            // ViewBox origin X
+    float viewBoxY;            // ViewBox origin Y
+    float viewBoxWidth;        // ViewBox width
+    float viewBoxHeight;       // ViewBox height
+} SVGSizeInfo;
+
+//==============================================================================
+// Coordinate Types
+//==============================================================================
+
+// Point in dual coordinate systems (for hit testing)
+typedef struct {
+    float viewX;               // X in view/screen coordinates
+    float viewY;               // Y in view/screen coordinates
+    float svgX;                // X in SVG viewBox coordinates
+    float svgY;                // Y in SVG viewBox coordinates
+} SVGDualPoint;
+
+// Rectangle bounds
+typedef struct {
+    float x;
+    float y;
+    float width;
+    float height;
+} SVGRect;
+
+//==============================================================================
+// Debug Overlay Flags
+//==============================================================================
+
+typedef enum {
+    SVGDebugFlag_None           = 0,
+    SVGDebugFlag_ShowFPS        = 1 << 0,
+    SVGDebugFlag_ShowFrameInfo  = 1 << 1,
+    SVGDebugFlag_ShowTiming     = 1 << 2,
+    SVGDebugFlag_ShowMemory     = 1 << 3,
+    SVGDebugFlag_ShowBounds     = 1 << 4,
+    SVGDebugFlag_ShowAll        = 0xFFFFFFFF
+} SVGDebugFlags;
+
 //==============================================================================
 // Animation Information
 //==============================================================================

@@ -1,90 +1,28 @@
-// svg_player_ios.h - iOS SVG Player public API
-// This header provides a C-compatible API for integrating SVG rendering
-// with iOS UIKit applications.
+// svg_player_ios.h - iOS SVG Player SDK
+//
+// This header provides the iOS SDK for the SVG animation player.
+// It forwards to the unified cross-platform API defined in shared/svg_player_api.h
 //
 // Usage:
-//   1. Create a renderer: SVGPlayer_Create()
-//   2. Load an SVG file: SVGPlayer_LoadSVG()
+//   1. Create a player: SVGPlayer_Create()
+//   2. Load an SVG file: SVGPlayer_LoadSVG() or SVGPlayer_LoadSVGData()
 //   3. In your display link callback:
 //      - SVGPlayer_Update() to advance animation time
 //      - SVGPlayer_Render() to render to a pixel buffer
 //   4. Display the pixel buffer in a UIImageView or CALayer
 //   5. Cleanup: SVGPlayer_Destroy()
+//
+// Thread Safety:
+//   - Each SVGPlayerRef should only be used from one thread at a time
+//   - Multiple SVGPlayerRef instances can be used from different threads
+//
+// Memory:
+//   - The caller is responsible for allocating/freeing the pixel buffer
+//   - The pixel buffer must be width * height * 4 bytes (RGBA, 8-bit per channel)
 
 #pragma once
 
-#include <stdint.h>
-#include <stdbool.h>
-#include <stddef.h>
+// Include the unified cross-platform API
+#include "../shared/svg_player_api.h"
 
-// Shared type definitions (SVGPlaybackState, SVGRepeatMode, SVGRenderStats, etc.)
-#include "../shared/SVGTypes.h"
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-// Opaque handle to SVG player instance
-typedef struct SVGPlayer* SVGPlayerHandle;
-
-// Create a new SVG player instance
-// Returns NULL on failure
-SVGPlayerHandle SVGPlayer_Create(void);
-
-// Destroy an SVG player instance and free all resources
-void SVGPlayer_Destroy(SVGPlayerHandle player);
-
-// Load an SVG file
-// Returns true on success, false on failure
-bool SVGPlayer_LoadSVG(SVGPlayerHandle player, const char* filepath);
-
-// Load SVG from memory buffer
-// Returns true on success, false on failure
-bool SVGPlayer_LoadSVGData(SVGPlayerHandle player, const void* data, size_t length);
-
-// Get the intrinsic size of the loaded SVG
-// Returns false if no SVG is loaded
-bool SVGPlayer_GetSize(SVGPlayerHandle player, int* width, int* height);
-
-// Set playback state
-void SVGPlayer_SetPlaybackState(SVGPlayerHandle player, SVGPlaybackState state);
-
-// Get current playback state
-SVGPlaybackState SVGPlayer_GetPlaybackState(SVGPlayerHandle player);
-
-// Update animation time
-// Call this from your CADisplayLink callback
-// deltaTime is the time since the last update in seconds
-void SVGPlayer_Update(SVGPlayerHandle player, double deltaTime);
-
-// Seek to a specific time in the animation (in seconds)
-void SVGPlayer_SeekTo(SVGPlayerHandle player, double timeSeconds);
-
-// Render the current frame to a pixel buffer
-// The buffer must be pre-allocated with width * height * 4 bytes (RGBA)
-// scale: HiDPI scale factor (e.g., 2.0 for Retina, 3.0 for @3x)
-// Returns true on success
-bool SVGPlayer_Render(SVGPlayerHandle player,
-                      void* pixelBuffer,
-                      int width,
-                      int height,
-                      float scale);
-
-// Get rendering statistics
-SVGRenderStats SVGPlayer_GetStats(SVGPlayerHandle player);
-
-// Get the animation duration in seconds
-double SVGPlayer_GetDuration(SVGPlayerHandle player);
-
-// Check if the animation loops
-bool SVGPlayer_IsLooping(SVGPlayerHandle player);
-
-// Set animation loop mode
-void SVGPlayer_SetLooping(SVGPlayerHandle player, bool looping);
-
-// Get the last error message (may be empty)
-const char* SVGPlayer_GetLastError(SVGPlayerHandle player);
-
-#ifdef __cplusplus
-}
-#endif
+// All functionality is provided by the unified API in shared/svg_player_api.h

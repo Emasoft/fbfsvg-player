@@ -1,10 +1,9 @@
-// SVGPlayerController.mm - Objective-C wrapper around the unified C SVG player API
+// SVGPlayerController.mm - macOS Objective-C wrapper around unified C SVG player API
 //
 // This implementation bridges the unified C API (svg_player_api.h) to Objective-C,
-// providing a clean interface for SVGPlayerView and direct users.
+// providing a clean interface for SVGPlayerView and direct users on macOS.
 //
-// The unified API provides full cross-platform functionality, replacing
-// platform-specific stubs with proper implementations.
+// The unified API provides full cross-platform functionality.
 
 #import "SVGPlayerController.h"
 #import "../../shared/svg_player_api.h"
@@ -31,14 +30,8 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 @property (nonatomic, assign) SVGControllerRepeatMode internalRepeatMode;
 // Repeat count for counted mode
 @property (nonatomic, assign) NSInteger internalRepeatCount;
-// Current repeat iteration
-@property (nonatomic, assign) NSInteger internalCurrentRepeatIteration;
-// Whether playing forward (for ping-pong)
-@property (nonatomic, assign) BOOL internalPlayingForward;
 // Scrubbing state
 @property (nonatomic, assign) BOOL internalScrubbing;
-// Playback state before scrubbing (for restoration)
-@property (nonatomic, assign) SVGControllerPlaybackState stateBeforeScrubbing;
 @end
 
 @implementation SVGPlayerController
@@ -57,8 +50,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
         _internalPlaybackRate = 1.0;
         _internalRepeatMode = SVGControllerRepeatModeLoop;
         _internalRepeatCount = 1;
-        _internalCurrentRepeatIteration = 0;
-        _internalPlayingForward = YES;
         _internalScrubbing = NO;
 
         if (_handle) {
@@ -104,8 +95,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     // Apply settings
     SVGPlayer_SetLooping(self.handle, self.looping);
     self.internalPlaybackState = SVGControllerPlaybackStateStopped;
-    self.internalCurrentRepeatIteration = 0;
-    self.internalPlayingForward = YES;
     self.internalErrorMessage = nil;
 
     return YES;
@@ -136,8 +125,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     // Apply settings
     SVGPlayer_SetLooping(self.handle, self.looping);
     self.internalPlaybackState = SVGControllerPlaybackStateStopped;
-    self.internalCurrentRepeatIteration = 0;
-    self.internalPlayingForward = YES;
     self.internalErrorMessage = nil;
 
     return YES;
@@ -145,35 +132,26 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 - (void)unload {
     if (self.handle) {
-        // Recreate the handle to reset state
-        SVGPlayer_Destroy(self.handle);
-        self.handle = SVGPlayer_Create();
-        if (self.handle) {
-            SVGPlayer_SetLooping(self.handle, self.looping);
-        }
+        SVGPlayer_Unload(self.handle);
     }
     self.internalPlaybackState = SVGControllerPlaybackStateStopped;
-    self.internalCurrentRepeatIteration = 0;
-    self.internalPlayingForward = YES;
 }
 
 #pragma mark - State Properties
 
 - (BOOL)isLoaded {
     if (!self.handle) return NO;
-
-    int width = 0, height = 0;
-    return SVGPlayer_GetSize(self.handle, &width, &height) && (width > 0 || height > 0);
+    return SVGPlayer_IsLoaded(self.handle);
 }
 
-- (CGSize)intrinsicSize {
-    if (!self.handle) return CGSizeZero;
+- (NSSize)intrinsicSize {
+    if (!self.handle) return NSZeroSize;
 
     int width = 0, height = 0;
     if (SVGPlayer_GetSize(self.handle, &width, &height)) {
-        return CGSizeMake(width, height);
+        return NSMakeSize(width, height);
     }
-    return CGSizeZero;
+    return NSZeroSize;
 }
 
 - (NSTimeInterval)duration {
@@ -186,14 +164,12 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     if (self.handle) {
         SVGPlayer_SetLooping(self.handle, looping);
     }
-    // Update repeat mode to match
     _internalRepeatMode = looping ? SVGControllerRepeatModeLoop : SVGControllerRepeatModeNone;
 }
 
 - (NSTimeInterval)currentTime {
     if (!self.handle) return 0;
-    SVGRenderStats stats = SVGPlayer_GetStats(self.handle);
-    return stats.animationTimeMs / 1000.0;
+    return SVGPlayer_GetCurrentTime(self.handle);
 }
 
 - (SVGControllerPlaybackState)playbackState {
@@ -203,7 +179,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 - (SVGRenderStatistics)statistics {
     SVGRenderStatistics stats = {0};
     if (self.handle) {
-        // Use unified C API - all fields now available
         SVGRenderStats cStats = SVGPlayer_GetStats(self.handle);
         stats.renderTimeMs = cStats.renderTimeMs;
         stats.updateTimeMs = cStats.updateTimeMs;
@@ -229,11 +204,9 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 - (void)setRepeatMode:(SVGControllerRepeatMode)repeatMode {
     self.internalRepeatMode = repeatMode;
-    // Sync with looping property
     self.looping = (repeatMode == SVGControllerRepeatModeLoop ||
                     repeatMode == SVGControllerRepeatModeReverse ||
                     repeatMode == SVGControllerRepeatModeCount);
-    // Pass to unified C API
     if (self.handle) {
         SVGRepeatMode cMode = SVGRepeatMode_None;
         switch (repeatMode) {
@@ -252,14 +225,12 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 - (void)setRepeatCount:(NSInteger)repeatCount {
     self.internalRepeatCount = MAX(1, repeatCount);
-    // Pass to unified C API
     if (self.handle) {
         SVGPlayer_SetRepeatCount(self.handle, (int)self.internalRepeatCount);
     }
 }
 
 - (NSInteger)currentRepeatIteration {
-    // Read from unified C API
     if (self.handle) {
         return (NSInteger)SVGPlayer_GetCompletedLoops(self.handle);
     }
@@ -267,7 +238,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 }
 
 - (BOOL)isPlayingForward {
-    // Read from unified C API
     if (self.handle) {
         return SVGPlayer_IsPlayingForward(self.handle);
     }
@@ -279,9 +249,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 }
 
 - (void)setPlaybackRate:(CGFloat)playbackRate {
-    // Clamp to reasonable range
     self.internalPlaybackRate = MAX(0.1, MIN(10.0, playbackRate));
-    // Pass to unified C API
     if (self.handle) {
         SVGPlayer_SetPlaybackRate(self.handle, (float)self.internalPlaybackRate);
     }
@@ -290,9 +258,10 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 #pragma mark - Timeline Properties
 
 - (CGFloat)progress {
-    NSTimeInterval duration = self.duration;
-    if (duration <= 0) return 0;
-    return (CGFloat)(self.currentTime / duration);
+    if (self.handle) {
+        return (CGFloat)SVGPlayer_GetProgress(self.handle);
+    }
+    return 0;
 }
 
 - (NSTimeInterval)elapsedTime {
@@ -306,17 +275,20 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 }
 
 - (NSInteger)currentFrame {
-    SVGRenderStats stats = SVGPlayer_GetStats(self.handle);
-    return stats.currentFrame;
+    if (self.handle) {
+        return (NSInteger)SVGPlayer_GetCurrentFrame(self.handle);
+    }
+    return 0;
 }
 
 - (NSInteger)totalFrames {
-    SVGRenderStats stats = SVGPlayer_GetStats(self.handle);
-    return stats.totalFrames;
+    if (self.handle) {
+        return (NSInteger)SVGPlayer_GetTotalFrames(self.handle);
+    }
+    return 0;
 }
 
 - (CGFloat)frameRate {
-    // Get from unified C API
     if (self.handle) {
         float rate = SVGPlayer_GetFrameRate(self.handle);
         if (rate > 0) {
@@ -337,19 +309,18 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 - (void)play {
     if (!self.handle || !self.isLoaded) return;
 
-    SVGPlayer_SetPlaybackState(self.handle, SVGPlaybackState_Playing);
+    SVGPlayer_Play(self.handle);
     self.internalPlaybackState = SVGControllerPlaybackStatePlaying;
 }
 
 - (void)pause {
     if (!self.handle) return;
 
-    SVGPlayer_SetPlaybackState(self.handle, SVGPlaybackState_Paused);
+    SVGPlayer_Pause(self.handle);
     self.internalPlaybackState = SVGControllerPlaybackStatePaused;
 }
 
 - (void)resume {
-    // Alias for play when paused
     if (self.internalPlaybackState == SVGControllerPlaybackStatePaused) {
         [self play];
     }
@@ -358,41 +329,42 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 - (void)stop {
     if (!self.handle) return;
 
-    SVGPlayer_SetPlaybackState(self.handle, SVGPlaybackState_Stopped);
-    SVGPlayer_SeekTo(self.handle, 0);
+    SVGPlayer_Stop(self.handle);
     self.internalPlaybackState = SVGControllerPlaybackStateStopped;
-    self.internalCurrentRepeatIteration = 0;
-    self.internalPlayingForward = YES;
 }
 
 - (void)togglePlayback {
-    if (self.internalPlaybackState == SVGControllerPlaybackStatePlaying) {
-        [self pause];
-    } else {
-        [self play];
+    if (!self.handle) return;
+
+    SVGPlayer_TogglePlayback(self.handle);
+    SVGPlaybackState cState = SVGPlayer_GetPlaybackState(self.handle);
+    switch (cState) {
+        case SVGPlaybackState_Stopped:
+            self.internalPlaybackState = SVGControllerPlaybackStateStopped;
+            break;
+        case SVGPlaybackState_Playing:
+            self.internalPlaybackState = SVGControllerPlaybackStatePlaying;
+            break;
+        case SVGPlaybackState_Paused:
+            self.internalPlaybackState = SVGControllerPlaybackStatePaused;
+            break;
     }
 }
 
 #pragma mark - Animation Update
 
 - (void)update:(NSTimeInterval)deltaTime {
-    [self update:deltaTime forward:self.internalPlayingForward];
+    [self update:deltaTime forward:YES];
 }
 
 - (void)update:(NSTimeInterval)deltaTime forward:(BOOL)forward {
     if (!self.handle || self.internalPlaybackState != SVGControllerPlaybackStatePlaying) return;
 
-    // Apply playback rate (unified API handles negative rates for reverse)
     NSTimeInterval adjustedDelta = deltaTime * self.internalPlaybackRate;
     if (!forward) {
         adjustedDelta = -adjustedDelta;
     }
 
-    // The unified API handles all update logic including:
-    // - Playback rate
-    // - Repeat modes (none, loop, reverse/ping-pong, count)
-    // - Direction changes for ping-pong
-    // - End detection and auto-stop
     SVGPlayer_Update(self.handle, adjustedDelta);
 
     // Sync our internal state with the unified API state
@@ -414,41 +386,28 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 - (void)seekToTime:(NSTimeInterval)time {
     if (!self.handle) return;
-
-    // Clamp time to valid range
-    NSTimeInterval duration = self.duration;
-    if (duration > 0) {
-        time = MAX(0, MIN(time, duration));
-    } else {
-        time = MAX(0, time);
-    }
-
     SVGPlayer_SeekTo(self.handle, time);
 }
 
 - (void)seekToFrame:(NSInteger)frame {
-    // Use unified API directly
     if (self.handle) {
         SVGPlayer_SeekToFrame(self.handle, (int)frame);
     }
 }
 
 - (void)seekToProgress:(CGFloat)progress {
-    // Use unified API directly
     if (self.handle) {
         SVGPlayer_SeekToProgress(self.handle, (float)progress);
     }
 }
 
 - (void)seekToStart {
-    // Use unified API
     if (self.handle) {
         SVGPlayer_SeekToStart(self.handle);
     }
 }
 
 - (void)seekToEnd {
-    // Use unified API
     if (self.handle) {
         SVGPlayer_SeekToEnd(self.handle);
     }
@@ -457,7 +416,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 #pragma mark - Frame Stepping
 
 - (void)stepForward {
-    // Use unified API (pauses playback automatically)
     if (self.handle) {
         SVGPlayer_StepForward(self.handle);
         self.internalPlaybackState = SVGControllerPlaybackStatePaused;
@@ -465,7 +423,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 }
 
 - (void)stepBackward {
-    // Use unified API (pauses playback automatically)
     if (self.handle) {
         SVGPlayer_StepBackward(self.handle);
         self.internalPlaybackState = SVGControllerPlaybackStatePaused;
@@ -473,7 +430,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 }
 
 - (void)stepByFrames:(NSInteger)frameCount {
-    // Use unified API (pauses playback automatically)
     if (self.handle) {
         SVGPlayer_StepByFrames(self.handle, (int)frameCount);
         self.internalPlaybackState = SVGControllerPlaybackStatePaused;
@@ -484,7 +440,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 - (void)seekForwardByTime:(NSTimeInterval)seconds {
     if (seconds <= 0) seconds = kDefaultSeekInterval;
-    // Use unified API
     if (self.handle) {
         SVGPlayer_SeekForwardByTime(self.handle, seconds);
     }
@@ -492,7 +447,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 - (void)seekBackwardByTime:(NSTimeInterval)seconds {
     if (seconds <= 0) seconds = kDefaultSeekInterval;
-    // Use unified API
     if (self.handle) {
         SVGPlayer_SeekBackwardByTime(self.handle, seconds);
     }
@@ -516,7 +470,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     if (self.handle) {
         SVGPlayer_BeginScrubbing(self.handle);
         self.internalScrubbing = YES;
-        // Update internal state to paused since scrubbing pauses playback
         self.internalPlaybackState = SVGControllerPlaybackStatePaused;
     }
 }
@@ -534,7 +487,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     if (self.handle) {
         SVGPlayer_EndScrubbing(self.handle, resume);
         self.internalScrubbing = NO;
-        // Sync playback state with unified API
         SVGPlaybackState cState = SVGPlayer_GetPlaybackState(self.handle);
         switch (cState) {
             case SVGPlaybackState_Stopped:
@@ -586,17 +538,20 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
                 height:(NSInteger)height
                  scale:(CGFloat)scale
                 atTime:(NSTimeInterval)time {
-    // Save current time
-    NSTimeInterval savedTime = self.currentTime;
+    if (!self.handle || !buffer || width <= 0 || height <= 0) {
+        return NO;
+    }
 
-    // Seek to requested time
-    [self seekToTime:time];
+    BOOL success = SVGPlayer_RenderAtTime(self.handle, buffer,
+                                           (int)width, (int)height,
+                                           (float)scale, time);
 
-    // Render
-    BOOL success = [self renderToBuffer:buffer width:width height:height scale:scale];
-
-    // Restore original time
-    [self seekToTime:savedTime];
+    if (!success) {
+        const char *errorMsg = SVGPlayer_GetLastError(self.handle);
+        if (errorMsg) {
+            self.internalErrorMessage = @(errorMsg);
+        }
+    }
 
     return success;
 }
@@ -630,7 +585,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 }
 
 - (NSInteger)frameForTime:(NSTimeInterval)time {
-    // Use unified API
     if (self.handle) {
         return (NSInteger)SVGPlayer_TimeToFrame(self.handle, time);
     }
@@ -638,7 +592,6 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 }
 
 - (NSTimeInterval)timeForFrame:(NSInteger)frame {
-    // Use unified API
     if (self.handle) {
         return SVGPlayer_FrameToTime(self.handle, (int)frame);
     }
