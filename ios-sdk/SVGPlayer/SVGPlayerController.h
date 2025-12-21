@@ -335,6 +335,22 @@ typedef NS_ENUM(NSInteger, SVGControllerRepeatMode) {
 /// @return Time in seconds
 - (NSTimeInterval)timeForFrame:(NSInteger)frame;
 
+#pragma mark - Version Information
+
+/// Get the library version string (e.g., "0.9.0-alpha")
+/// @return Version string
++ (NSString *)version;
+
+/// Get the library version as separate components
+/// @param major Output: major version number
+/// @param minor Output: minor version number
+/// @param patch Output: patch version number
++ (void)getVersionMajor:(NSInteger *)major minor:(NSInteger *)minor patch:(NSInteger *)patch;
+
+/// Get detailed build information
+/// @return Build info string including platform, architecture, and build date
++ (NSString *)buildInfo;
+
 @end
 
 NS_ASSUME_NONNULL_END

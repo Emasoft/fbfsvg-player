@@ -37,8 +37,46 @@
 // Shared animation controller for cross-platform SMIL parsing and playback
 #include "../shared/SVGAnimationController.h"
 
+// Centralized version management for all platforms
+#include "../shared/version.h"
+
 // Cross-platform abstractions for CPU monitoring, font management, etc.
 #include "platform.h"
+
+// Print extensive help screen
+void printHelp(const char* programName) {
+    std::cerr << SVGPlayerVersion::getVersionBanner() << "\n\n";
+    std::cerr << "USAGE:\n";
+    std::cerr << "    " << programName << " <input.svg> [OPTIONS]\n\n";
+    std::cerr << "DESCRIPTION:\n";
+    std::cerr << "    Real-time SVG renderer with SMIL animation support.\n";
+    std::cerr << "    Plays animated SVG files with discrete frame animations\n";
+    std::cerr << "    (xlink:href switching) using hardware-accelerated rendering.\n\n";
+    std::cerr << "OPTIONS:\n";
+    std::cerr << "    -h, --help        Show this help message and exit\n";
+    std::cerr << "    -v, --version     Show version information and exit\n";
+    std::cerr << "    -f, --fullscreen  Start in fullscreen mode\n\n";
+    std::cerr << "KEYBOARD CONTROLS:\n";
+    std::cerr << "    Space         Play/Pause animation\n";
+    std::cerr << "    R             Restart animation from beginning\n";
+    std::cerr << "    F             Toggle fullscreen mode\n";
+    std::cerr << "    Left/Right    Seek backward/forward 1 second\n";
+    std::cerr << "    Up/Down       Speed up/slow down playback\n";
+    std::cerr << "    L             Toggle loop mode\n";
+    std::cerr << "    P             Toggle parallel rendering mode\n";
+    std::cerr << "    S             Show/hide statistics overlay\n";
+    std::cerr << "    Q, Escape     Quit player\n\n";
+    std::cerr << "SUPPORTED FORMATS:\n";
+    std::cerr << "    - SVG 1.1 with SMIL animations\n";
+    std::cerr << "    - Discrete frame animations via xlink:href\n";
+    std::cerr << "    - FBF (Frame-by-Frame) SVG format\n\n";
+    std::cerr << "EXAMPLES:\n";
+    std::cerr << "    " << programName << " animation.svg\n";
+    std::cerr << "    " << programName << " animation.svg --fullscreen\n";
+    std::cerr << "    " << programName << " --version\n\n";
+    std::cerr << "BUILD INFO:\n";
+    std::cerr << "    " << SVG_PLAYER_BUILD_INFO << "\n";
+}
 
 // Use shared types from the animation controller
 using svgplayer::SMILAnimation;
@@ -921,23 +959,47 @@ std::string generateScreenshotFilename(int width, int height) {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <input.svg> [--fullscreen]" << std::endl;
+    // Print startup banner (always shown on execution)
+    std::cerr << SVGPlayerVersion::getStartupBanner() << std::endl;
+
+    // Parse command-line arguments
+    const char* inputPath = nullptr;
+    bool startFullscreen = false;
+
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
+            // Show full version info and exit
+            std::cerr << SVGPlayerVersion::getVersionBanner() << std::endl;
+            std::cerr << "Build: " << SVG_PLAYER_BUILD_INFO << std::endl;
+            return 0;
+        }
+        if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
+            // Show extensive help and exit
+            printHelp(argv[0]);
+            return 0;
+        }
+        if (strcmp(argv[i], "--fullscreen") == 0 || strcmp(argv[i], "-f") == 0) {
+            startFullscreen = true;
+        } else if (argv[i][0] != '-') {
+            // Non-option argument is the input file
+            inputPath = argv[i];
+        } else {
+            // Unknown option
+            std::cerr << "Unknown option: " << argv[i] << std::endl;
+            std::cerr << "Use --help for usage information." << std::endl;
+            return 1;
+        }
+    }
+
+    // Input file is required
+    if (!inputPath) {
+        std::cerr << "Error: No input file specified.\n" << std::endl;
+        printHelp(argv[0]);
         return 1;
     }
 
     // Initialize font support for SVG text rendering (must be done before any SVG parsing)
     initializeFontSupport();
-
-    const char* inputPath = argv[1];
-
-    // Parse optional arguments
-    bool startFullscreen = false;
-    for (int i = 2; i < argc; ++i) {
-        if (strcmp(argv[i], "--fullscreen") == 0 || strcmp(argv[i], "-f") == 0) {
-            startFullscreen = true;
-        }
-    }
 
     // Read the SVG file content
     std::ifstream file(inputPath);

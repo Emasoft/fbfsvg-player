@@ -337,12 +337,8 @@ void SVGPlayer_Destroy(SVGPlayerRef player) {
 }
 
 const char* SVGPlayer_GetVersion(void) {
-    static char version[32];
-    std::snprintf(version, sizeof(version), "%d.%d.%d",
-                  SVG_PLAYER_API_VERSION_MAJOR,
-                  SVG_PLAYER_API_VERSION_MINOR,
-                  SVG_PLAYER_API_VERSION_PATCH);
-    return version;
+    // Return the full version string from version.h (includes prerelease tag)
+    return SVG_PLAYER_VERSION_STRING;
 }
 
 void SVGPlayer_GetVersionNumbers(int* major, int* minor, int* patch) {

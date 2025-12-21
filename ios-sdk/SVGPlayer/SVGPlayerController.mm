@@ -657,4 +657,25 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     }
 }
 
+#pragma mark - Version Information
+
++ (NSString *)version {
+    // Use unified API version function which uses version.h
+    const char* ver = SVGPlayer_GetVersion();
+    return [NSString stringWithUTF8String:ver];
+}
+
++ (void)getVersionMajor:(NSInteger *)major minor:(NSInteger *)minor patch:(NSInteger *)patch {
+    int maj = 0, min = 0, pat = 0;
+    SVGPlayer_GetVersionNumbers(&maj, &min, &pat);
+    if (major) *major = maj;
+    if (minor) *minor = min;
+    if (patch) *patch = pat;
+}
+
++ (NSString *)buildInfo {
+    // Return build info from version.h
+    return [NSString stringWithUTF8String:SVG_PLAYER_BUILD_INFO];
+}
+
 @end

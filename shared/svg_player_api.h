@@ -27,6 +27,9 @@
 // Include shared type definitions
 #include "SVGTypes.h"
 
+// Include centralized version management
+#include "version.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -35,9 +38,10 @@ extern "C" {
 // API Version and Export Macros
 // =============================================================================
 
-#define SVG_PLAYER_API_VERSION_MAJOR 1
-#define SVG_PLAYER_API_VERSION_MINOR 0
-#define SVG_PLAYER_API_VERSION_PATCH 0
+// Version comes from shared/version.h (single source of truth)
+#define SVG_PLAYER_API_VERSION_MAJOR SVG_PLAYER_VERSION_MAJOR
+#define SVG_PLAYER_API_VERSION_MINOR SVG_PLAYER_VERSION_MINOR
+#define SVG_PLAYER_API_VERSION_PATCH SVG_PLAYER_VERSION_PATCH
 
 // Export/import macros for shared library builds
 #ifdef _WIN32
