@@ -1,0 +1,249 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ==========================================================================
+  # Quick API Header Compilation Test (runs on all platforms)
+  # ==========================================================================
+  api-compile-test:
+    name: API Header Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compile API Header Test
+        run: |
+          # Compile-only test (-c) - verifies API header syntax without linking
+          clang++ -std=c++17 \
+            -I shared \
+            -Wall -Wextra -Werror \
+            -c tests/test_api_compile.cpp \
+            -o test_api_compile.o
+          echo "API header compilation: SUCCESS"
+
+  # ==========================================================================
+  # Linux Build and Test
+  # ==========================================================================
+  linux-build:
+    name: Linux Build
+    runs-on: ubuntu-24.04
+    needs: api-compile-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            clang \
+            lld \
+            ninja-build \
+            python3 \
+            git \
+            curl \
+            pkg-config \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            libegl1-mesa-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxext-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libfontconfig1-dev \
+            libfreetype6-dev \
+            libharfbuzz-dev \
+            libicu-dev \
+            libpng-dev \
+            libjpeg-dev \
+            libwebp-dev \
+            libsdl2-dev
+
+      - name: Cache Skia Build
+        id: cache-skia
+        uses: actions/cache@v4
+        with:
+          path: skia-build/src/skia/out/release-linux
+          key: skia-linux-${{ runner.arch }}-${{ hashFiles('skia-build/build-linux.sh') }}
+
+      - name: Build Skia (if not cached)
+        if: steps.cache-skia.outputs.cache-hit != 'true'
+        run: |
+          cd skia-build
+          ./build-linux.sh -y
+        timeout-minutes: 30
+
+      - name: Build Linux SDK
+        run: ./scripts/build-linux-sdk.sh -y
+
+      - name: Verify Linux Library
+        run: |
+          echo "Checking library exists..."
+          ls -la build/linux/
+
+          echo "Verifying ELF format..."
+          file build/linux/libsvgplayer.so
+
+          echo "Checking exported symbols..."
+          nm -D build/linux/libsvgplayer.so | grep -E "SVGPlayer_" | head -20
+
+          echo "Verifying key symbols..."
+          nm -D build/linux/libsvgplayer.so | grep -q "SVGPlayer_Create"
+          nm -D build/linux/libsvgplayer.so | grep -q "SVGPlayer_Destroy"
+          nm -D build/linux/libsvgplayer.so | grep -q "SVGPlayer_LoadSVG"
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-sdk
+          path: |
+            build/linux/libsvgplayer.so*
+            build/linux/svg_player.h
+            build/linux/svgplayer.pc
+
+  # ==========================================================================
+  # macOS Build and Test
+  # ==========================================================================
+  macos-build:
+    name: macOS Build
+    runs-on: macos-14
+    needs: api-compile-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Dependencies
+        run: |
+          brew install ninja pkg-config sdl2
+
+      - name: Cache Skia Build
+        id: cache-skia
+        uses: actions/cache@v4
+        with:
+          path: skia-build/src/skia/out/release-macos
+          key: skia-macos-arm64-${{ hashFiles('skia-build/build-macos.sh') }}
+
+      - name: Build Skia (if not cached)
+        if: steps.cache-skia.outputs.cache-hit != 'true'
+        run: |
+          cd skia-build
+          ./build-macos.sh -y
+        timeout-minutes: 30
+
+      - name: Build macOS Desktop Player
+        run: ./scripts/build-macos.sh -y
+
+      - name: Verify macOS Binary
+        run: |
+          echo "Checking binary exists..."
+          ls -la build/
+
+          echo "Verifying Mach-O format..."
+          file build/svg_player_animated
+
+          echo "Checking dependencies..."
+          otool -L build/svg_player_animated | head -10
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-player
+          path: build/svg_player_animated
+
+  # ==========================================================================
+  # iOS Build
+  # ==========================================================================
+  ios-build:
+    name: iOS Build
+    runs-on: macos-14
+    needs: api-compile-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache Skia iOS Build
+        id: cache-skia-ios
+        uses: actions/cache@v4
+        with:
+          path: |
+            skia-build/src/skia/out/release-ios-arm64
+            skia-build/src/skia/out/release-ios-simulator-arm64
+          key: skia-ios-${{ hashFiles('skia-build/build-ios.sh') }}
+
+      - name: Build Skia iOS (if not cached)
+        if: steps.cache-skia-ios.outputs.cache-hit != 'true'
+        run: |
+          cd skia-build
+          ./build-ios.sh -y
+        timeout-minutes: 45
+
+      - name: Build iOS XCFramework
+        run: ./scripts/build-ios-framework.sh -y
+
+      - name: Verify iOS XCFramework
+        run: |
+          echo "Checking XCFramework exists..."
+          ls -la build/
+
+          echo "Checking XCFramework structure..."
+          ls -la build/SVGPlayer.xcframework/
+
+          echo "Verifying Info.plist..."
+          cat build/SVGPlayer.xcframework/Info.plist
+
+      - name: Upload iOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-xcframework
+          path: build/SVGPlayer.xcframework
+
+  # ==========================================================================
+  # Summary Job
+  # ==========================================================================
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [api-compile-test, linux-build, macos-build, ios-build]
+    if: always()
+    steps:
+      - name: Check Results
+        run: |
+          echo "Build Summary"
+          echo "============="
+          echo ""
+          echo "API Header Test: ${{ needs.api-compile-test.result }}"
+          echo "Linux Build: ${{ needs.linux-build.result }}"
+          echo "macOS Build: ${{ needs.macos-build.result }}"
+          echo "iOS Build: ${{ needs.ios-build.result }}"
+          echo ""
+
+          if [ "${{ needs.api-compile-test.result }}" != "success" ] || \
+             [ "${{ needs.linux-build.result }}" != "success" ] || \
+             [ "${{ needs.macos-build.result }}" != "success" ] || \
+             [ "${{ needs.ios-build.result }}" != "success" ]; then
+            echo "One or more builds failed!"
+            exit 1
+          fi
+
+          echo "All builds successful!"

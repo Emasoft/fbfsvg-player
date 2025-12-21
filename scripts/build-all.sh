@@ -36,6 +36,7 @@ NON_INTERACTIVE=false
 SKIP_LINUX=false
 SKIP_IOS=false
 SKIP_MACOS=false
+SKIP_TESTS=false
 VERBOSE=false
 
 while [[ $# -gt 0 ]]; do
@@ -56,6 +57,10 @@ while [[ $# -gt 0 ]]; do
             SKIP_MACOS=true
             shift
             ;;
+        --skip-tests)
+            SKIP_TESTS=true
+            shift
+            ;;
         -v|--verbose)
             VERBOSE=true
             shift
@@ -70,6 +75,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --skip-linux     Skip Linux SDK build"
             echo "  --skip-ios       Skip iOS XCFramework build"
             echo "  --skip-macos     Skip macOS desktop player build"
+            echo "  --skip-tests     Skip running tests after build"
             echo "  -v, --verbose    Verbose output"
             echo "  -h, --help       Show this help message"
             echo ""
@@ -260,6 +266,28 @@ else
     [ "${BUILD_RESULTS[macOS]}" = "SUCCESS" ] && echo "  - macOS: build/svg_player_animated"
     [ "${BUILD_RESULTS[iOS]}" = "SUCCESS" ] && echo "  - iOS:   build/SVGPlayer.xcframework/"
     [ "${BUILD_RESULTS[Linux]}" = "SUCCESS" ] && echo "  - Linux: build/linux/libsvgplayer.so"
+fi
+
+# Run tests if not skipped
+if [ "$SKIP_TESTS" = false ]; then
+    section_header "Running Tests"
+
+    TEST_ARGS=""
+    [ "$SKIP_MACOS" = true ] && TEST_ARGS="$TEST_ARGS --skip-macos"
+    [ "$SKIP_LINUX" = true ] && TEST_ARGS="$TEST_ARGS --skip-linux"
+
+    if [ -f "$SCRIPT_DIR/test-all.sh" ]; then
+        if "$SCRIPT_DIR/test-all.sh" $TEST_ARGS; then
+            log_success "All tests passed!"
+        else
+            log_error "Some tests failed"
+            exit 1
+        fi
+    else
+        log_warning "test-all.sh not found - skipping tests"
+    fi
+else
+    log_info "Skipping tests (--skip-tests)"
 fi
 
 exit 0
