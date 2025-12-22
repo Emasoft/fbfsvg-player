@@ -13,29 +13,30 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypeface.h"
 // Note: Platform-specific font manager is provided by platform.h
-#include "modules/svg/include/SkSVGDOM.h"
-#include "modules/svg/include/SkSVGSVG.h"
-#include "modules/svg/include/SkSVGRenderContext.h"
-#include "modules/svg/include/SkSVGNode.h"
-#include "modules/skshaper/include/SkShaper_factory.h"
-#include "modules/skshaper/utils/FactoryHelpers.h"
-#include "src/core/SkTaskGroup.h"  // Skia's high-level task management
-
 #include <SDL.h>
+
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
+#include <deque>
 #include <fstream>
-#include <iostream>
 #include <iomanip>
+#include <iostream>
 #include <map>
 #include <memory>
-#include <sstream>
-#include <vector>
-#include <thread>
-#include <atomic>
 #include <mutex>
-#include <condition_variable>
-#include <deque>
+#include <sstream>
+#include <thread>
+#include <vector>
+
+#include "modules/skshaper/include/SkShaper_factory.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
+#include "modules/svg/include/SkSVGDOM.h"
+#include "modules/svg/include/SkSVGNode.h"
+#include "modules/svg/include/SkSVGRenderContext.h"
+#include "modules/svg/include/SkSVGSVG.h"
+#include "src/core/SkTaskGroup.h"  // Skia's high-level task management
 
 // Shared animation controller for cross-platform SMIL parsing and playback
 #include "../shared/SVGAnimationController.h"
@@ -82,8 +83,8 @@ void printHelp(const char* programName) {
 }
 
 // Use shared types from the animation controller
-using svgplayer::SMILAnimation;
 using svgplayer::AnimationState;
+using svgplayer::SMILAnimation;
 
 // CRITICAL: Use steady_clock for animation timing
 // - steady_clock is MONOTONIC (never goes backwards, immune to system clock changes)
@@ -111,10 +112,7 @@ void initializeFontSupport() {
 // Create SVG DOM with proper font support for text rendering
 // This must be used instead of SkSVGDOM::MakeFromStream to enable SVG <text> elements
 sk_sp<SkSVGDOM> makeSVGDOMWithFontSupport(SkStream& stream) {
-    return SkSVGDOM::Builder()
-        .setFontManager(g_fontMgr)
-        .setTextShapingFactory(g_shaperFactory)
-        .make(stream);
+    return SkSVGDOM::Builder().setFontManager(g_fontMgr).setTextShapingFactory(g_shaperFactory).make(stream);
 }
 
 // SMILAnimation struct is now defined in shared/SVGAnimationController.h
@@ -126,15 +124,17 @@ sk_sp<SkSVGDOM> makeSVGDOMWithFontSupport(SkStream& stream) {
 // 3. Tile DOMs don't receive animation state updates, causing wrong frames
 // For animated SVGs, PreBuffer mode provides the best performance.
 enum class ParallelMode {
-    Off,              // No parallelism, direct single-threaded rendering
-    PreBuffer         // Pre-render frames ahead into buffer (best for animations)
+    Off,       // No parallelism, direct single-threaded rendering
+    PreBuffer  // Pre-render frames ahead into buffer (best for animations)
 };
 
 // Get mode name for display
 const char* getParallelModeName(ParallelMode mode) {
     switch (mode) {
-        case ParallelMode::Off: return "Off";
-        case ParallelMode::PreBuffer: return "PreBuffer";
+        case ParallelMode::Off:
+            return "Off";
+        case ParallelMode::PreBuffer:
+            return "PreBuffer";
     }
     return "Unknown";
 }
@@ -142,7 +142,7 @@ const char* getParallelModeName(ParallelMode mode) {
 // Skia-based Parallel Renderer using SkTaskGroup
 // Supports two modes: Off and PreBuffer (pre-render animation frames ahead)
 class SkiaParallelRenderer {
-public:
+   public:
     ParallelMode mode{ParallelMode::Off};
     std::atomic<bool> modeChanging{false};  // Prevents race condition during mode transitions
     std::atomic<int> activeWorkers{0};
@@ -198,9 +198,7 @@ public:
         return (workers > 0) ? workers : 1;
     }
 
-    bool isEnabled() const {
-        return mode != ParallelMode::Off;
-    }
+    bool isEnabled() const { return mode != ParallelMode::Off; }
 
     // Cycle to next mode: Off -> PreBuffer -> Off
     ParallelMode cycleMode() {
@@ -251,7 +249,8 @@ public:
         frameBuffer.clear();
     }
 
-    void start(const std::string& svgContent, int width, int height, int svgW, int svgH, ParallelMode initialMode = ParallelMode::PreBuffer) {
+    void start(const std::string& svgContent, int width, int height, int svgW, int svgH,
+               ParallelMode initialMode = ParallelMode::PreBuffer) {
         if (mode != ParallelMode::Off) return;
 
         svgData = svgContent;
@@ -332,9 +331,7 @@ public:
         }
 
         // Schedule frame rendering on thread pool
-        executor->add([this, framePtr]() {
-            renderSingleFrame(framePtr);
-        });
+        executor->add([this, framePtr]() { renderSingleFrame(framePtr); });
     }
 
     bool getFrame(size_t frameIndex, std::vector<uint32_t>& outPixels) {
@@ -372,7 +369,7 @@ public:
         }
     }
 
-private:
+   private:
     void startExecutor() {
         int numWorkers = getWorkerCount();
         executor = SkExecutor::MakeFIFOThreadPool(numWorkers, true);
@@ -402,12 +399,9 @@ private:
         }
 
         // Recreate surface if size changed
-        if (!cache->surface ||
-            cache->surfaceWidth != renderWidth ||
-            cache->surfaceHeight != renderHeight) {
+        if (!cache->surface || cache->surfaceWidth != renderWidth || cache->surfaceHeight != renderHeight) {
             cache->surface = SkSurfaces::Raster(
-                SkImageInfo::Make(renderWidth, renderHeight,
-                                 kBGRA_8888_SkColorType, kPremul_SkAlphaType));
+                SkImageInfo::Make(renderWidth, renderHeight, kBGRA_8888_SkColorType, kPremul_SkAlphaType));
             cache->surfaceWidth = renderWidth;
             cache->surfaceHeight = renderHeight;
             if (!cache->surface) return;
@@ -441,8 +435,7 @@ private:
         SkPixmap pixmap;
         if (cache->surface->peekPixels(&pixmap)) {
             frame->pixels.resize(renderWidth * renderHeight);
-            memcpy(frame->pixels.data(), pixmap.addr(),
-                   renderWidth * renderHeight * sizeof(uint32_t));
+            memcpy(frame->pixels.data(), pixmap.addr(), renderWidth * renderHeight * sizeof(uint32_t));
             frame->ready = true;
         }
     }
@@ -457,7 +450,7 @@ private:
 // - Watchdog timeout prevents infinite freezes
 // - Mode changes are instant (non-blocking)
 class ThreadedRenderer {
-public:
+   public:
     // Render state flags
     std::atomic<bool> running{true};
     std::atomic<bool> frameReady{false};
@@ -510,12 +503,9 @@ public:
 
     ThreadedRenderer() = default;
 
-    ~ThreadedRenderer() {
-        stop();
-    }
+    ~ThreadedRenderer() { stop(); }
 
-    void configure(SkiaParallelRenderer* pr, const std::string& svg,
-                   int rw, int rh, int sw, int sh) {
+    void configure(SkiaParallelRenderer* pr, const std::string& svg, int rw, int rh, int sw, int sh) {
         std::lock_guard<std::mutex> lock(paramsMutex);
         parallelRenderer = pr;
         svgData = svg;
@@ -602,19 +592,13 @@ public:
     }
 
     // Called from main thread - check current mode (non-blocking, uses atomic cache)
-    bool isPreBufferMode() const {
-        return cachedPreBufferMode.load();
-    }
+    bool isPreBufferMode() const { return cachedPreBufferMode.load(); }
 
     // Called from main thread - get cached active workers count (non-blocking)
-    int getCachedActiveWorkers() const {
-        return cachedActiveWorkers.load();
-    }
+    int getCachedActiveWorkers() const { return cachedActiveWorkers.load(); }
 
     // Called from main thread - set total animation frames (for pre-buffering)
-    void setTotalAnimationFrames(size_t total) {
-        totalAnimationFrames = total;
-    }
+    void setTotalAnimationFrames(size_t total) { totalAnimationFrames = total; }
 
     // Resize buffers (call from main thread when window resizes)
     void resize(int newWidth, int newHeight) {
@@ -631,7 +615,7 @@ public:
         }
     }
 
-private:
+   private:
     void renderLoop() {
         // Create thread-local Skia DOM for rendering
         sk_sp<SkSVGDOM> threadDom;
@@ -709,12 +693,9 @@ private:
             // If no pre-buffered frame, render directly
             if (!renderSuccess) {
                 // Recreate surface if needed
-                if (!threadSurface ||
-                    threadSurface->width() != localWidth ||
-                    threadSurface->height() != localHeight) {
+                if (!threadSurface || threadSurface->width() != localWidth || threadSurface->height() != localHeight) {
                     threadSurface = SkSurfaces::Raster(
-                        SkImageInfo::Make(localWidth, localHeight,
-                                         kBGRA_8888_SkColorType, kPremul_SkAlphaType));
+                        SkImageInfo::Make(localWidth, localHeight, kBGRA_8888_SkColorType, kPremul_SkAlphaType));
                 }
 
                 // Recreate DOM if needed (or first time)
@@ -750,8 +731,8 @@ private:
                     canvas->scale(scale, scale);
 
                     // Check timeout before expensive render
-                    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                        Clock::now() - renderStart).count();
+                    auto elapsed =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - renderStart).count();
 
                     if (elapsed < RENDER_TIMEOUT_MS) {
                         threadDom->render(canvas);
@@ -769,8 +750,7 @@ private:
                         if (threadSurface->peekPixels(&pixmap)) {
                             std::lock_guard<std::mutex> lock(bufferMutex);
                             backBuffer.resize(localWidth * localHeight);
-                            memcpy(backBuffer.data(), pixmap.addr(),
-                                   localWidth * localHeight * sizeof(uint32_t));
+                            memcpy(backBuffer.data(), pixmap.addr(), localWidth * localHeight * sizeof(uint32_t));
                         }
                     }
                 }
@@ -822,8 +802,7 @@ private:
 static svgplayer::SVGAnimationController g_animController;
 
 // Pre-process SVG to inject IDs and convert symbols (delegates to shared controller)
-std::string preprocessSVGForAnimation(const std::string& content,
-                                       std::map<size_t, std::string>& syntheticIds) {
+std::string preprocessSVGForAnimation(const std::string& content, std::map<size_t, std::string>& syntheticIds) {
     // Use the shared controller to preprocess the SVG
     g_animController.loadFromContent(content);
     return g_animController.getProcessedContent();
@@ -846,7 +825,7 @@ std::vector<SMILAnimation> extractAnimations(const std::string& svgPath) {
 
 // Rolling average calculator
 class RollingAverage {
-public:
+   public:
     RollingAverage(size_t windowSize = 120) : maxSize_(windowSize) {}
 
     void add(double value) {
@@ -866,14 +845,16 @@ public:
     double min() const {
         if (values_.empty()) return 0.0;
         double m = values_[0];
-        for (double v : values_) if (v < m) m = v;
+        for (double v : values_)
+            if (v < m) m = v;
         return m;
     }
 
     double max() const {
         if (values_.empty()) return 0.0;
         double m = values_[0];
-        for (double v : values_) if (v > m) m = v;
+        for (double v : values_)
+            if (v > m) m = v;
         return m;
     }
 
@@ -886,7 +867,7 @@ public:
 
     void reset() { values_.clear(); }
 
-private:
+   private:
     std::deque<double> values_;
     size_t maxSize_;
 };
@@ -895,8 +876,7 @@ private:
 // PPM P6 format: binary RGB data, no compression, maximum compatibility
 // Input: ARGB8888 pixel buffer (32-bit per pixel)
 // Output: PPM file with 24-bit RGB (8 bits per channel)
-bool saveScreenshotPPM(const std::vector<uint32_t>& pixels, int width, int height,
-                       const std::string& filename) {
+bool saveScreenshotPPM(const std::vector<uint32_t>& pixels, int width, int height, const std::string& filename) {
     std::ofstream file(filename, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Failed to open file for screenshot: " << filename << std::endl;
@@ -926,13 +906,11 @@ bool saveScreenshotPPM(const std::vector<uint32_t>& pixels, int width, int heigh
 std::string generateScreenshotFilename(int width, int height) {
     auto now = std::chrono::system_clock::now();
     auto time = std::chrono::system_clock::to_time_t(now);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        now.time_since_epoch()) % 1000;
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
     std::ostringstream ss;
-    ss << "screenshot_" << std::put_time(std::localtime(&time), "%Y%m%d_%H%M%S")
-       << "_" << std::setfill('0') << std::setw(3) << ms.count()
-       << "_" << width << "x" << height << ".ppm";
+    ss << "screenshot_" << std::put_time(std::localtime(&time), "%Y%m%d_%H%M%S") << "_" << std::setfill('0')
+       << std::setw(3) << ms.count() << "_" << width << "x" << height << ".ppm";
     return ss.str();
 }
 
@@ -1084,8 +1062,8 @@ int main(int argc, char* argv[]) {
     // Get native display resolution for fullscreen mode (Retina/HiDPI aware)
     SDL_DisplayMode displayMode;
     if (SDL_GetCurrentDisplayMode(0, &displayMode) == 0) {
-        std::cout << "Native display: " << displayMode.w << "x" << displayMode.h
-                  << " @ " << displayMode.refresh_rate << "Hz" << std::endl;
+        std::cout << "Native display: " << displayMode.w << "x" << displayMode.h << " @ " << displayMode.refresh_rate
+                  << "Hz" << std::endl;
     }
 
     // Window creation with optional exclusive fullscreen
@@ -1100,12 +1078,8 @@ int main(int argc, char* argv[]) {
         createWidth = displayMode.w;
         createHeight = displayMode.h;
     }
-    SDL_Window* window = SDL_CreateWindow(
-        "SVG Player (Animated) - Skia",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        createWidth, createHeight,
-        windowFlags
-    );
+    SDL_Window* window = SDL_CreateWindow("SVG Player (Animated) - Skia", SDL_WINDOWPOS_CENTERED,
+                                          SDL_WINDOWPOS_CENTERED, createWidth, createHeight, windowFlags);
 
     // Track fullscreen state (matches command line flag)
     bool isFullscreen = startFullscreen;
@@ -1140,7 +1114,7 @@ int main(int argc, char* argv[]) {
     // Query display refresh rate for frame limiter
     int displayIndex = SDL_GetWindowDisplayIndex(window);
     SDL_DisplayMode refreshDisplayMode;  // Renamed to avoid shadowing displayMode
-    int displayRefreshRate = 60; // Default fallback
+    int displayRefreshRate = 60;         // Default fallback
     if (SDL_GetCurrentDisplayMode(displayIndex, &refreshDisplayMode) == 0) {
         displayRefreshRate = refreshDisplayMode.refresh_rate > 0 ? refreshDisplayMode.refresh_rate : 60;
     }
@@ -1206,8 +1180,8 @@ int main(int argc, char* argv[]) {
     RollingAverage idleTimes(30);     // Time spent waiting when no frame ready
 
     // Frame delivery tracking - measures how often render thread delivers new frames
-    uint64_t displayCycles = 0;       // Total main loop iterations (display refresh attempts)
-    uint64_t framesDelivered = 0;     // Frames actually received from render thread
+    uint64_t displayCycles = 0;    // Total main loop iterations (display refresh attempts)
+    uint64_t framesDelivered = 0;  // Frames actually received from render thread
     uint64_t frameCount = 0;
     auto startTime = Clock::now();
     auto lastFrameTime = Clock::now();
@@ -1221,8 +1195,8 @@ int main(int argc, char* argv[]) {
     std::string lastFrameValue;
 
     // Frame skip tracking for synchronization verification
-    size_t framesRendered = 0;      // Actual frames we rendered
-    size_t framesSkipped = 0;       // Frames skipped due to slow rendering
+    size_t framesRendered = 0;  // Actual frames we rendered
+    size_t framesSkipped = 0;   // Frames skipped due to slow rendering
     size_t lastRenderedAnimFrame = 0;
 
     // Stress test mode (press 'S' to toggle)
@@ -1237,9 +1211,8 @@ int main(int argc, char* argv[]) {
     int renderHeight = rendererH;
 
     // Create initial texture
-    SDL_Texture* texture = SDL_CreateTexture(renderer,
-        SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-        renderWidth, renderHeight);
+    SDL_Texture* texture =
+        SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, renderWidth, renderHeight);
 
     // Skia surface
     sk_sp<SkSurface> surface;
@@ -1261,7 +1234,7 @@ int main(int argc, char* argv[]) {
 
     bool running = true;
     bool frameLimiterEnabled = false;  // OFF by default for max FPS
-    bool showDebugOverlay = true;  // D key toggles debug info overlay
+    bool showDebugOverlay = true;      // D key toggles debug info overlay
     SDL_Event event;
 
     // Parallel renderer using Skia's SkTaskGroup for multi-core rendering
@@ -1360,15 +1333,15 @@ int main(int argc, char* argv[]) {
                     break;
 
                 case SDL_KEYDOWN:
-                    if (event.key.keysym.sym == SDLK_ESCAPE ||
-                        event.key.keysym.sym == SDLK_q) {
+                    if (event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_q) {
                         running = false;
                     } else if (event.key.keysym.sym == SDLK_SPACE) {
                         if (animationPaused) {
                             // Resume: adjust start time to account for paused duration
                             // Use SteadyClock for animation timing
                             DurationSec pauseDuration(pausedTime);
-                            animationStartTimeSteady = SteadyClock::now() - std::chrono::duration_cast<SteadyClock::duration>(pauseDuration);
+                            animationStartTimeSteady =
+                                SteadyClock::now() - std::chrono::duration_cast<SteadyClock::duration>(pauseDuration);
                             animationPaused = false;
                             std::cout << "Animation resumed" << std::endl;
                         } else {
@@ -1429,14 +1402,19 @@ int main(int argc, char* argv[]) {
                         }
 
                         // Recreate texture
-                        texture = SDL_CreateTexture(renderer,
-                            SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-                            renderWidth, renderHeight);
+                        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                                    renderWidth, renderHeight);
 
                         // Reset ALL stats after VSync change (critical for accurate FPS/hit rate)
-                        eventTimes.reset(); animTimes.reset(); fetchTimes.reset();
-                        overlayTimes.reset(); copyTimes.reset(); presentTimes.reset();
-                        frameTimes.reset(); renderTimes.reset(); idleTimes.reset();
+                        eventTimes.reset();
+                        animTimes.reset();
+                        fetchTimes.reset();
+                        overlayTimes.reset();
+                        copyTimes.reset();
+                        presentTimes.reset();
+                        frameTimes.reset();
+                        renderTimes.reset();
+                        idleTimes.reset();
                         frameCount = 0;
                         displayCycles = 0;
                         framesDelivered = 0;
@@ -1448,24 +1426,39 @@ int main(int argc, char* argv[]) {
                         // Toggle frame limiter
                         frameLimiterEnabled = !frameLimiterEnabled;
                         // Reset ALL stats (critical for accurate FPS/hit rate)
-                        eventTimes.reset(); animTimes.reset(); fetchTimes.reset();
-                        overlayTimes.reset(); copyTimes.reset(); presentTimes.reset();
-                        frameTimes.reset(); renderTimes.reset(); idleTimes.reset();
+                        eventTimes.reset();
+                        animTimes.reset();
+                        fetchTimes.reset();
+                        overlayTimes.reset();
+                        copyTimes.reset();
+                        presentTimes.reset();
+                        frameTimes.reset();
+                        renderTimes.reset();
+                        idleTimes.reset();
                         frameCount = 0;
                         displayCycles = 0;
                         framesDelivered = 0;
                         startTime = Clock::now();
                         skipStatsThisFrame = true;
-                        std::cout << "Frame limiter: " << (frameLimiterEnabled ? "ON (" + std::to_string(displayRefreshRate) + " FPS cap)" : "OFF") << std::endl;
+                        std::cout << "Frame limiter: "
+                                  << (frameLimiterEnabled ? "ON (" + std::to_string(displayRefreshRate) + " FPS cap)"
+                                                          : "OFF")
+                                  << std::endl;
                     } else if (event.key.keysym.sym == SDLK_p) {
                         // Toggle parallel mode: Off <-> PreBuffer (NON-BLOCKING!)
                         // Request is queued for render thread - main thread never blocks
                         threadedRenderer.requestModeChange();
 
                         // Reset ALL stats (critical for accurate FPS/hit rate)
-                        eventTimes.reset(); animTimes.reset(); fetchTimes.reset();
-                        overlayTimes.reset(); copyTimes.reset(); presentTimes.reset();
-                        frameTimes.reset(); renderTimes.reset(); idleTimes.reset();
+                        eventTimes.reset();
+                        animTimes.reset();
+                        fetchTimes.reset();
+                        overlayTimes.reset();
+                        copyTimes.reset();
+                        presentTimes.reset();
+                        frameTimes.reset();
+                        renderTimes.reset();
+                        idleTimes.reset();
                         frameCount = 0;
                         displayCycles = 0;
                         framesDelivered = 0;
@@ -1490,7 +1483,8 @@ int main(int argc, char* argv[]) {
                         // Capture screenshot - exact rendered frame at current resolution
                         std::vector<uint32_t> screenshotPixels;
                         int screenshotWidth, screenshotHeight;
-                        if (threadedRenderer.getFrameForScreenshot(screenshotPixels, screenshotWidth, screenshotHeight)) {
+                        if (threadedRenderer.getFrameForScreenshot(screenshotPixels, screenshotWidth,
+                                                                   screenshotHeight)) {
                             std::string filename = generateScreenshotFilename(screenshotWidth, screenshotHeight);
                             if (saveScreenshotPPM(screenshotPixels, screenshotWidth, screenshotHeight, filename)) {
                                 std::cout << "Screenshot saved: " << filename << std::endl;
@@ -1505,7 +1499,6 @@ int main(int argc, char* argv[]) {
                 case SDL_WINDOWEVENT:
                     if (event.window.event == SDL_WINDOWEVENT_RESIZED ||
                         event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-
                         // Get actual renderer output size (HiDPI aware)
                         int actualW, actualH;
                         SDL_GetRendererOutputSize(renderer, &actualW, &actualH);
@@ -1521,9 +1514,8 @@ int main(int argc, char* argv[]) {
                         }
 
                         SDL_DestroyTexture(texture);
-                        texture = SDL_CreateTexture(renderer,
-                            SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-                            renderWidth, renderHeight);
+                        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                                    renderWidth, renderHeight);
 
                         createSurface(renderWidth, renderHeight);
 
@@ -1599,8 +1591,7 @@ int main(int argc, char* argv[]) {
             // Got new frame from render thread - copy to surface
             SkPixmap pixmap;
             if (surface->peekPixels(&pixmap)) {
-                memcpy(const_cast<void*>(pixmap.addr()), renderedPixels,
-                       renderWidth * renderHeight * sizeof(uint32_t));
+                memcpy(const_cast<void*>(pixmap.addr()), renderedPixels, renderWidth * renderHeight * sizeof(uint32_t));
                 gotNewFrame = true;
                 framesDelivered++;  // Count frames actually received from render thread
             }
@@ -1624,261 +1615,305 @@ int main(int argc, char* argv[]) {
         // Consumer-producer pattern: only do expensive work when Skia delivered a new frame
         auto overlayStart = Clock::now();
         if (gotNewFrame && showDebugOverlay) {
-        // Calculate scale for display in overlay
-        float scaleX = static_cast<float>(renderWidth) / svgWidth;
-        float scaleY = static_cast<float>(renderHeight) / svgHeight;
-        float scale = std::min(scaleX, scaleY);
+            // Calculate scale for display in overlay
+            float scaleX = static_cast<float>(renderWidth) / svgWidth;
+            float scaleY = static_cast<float>(renderHeight) / svgHeight;
+            float scale = std::min(scaleX, scaleY);
 
-        auto totalElapsed = std::chrono::duration<double>(Clock::now() - startTime).count();
-        double fps = (frameCount > 0) ? frameCount / totalElapsed : 0;
-        double instantFps = (frameTimes.last() > 0) ? 1000.0 / frameTimes.last() : 0;
+            auto totalElapsed = std::chrono::duration<double>(Clock::now() - startTime).count();
+            double fps = (frameCount > 0) ? frameCount / totalElapsed : 0;
+            double instantFps = (frameTimes.last() > 0) ? 1000.0 / frameTimes.last() : 0;
 
-        // Debug overlay layout constants - scaled 40% larger to match font
-        float lineHeight = 13 * hiDpiScale;  // Was 9, now 13 (40% larger)
-        float padding = 3 * hiDpiScale;  // Was 2, now 3 (40% larger)
-        float labelWidth = 112 * hiDpiScale;  // Was 80, now 112 (40% larger)
+            // Debug overlay layout constants - scaled 40% larger to match font
+            float lineHeight = 13 * hiDpiScale;   // Was 9, now 13 (40% larger)
+            float padding = 3 * hiDpiScale;       // Was 2, now 3 (40% larger)
+            float labelWidth = 112 * hiDpiScale;  // Was 80, now 112 (40% larger)
 
-        // === PASS 1: Build all debug lines and measure max width ===
-        // Line types: 0=normal, 1=highlight, 2=anim, 3=key, 4=gap_small, 5=gap_large, 6=single
-        struct DebugLine {
-            int type;
-            std::string label;
-            std::string value;
-            std::string key;  // For key lines
-        };
-        std::vector<DebugLine> lines;
-        std::ostringstream oss;
+            // === PASS 1: Build all debug lines and measure max width ===
+            // Line types: 0=normal, 1=highlight, 2=anim, 3=key, 4=gap_small, 5=gap_large, 6=single
+            struct DebugLine {
+                int type;
+                std::string label;
+                std::string value;
+                std::string key;  // For key lines
+            };
+            std::vector<DebugLine> lines;
+            std::ostringstream oss;
 
-        // Helper to add lines
-        auto addLine = [&](const std::string& label, const std::string& value) {
-            lines.push_back({0, label, value, ""});
-        };
-        auto addHighlight = [&](const std::string& label, const std::string& value) {
-            lines.push_back({1, label, value, ""});
-        };
-        auto addAnim = [&](const std::string& label, const std::string& value) {
-            lines.push_back({2, label, value, ""});
-        };
-        auto addKey = [&](const std::string& key, const std::string& label, const std::string& value) {
-            lines.push_back({3, label, value, key});
-        };
-        auto addSmallGap = [&]() { lines.push_back({4, "", "", ""}); };
-        auto addLargeGap = [&]() { lines.push_back({5, "", "", ""}); };
-        auto addSingle = [&](const std::string& text) { lines.push_back({6, text, "", ""}); };
+            // Helper to add lines
+            auto addLine = [&](const std::string& label, const std::string& value) {
+                lines.push_back({0, label, value, ""});
+            };
+            auto addHighlight = [&](const std::string& label, const std::string& value) {
+                lines.push_back({1, label, value, ""});
+            };
+            auto addAnim = [&](const std::string& label, const std::string& value) {
+                lines.push_back({2, label, value, ""});
+            };
+            auto addKey = [&](const std::string& key, const std::string& label, const std::string& value) {
+                lines.push_back({3, label, value, key});
+            };
+            auto addSmallGap = [&]() { lines.push_back({4, "", "", ""}); };
+            auto addLargeGap = [&]() { lines.push_back({5, "", "", ""}); };
+            auto addSingle = [&](const std::string& text) { lines.push_back({6, text, "", ""}); };
 
-        // Build all lines - FPS and frame time first
-        oss.str(""); oss << std::fixed << std::setprecision(1) << fps;
-        addHighlight("FPS (avg):", oss.str());
+            // Build all lines - FPS and frame time first
+            oss.str("");
+            oss << std::fixed << std::setprecision(1) << fps;
+            addHighlight("FPS (avg):", oss.str());
 
-        oss.str(""); oss << std::fixed << std::setprecision(1) << instantFps;
-        addLine("FPS (instant):", oss.str());
+            oss.str("");
+            oss << std::fixed << std::setprecision(1) << instantFps;
+            addLine("FPS (instant):", oss.str());
 
-        // Frame delivery rate - shows how often Skia worker thread delivers new frames
-        // This is the KEY metric: if Skia render is slower than display, hit rate drops
-        double hitRate = displayCycles > 0 ? (100.0 * framesDelivered / displayCycles) : 0.0;
-        double effectiveFps = totalElapsed > 0 ? (framesDelivered / totalElapsed) : 0.0;
-        oss.str(""); oss << std::fixed << std::setprecision(1) << effectiveFps << " (" << std::setprecision(0) << hitRate << "% ready)";
-        addHighlight("Skia FPS:", oss.str());
+            // Frame delivery rate - shows how often Skia worker thread delivers new frames
+            // This is the KEY metric: if Skia render is slower than display, hit rate drops
+            double hitRate = displayCycles > 0 ? (100.0 * framesDelivered / displayCycles) : 0.0;
+            double effectiveFps = totalElapsed > 0 ? (framesDelivered / totalElapsed) : 0.0;
+            oss.str("");
+            oss << std::fixed << std::setprecision(1) << effectiveFps << " (" << std::setprecision(0) << hitRate
+                << "% ready)";
+            addHighlight("Skia FPS:", oss.str());
 
-        oss.str(""); oss << std::fixed << std::setprecision(2) << frameTimes.average() << " ms";
-        addLine("Frame time:", oss.str());
+            oss.str("");
+            oss << std::fixed << std::setprecision(2) << frameTimes.average() << " ms";
+            addLine("Frame time:", oss.str());
 
-        addSmallGap();
+            addSmallGap();
 
-        // === PIPELINE TIMING BREAKDOWN ===
-        // All phases should add up to total frame time
-        double totalAvg = frameTimes.average();
-        double eventAvg = eventTimes.average();
-        double animAvg = animTimes.average();
-        double fetchAvg = fetchTimes.average();
-        double overlayAvg = overlayTimes.average();
-        double copyAvg = copyTimes.average();
-        double presentAvg = presentTimes.average();
-        double renderAvg = renderTimes.average();  // Actual SVG render (in render thread)
+            // === PIPELINE TIMING BREAKDOWN ===
+            // All phases should add up to total frame time
+            double totalAvg = frameTimes.average();
+            double eventAvg = eventTimes.average();
+            double animAvg = animTimes.average();
+            double fetchAvg = fetchTimes.average();
+            double overlayAvg = overlayTimes.average();
+            double copyAvg = copyTimes.average();
+            double presentAvg = presentTimes.average();
+            double renderAvg = renderTimes.average();  // Actual SVG render (in render thread)
 
-        // Calculate percentages (avoid div by zero)
-        auto pct = [totalAvg](double v) -> double {
-            return totalAvg > 0 ? (v / totalAvg * 100.0) : 0.0;
-        };
+            // Calculate percentages (avoid div by zero)
+            auto pct = [totalAvg](double v) -> double { return totalAvg > 0 ? (v / totalAvg * 100.0) : 0.0; };
 
-        addSingle("--- Pipeline ---");
+            addSingle("--- Pipeline ---");
 
-        oss.str(""); oss << std::fixed << std::setprecision(2) << eventAvg << " ms (" << std::setprecision(1) << pct(eventAvg) << "%)";
-        addLine("Event:", oss.str());
+            oss.str("");
+            oss << std::fixed << std::setprecision(2) << eventAvg << " ms (" << std::setprecision(1) << pct(eventAvg)
+                << "%)";
+            addLine("Event:", oss.str());
 
-        oss.str(""); oss << std::fixed << std::setprecision(2) << animAvg << " ms (" << std::setprecision(1) << pct(animAvg) << "%)";
-        addLine("Anim:", oss.str());
+            oss.str("");
+            oss << std::fixed << std::setprecision(2) << animAvg << " ms (" << std::setprecision(1) << pct(animAvg)
+                << "%)";
+            addLine("Anim:", oss.str());
 
-        oss.str(""); oss << std::fixed << std::setprecision(2) << fetchAvg << " ms (" << std::setprecision(1) << pct(fetchAvg) << "%)";
-        addLine("Fetch:", oss.str());
+            oss.str("");
+            oss << std::fixed << std::setprecision(2) << fetchAvg << " ms (" << std::setprecision(1) << pct(fetchAvg)
+                << "%)";
+            addLine("Fetch:", oss.str());
 
-        // Waiting for Skia worker - idle time when main loop polls but no frame ready
-        // Pipeline order: wait for producer → then process (overlay, copy, present)
-        double idleAvg = idleTimes.average();
-        // hitRate already calculated above for Skia FPS display
-        oss.str(""); oss << std::fixed << std::setprecision(2) << idleAvg << " ms (" << std::setprecision(0) << (100.0 - hitRate) << "% idle)";
-        addHighlight("Wait Skia:", oss.str());
+            // Waiting for Skia worker - idle time when main loop polls but no frame ready
+            // Pipeline order: wait for producer → then process (overlay, copy, present)
+            double idleAvg = idleTimes.average();
+            // hitRate already calculated above for Skia FPS display
+            oss.str("");
+            oss << std::fixed << std::setprecision(2) << idleAvg << " ms (" << std::setprecision(0) << (100.0 - hitRate)
+                << "% idle)";
+            addHighlight("Wait Skia:", oss.str());
 
-        oss.str(""); oss << std::fixed << std::setprecision(2) << overlayAvg << " ms (" << std::setprecision(1) << pct(overlayAvg) << "%)";
-        addLine("Overlay:", oss.str());
+            oss.str("");
+            oss << std::fixed << std::setprecision(2) << overlayAvg << " ms (" << std::setprecision(1)
+                << pct(overlayAvg) << "%)";
+            addLine("Overlay:", oss.str());
 
-        oss.str(""); oss << std::fixed << std::setprecision(2) << copyAvg << " ms (" << std::setprecision(1) << pct(copyAvg) << "%)";
-        addLine("Copy:", oss.str());
+            oss.str("");
+            oss << std::fixed << std::setprecision(2) << copyAvg << " ms (" << std::setprecision(1) << pct(copyAvg)
+                << "%)";
+            addLine("Copy:", oss.str());
 
-        oss.str(""); oss << std::fixed << std::setprecision(2) << presentAvg << " ms (" << std::setprecision(1) << pct(presentAvg) << "%)";
-        addLine("Present:", oss.str());
+            oss.str("");
+            oss << std::fixed << std::setprecision(2) << presentAvg << " ms (" << std::setprecision(1)
+                << pct(presentAvg) << "%)";
+            addLine("Present:", oss.str());
 
-        addSmallGap();
+            addSmallGap();
 
-        // Skia worker render time (async, not blocking main thread)
-        oss.str(""); oss << std::fixed << std::setprecision(2) << renderAvg << " ms (min=" << std::setprecision(2) << renderTimes.min() << ", max=" << renderTimes.max() << ")";
-        addLine("Skia work:", oss.str());
+            // Skia worker render time (async, not blocking main thread)
+            oss.str("");
+            oss << std::fixed << std::setprecision(2) << renderAvg << " ms (min=" << std::setprecision(2)
+                << renderTimes.min() << ", max=" << renderTimes.max() << ")";
+            addLine("Skia work:", oss.str());
 
-        addSmallGap();
+            addSmallGap();
 
-        // Sum of main thread active phases (when frame IS ready)
-        double sumPhases = eventAvg + animAvg + fetchAvg + overlayAvg + copyAvg + presentAvg;
-        oss.str(""); oss << std::fixed << std::setprecision(2) << sumPhases << " ms (" << std::setprecision(1) << pct(sumPhases) << "%)";
-        addLine("Active work:", oss.str());
+            // Sum of main thread active phases (when frame IS ready)
+            double sumPhases = eventAvg + animAvg + fetchAvg + overlayAvg + copyAvg + presentAvg;
+            oss.str("");
+            oss << std::fixed << std::setprecision(2) << sumPhases << " ms (" << std::setprecision(1) << pct(sumPhases)
+                << "%)";
+            addLine("Active work:", oss.str());
 
-        addSmallGap();
+            addSmallGap();
 
-        oss.str(""); oss << renderWidth << " x " << renderHeight;
-        addLine("Resolution:", oss.str());
+            oss.str("");
+            oss << renderWidth << " x " << renderHeight;
+            addLine("Resolution:", oss.str());
 
-        oss.str(""); oss << svgWidth << " x " << svgHeight;
-        addLine("SVG size:", oss.str());
+            oss.str("");
+            oss << svgWidth << " x " << svgHeight;
+            addLine("SVG size:", oss.str());
 
-        oss.str(""); oss << std::fixed << std::setprecision(2) << scale << "x";
-        addLine("Scale:", oss.str());
+            oss.str("");
+            oss << std::fixed << std::setprecision(2) << scale << "x";
+            addLine("Scale:", oss.str());
 
-        oss.str(""); oss << frameCount;
-        addLine("Frames:", oss.str());
+            oss.str("");
+            oss << frameCount;
+            addLine("Frames:", oss.str());
 
-        // Animation info
-        if (!animations.empty()) {
+            // Animation info
+            if (!animations.empty()) {
+                addLargeGap();
+
+                oss.str("");
+                oss << std::fixed << std::setprecision(3) << animTime << "s";
+                if (animationPaused) oss << " (PAUSED)";
+                addAnim("Anim time:", oss.str());
+
+                oss.str("");
+                oss << (currentFrameIndex + 1) << " / " << animations[0].values.size();
+                addAnim("Anim frame:", oss.str());
+
+                oss.str("");
+                oss << std::fixed << std::setprecision(2) << animations[0].duration << "s";
+                addAnim("Anim duration:", oss.str());
+
+                oss.str("");
+                oss << framesRendered;
+                addLine("Frames shown:", oss.str());
+
+                oss.str("");
+                oss << framesSkipped;
+                if (framesSkipped > 0)
+                    addHighlight("Frames skipped:", oss.str());
+                else
+                    addLine("Frames skipped:", oss.str());
+
+                if (framesRendered + framesSkipped > 0) {
+                    double skipRate = 100.0 * framesSkipped / (framesRendered + framesSkipped);
+                    oss.str("");
+                    oss << std::fixed << std::setprecision(1) << skipRate << "%";
+                    if (skipRate > 10)
+                        addHighlight("Skip rate:", oss.str());
+                    else
+                        addLine("Skip rate:", oss.str());
+                }
+
+                double animFps = animations[0].values.size() / animations[0].duration;
+                oss.str("");
+                oss << std::fixed << std::setprecision(1) << animFps << " FPS";
+                addLine("Anim target:", oss.str());
+            }
+
             addLargeGap();
 
-            oss.str(""); oss << std::fixed << std::setprecision(3) << animTime << "s";
-            if (animationPaused) oss << " (PAUSED)";
-            addAnim("Anim time:", oss.str());
+            // Controls
+            addKey("[V]", "VSync:", vsyncEnabled ? "ON" : "OFF");
+            addKey("[F]",
+                   "Limiter:", frameLimiterEnabled ? ("ON (" + std::to_string(displayRefreshRate) + " FPS)") : "OFF");
 
-            oss.str(""); oss << (currentFrameIndex + 1) << " / " << animations[0].values.size();
-            addAnim("Anim frame:", oss.str());
+            // Parallel mode status - use cached mode from ThreadedRenderer to avoid blocking
+            std::string parallelStatus = threadedRenderer.isPreBufferMode() ? "PreBuffer" : "Off";
+            addKey("[P]", "Mode:", parallelStatus);
 
-            oss.str(""); oss << std::fixed << std::setprecision(2) << animations[0].duration << "s";
-            addAnim("Anim duration:", oss.str());
+            // Real-time CPU stats from macOS Mach APIs
+            CPUStats cpuStats = getProcessCPUStats();
+            oss.str("");
+            oss << cpuStats.activeThreads << " active / " << cpuStats.totalThreads << " threads";
+            addLine("Threads:", oss.str());
 
-            oss.str(""); oss << framesRendered;
-            addLine("Frames shown:", oss.str());
+            oss.str("");
+            oss << std::fixed << std::setprecision(1) << cpuStats.cpuUsagePercent << "%";
+            addLine("CPU usage:", oss.str());
 
-            oss.str(""); oss << framesSkipped;
-            if (framesSkipped > 0) addHighlight("Frames skipped:", oss.str());
-            else addLine("Frames skipped:", oss.str());
-
-            if (framesRendered + framesSkipped > 0) {
-                double skipRate = 100.0 * framesSkipped / (framesRendered + framesSkipped);
-                oss.str(""); oss << std::fixed << std::setprecision(1) << skipRate << "%";
-                if (skipRate > 10) addHighlight("Skip rate:", oss.str());
-                else addLine("Skip rate:", oss.str());
+            if (!animations.empty()) {
+                addKey("[SPACE]", "Animation:", animationPaused ? "PAUSED" : "PLAYING");
+                addKey("[S]", "Stress test:", stressTestEnabled ? "ON (50ms delay)" : "OFF");
             }
 
-            double animFps = animations[0].values.size() / animations[0].duration;
-            oss.str(""); oss << std::fixed << std::setprecision(1) << animFps << " FPS";
-            addLine("Anim target:", oss.str());
-        }
+            addSingle("[R] Reset stats  [D] Toggle overlay  [G] Fullscreen");
 
-        addLargeGap();
+            // === Measure max width needed ===
+            float maxWidth = 0;
+            for (const auto& line : lines) {
+                if (line.type == 4 || line.type == 5) continue;  // Skip gaps
 
-        // Controls
-        addKey("[V]", "VSync:", vsyncEnabled ? "ON" : "OFF");
-        addKey("[F]", "Limiter:", frameLimiterEnabled ? ("ON (" + std::to_string(displayRefreshRate) + " FPS)") : "OFF");
-
-        // Parallel mode status - use cached mode from ThreadedRenderer to avoid blocking
-        std::string parallelStatus = threadedRenderer.isPreBufferMode() ? "PreBuffer" : "Off";
-        addKey("[P]", "Mode:", parallelStatus);
-
-        // Real-time CPU stats from macOS Mach APIs
-        CPUStats cpuStats = getProcessCPUStats();
-        oss.str("");
-        oss << cpuStats.activeThreads << " active / " << cpuStats.totalThreads << " threads";
-        addLine("Threads:", oss.str());
-
-        oss.str("");
-        oss << std::fixed << std::setprecision(1) << cpuStats.cpuUsagePercent << "%";
-        addLine("CPU usage:", oss.str());
-
-        if (!animations.empty()) {
-            addKey("[SPACE]", "Animation:", animationPaused ? "PAUSED" : "PLAYING");
-            addKey("[S]", "Stress test:", stressTestEnabled ? "ON (50ms delay)" : "OFF");
-        }
-
-        addSingle("[R] Reset stats  [D] Toggle overlay  [G] Fullscreen");
-
-        // === Measure max width needed ===
-        float maxWidth = 0;
-        for (const auto& line : lines) {
-            if (line.type == 4 || line.type == 5) continue;  // Skip gaps
-
-            float lineWidth = 0;
-            if (line.type == 6) {
-                // Single text line
-                lineWidth = debugFont.measureText(line.label.c_str(), line.label.size(), SkTextEncoding::kUTF8);
-            } else if (line.type == 3) {
-                // Key line: [KEY] Label: Value
-                float keyW = debugFont.measureText(line.key.c_str(), line.key.size(), SkTextEncoding::kUTF8);
-                float valW = debugFont.measureText(line.value.c_str(), line.value.size(), SkTextEncoding::kUTF8);
-                lineWidth = keyW + 7 * hiDpiScale + labelWidth + valW;  // Was 5, now 7 (40% larger)
-            } else {
-                // Normal line: Label: Value
-                lineWidth = labelWidth + debugFont.measureText(line.value.c_str(), line.value.size(), SkTextEncoding::kUTF8);
+                float lineWidth = 0;
+                if (line.type == 6) {
+                    // Single text line
+                    lineWidth = debugFont.measureText(line.label.c_str(), line.label.size(), SkTextEncoding::kUTF8);
+                } else if (line.type == 3) {
+                    // Key line: [KEY] Label: Value
+                    float keyW = debugFont.measureText(line.key.c_str(), line.key.size(), SkTextEncoding::kUTF8);
+                    float valW = debugFont.measureText(line.value.c_str(), line.value.size(), SkTextEncoding::kUTF8);
+                    lineWidth = keyW + 7 * hiDpiScale + labelWidth + valW;  // Was 5, now 7 (40% larger)
+                } else {
+                    // Normal line: Label: Value
+                    lineWidth = labelWidth +
+                                debugFont.measureText(line.value.c_str(), line.value.size(), SkTextEncoding::kUTF8);
+                }
+                maxWidth = std::max(maxWidth, lineWidth);
             }
-            maxWidth = std::max(maxWidth, lineWidth);
-        }
 
-        // Calculate box dimensions - tight fit around text
-        float boxWidth = maxWidth + padding * 2;
-        float boxHeight = padding;
-        for (const auto& line : lines) {
-            if (line.type == 4) boxHeight += 6 * hiDpiScale;       // Small gap (was 4, now 6)
-            else if (line.type == 5) boxHeight += 11 * hiDpiScale;  // Large gap (was 8, now 11)
-            else boxHeight += lineHeight;
-        }
-        boxHeight += padding;
-
-        // === PASS 2: Draw background then all text ===
-        canvas->drawRect(SkRect::MakeXYWH(0, 0, boxWidth, boxHeight), bgPaint);
-
-        float y = padding + lineHeight;
-        float x = padding;
-
-        for (const auto& line : lines) {
-            if (line.type == 4) {
-                y += 6 * hiDpiScale;  // Small gap (was 4, now 6 - 40% larger)
-            } else if (line.type == 5) {
-                y += 11 * hiDpiScale;  // Large gap (was 8, now 11 - 40% larger)
-            } else if (line.type == 6) {
-                // Single text line
-                canvas->drawString(line.label.c_str(), x, y, debugFont, keyPaint);
-                y += lineHeight;
-            } else if (line.type == 3) {
-                // Key line
-                canvas->drawString(line.key.c_str(), x, y, debugFont, keyPaint);
-                float keyW = debugFont.measureText(line.key.c_str(), line.key.size(), SkTextEncoding::kUTF8);
-                canvas->drawString(line.label.c_str(), x + keyW + 7 * hiDpiScale, y, debugFont, textPaint);  // Was 5, now 7
-                canvas->drawString(line.value.c_str(), x + labelWidth, y, debugFont, highlightPaint);
-                y += lineHeight;
-            } else {
-                // Normal/highlight/anim line
-                canvas->drawString(line.label.c_str(), x, y, debugFont, textPaint);
-                SkPaint* valuePaint = &textPaint;
-                if (line.type == 1) valuePaint = &highlightPaint;
-                else if (line.type == 2) valuePaint = &animPaint;
-                canvas->drawString(line.value.c_str(), x + labelWidth, y, debugFont, *valuePaint);
-                y += lineHeight;
+            // Calculate box dimensions - tight fit around text
+            float boxWidth = maxWidth + padding * 2;
+            float boxHeight = padding;
+            for (const auto& line : lines) {
+                if (line.type == 4)
+                    boxHeight += 6 * hiDpiScale;  // Small gap (was 4, now 6)
+                else if (line.type == 5)
+                    boxHeight += 11 * hiDpiScale;  // Large gap (was 8, now 11)
+                else
+                    boxHeight += lineHeight;
             }
-        }
-        } // end showDebugOverlay
+            boxHeight += padding;
+
+            // === PASS 2: Draw background then all text ===
+            canvas->drawRect(SkRect::MakeXYWH(0, 0, boxWidth, boxHeight), bgPaint);
+
+            float y = padding + lineHeight;
+            float x = padding;
+
+            for (const auto& line : lines) {
+                if (line.type == 4) {
+                    y += 6 * hiDpiScale;  // Small gap (was 4, now 6 - 40% larger)
+                } else if (line.type == 5) {
+                    y += 11 * hiDpiScale;  // Large gap (was 8, now 11 - 40% larger)
+                } else if (line.type == 6) {
+                    // Single text line
+                    canvas->drawString(line.label.c_str(), x, y, debugFont, keyPaint);
+                    y += lineHeight;
+                } else if (line.type == 3) {
+                    // Key line
+                    canvas->drawString(line.key.c_str(), x, y, debugFont, keyPaint);
+                    float keyW = debugFont.measureText(line.key.c_str(), line.key.size(), SkTextEncoding::kUTF8);
+                    canvas->drawString(line.label.c_str(), x + keyW + 7 * hiDpiScale, y, debugFont,
+                                       textPaint);  // Was 5, now 7
+                    canvas->drawString(line.value.c_str(), x + labelWidth, y, debugFont, highlightPaint);
+                    y += lineHeight;
+                } else {
+                    // Normal/highlight/anim line
+                    canvas->drawString(line.label.c_str(), x, y, debugFont, textPaint);
+                    SkPaint* valuePaint = &textPaint;
+                    if (line.type == 1)
+                        valuePaint = &highlightPaint;
+                    else if (line.type == 2)
+                        valuePaint = &animPaint;
+                    canvas->drawString(line.value.c_str(), x + labelWidth, y, debugFont, *valuePaint);
+                    y += lineHeight;
+                }
+            }
+        }  // end showDebugOverlay
         auto overlayEnd = Clock::now();
         DurationMs overlayTime = overlayEnd - overlayStart;
 
@@ -1969,15 +2004,20 @@ int main(int argc, char* argv[]) {
                 double sinceLast = stutterAt - lastStutterTime;
                 // Identify the culprit phase (using all tracked phases)
                 const char* culprit = "unknown";
-                double maxPhase = std::max({eventTime.count(), fetchTime.count(), overlayTime.count(),
-                                           copyTime.count(), presentTime.count()});
-                if (maxPhase == eventTime.count()) culprit = "EVENT";
-                else if (maxPhase == fetchTime.count()) culprit = "FETCH";
-                else if (maxPhase == overlayTime.count()) culprit = "OVERLAY";
-                else if (maxPhase == copyTime.count()) culprit = "COPY";
-                else if (maxPhase == presentTime.count()) culprit = "PRESENT";
-                std::cerr << "STUTTER #" << stutterCount << " at " << std::fixed << std::setprecision(2)
-                          << stutterAt << "s (+" << sinceLast << "s) [" << culprit << "]: "
+                double maxPhase = std::max(
+                    {eventTime.count(), fetchTime.count(), overlayTime.count(), copyTime.count(), presentTime.count()});
+                if (maxPhase == eventTime.count())
+                    culprit = "EVENT";
+                else if (maxPhase == fetchTime.count())
+                    culprit = "FETCH";
+                else if (maxPhase == overlayTime.count())
+                    culprit = "OVERLAY";
+                else if (maxPhase == copyTime.count())
+                    culprit = "COPY";
+                else if (maxPhase == presentTime.count())
+                    culprit = "PRESENT";
+                std::cerr << "STUTTER #" << stutterCount << " at " << std::fixed << std::setprecision(2) << stutterAt
+                          << "s (+" << sinceLast << "s) [" << culprit << "]: "
                           << "event=" << eventTime.count() << "ms, "
                           << "fetch=" << fetchTime.count() << "ms, "
                           << "overlay=" << overlayTime.count() << "ms, "
@@ -2005,9 +2045,7 @@ int main(int argc, char* argv[]) {
     // Final statistics
     auto totalElapsed = std::chrono::duration<double>(Clock::now() - startTime).count();
     double totalAvg = frameTimes.average();
-    auto pctFinal = [totalAvg](double v) -> double {
-        return totalAvg > 0 ? (v / totalAvg * 100.0) : 0.0;
-    };
+    auto pctFinal = [totalAvg](double v) -> double { return totalAvg > 0 ? (v / totalAvg * 100.0) : 0.0; };
 
     std::cout << "\n=== Final Statistics ===" << std::endl;
     std::cout << "Display cycles: " << displayCycles << std::endl;
@@ -2015,22 +2053,33 @@ int main(int argc, char* argv[]) {
     double finalHitRate = displayCycles > 0 ? (100.0 * framesDelivered / displayCycles) : 0.0;
     std::cout << "Frame hit rate: " << std::fixed << std::setprecision(1) << finalHitRate << "%" << std::endl;
     std::cout << "Total time: " << std::setprecision(2) << totalElapsed << "s" << std::endl;
-    std::cout << "Display FPS: " << std::setprecision(2) << (displayCycles / totalElapsed) << " (main loop rate)" << std::endl;
-    std::cout << "Skia FPS: " << std::setprecision(2) << (framesDelivered / totalElapsed) << " (frames from Skia worker)" << std::endl;
+    std::cout << "Display FPS: " << std::setprecision(2) << (displayCycles / totalElapsed) << " (main loop rate)"
+              << std::endl;
+    std::cout << "Skia FPS: " << std::setprecision(2) << (framesDelivered / totalElapsed)
+              << " (frames from Skia worker)" << std::endl;
     std::cout << "Average frame time: " << std::setprecision(2) << frameTimes.average() << "ms" << std::endl;
 
     std::cout << "\n--- Pipeline Timing (average) ---" << std::endl;
-    std::cout << "Event:      " << std::setprecision(2) << eventTimes.average() << "ms (" << std::setprecision(1) << pctFinal(eventTimes.average()) << "%)" << std::endl;
-    std::cout << "Anim:       " << std::setprecision(2) << animTimes.average() << "ms (" << std::setprecision(1) << pctFinal(animTimes.average()) << "%)" << std::endl;
-    std::cout << "Fetch:      " << std::setprecision(2) << fetchTimes.average() << "ms (" << std::setprecision(1) << pctFinal(fetchTimes.average()) << "%)" << std::endl;
-    std::cout << "Wait Skia:  " << std::setprecision(2) << idleTimes.average() << "ms (" << std::setprecision(1) << (100.0 - finalHitRate) << "% idle)" << std::endl;
-    std::cout << "Overlay:    " << std::setprecision(2) << overlayTimes.average() << "ms (" << std::setprecision(1) << pctFinal(overlayTimes.average()) << "%)" << std::endl;
-    std::cout << "Copy:       " << std::setprecision(2) << copyTimes.average() << "ms (" << std::setprecision(1) << pctFinal(copyTimes.average()) << "%)" << std::endl;
-    std::cout << "Present:    " << std::setprecision(2) << presentTimes.average() << "ms (" << std::setprecision(1) << pctFinal(presentTimes.average()) << "%)" << std::endl;
-    std::cout << "Skia work:  " << std::setprecision(2) << renderTimes.average() << "ms (worker, min=" << renderTimes.min() << ", max=" << renderTimes.max() << ")" << std::endl;
-    double sumPhases = eventTimes.average() + animTimes.average() + fetchTimes.average() +
-                       overlayTimes.average() + copyTimes.average() + presentTimes.average();
-    std::cout << "Active:     " << std::setprecision(2) << sumPhases << "ms (" << std::setprecision(1) << pctFinal(sumPhases) << "%)" << std::endl;
+    std::cout << "Event:      " << std::setprecision(2) << eventTimes.average() << "ms (" << std::setprecision(1)
+              << pctFinal(eventTimes.average()) << "%)" << std::endl;
+    std::cout << "Anim:       " << std::setprecision(2) << animTimes.average() << "ms (" << std::setprecision(1)
+              << pctFinal(animTimes.average()) << "%)" << std::endl;
+    std::cout << "Fetch:      " << std::setprecision(2) << fetchTimes.average() << "ms (" << std::setprecision(1)
+              << pctFinal(fetchTimes.average()) << "%)" << std::endl;
+    std::cout << "Wait Skia:  " << std::setprecision(2) << idleTimes.average() << "ms (" << std::setprecision(1)
+              << (100.0 - finalHitRate) << "% idle)" << std::endl;
+    std::cout << "Overlay:    " << std::setprecision(2) << overlayTimes.average() << "ms (" << std::setprecision(1)
+              << pctFinal(overlayTimes.average()) << "%)" << std::endl;
+    std::cout << "Copy:       " << std::setprecision(2) << copyTimes.average() << "ms (" << std::setprecision(1)
+              << pctFinal(copyTimes.average()) << "%)" << std::endl;
+    std::cout << "Present:    " << std::setprecision(2) << presentTimes.average() << "ms (" << std::setprecision(1)
+              << pctFinal(presentTimes.average()) << "%)" << std::endl;
+    std::cout << "Skia work:  " << std::setprecision(2) << renderTimes.average()
+              << "ms (worker, min=" << renderTimes.min() << ", max=" << renderTimes.max() << ")" << std::endl;
+    double sumPhases = eventTimes.average() + animTimes.average() + fetchTimes.average() + overlayTimes.average() +
+                       copyTimes.average() + presentTimes.average();
+    std::cout << "Active:     " << std::setprecision(2) << sumPhases << "ms (" << std::setprecision(1)
+              << pctFinal(sumPhases) << "%)" << std::endl;
 
     // Stop threaded renderer first (must stop before parallel renderer)
     std::cout << "\nStopping render thread..." << std::endl;

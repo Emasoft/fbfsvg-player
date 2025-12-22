@@ -6,45 +6,46 @@
 // Copyright (c) 2024. MIT License.
 
 #include "svg_player_api.h"
+
 #include "SVGAnimationController.h"
 
 // Skia headers
-#include "include/core/SkStream.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkSurface.h"
 #include "include/core/SkBitmap.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
 #include "include/core/SkFontMgr.h"
-#include "include/core/SkColorSpace.h"
+#include "include/core/SkStream.h"
+#include "include/core/SkSurface.h"
+#include "modules/skresources/include/SkResources.h"
 #include "modules/svg/include/SkSVGDOM.h"
 #include "modules/svg/include/SkSVGNode.h"
 #include "modules/svg/include/SkSVGSVG.h"
-#include "modules/skresources/include/SkResources.h"
 
 // Platform-specific font managers
 #if defined(__APPLE__)
-    #include "include/ports/SkFontMgr_mac_ct.h"
-    #define CREATE_FONT_MANAGER() SkFontMgr_New_CoreText(nullptr)
+#include "include/ports/SkFontMgr_mac_ct.h"
+#define CREATE_FONT_MANAGER() SkFontMgr_New_CoreText(nullptr)
 #elif defined(_WIN32)
-    #include "include/ports/SkTypeface_win.h"
-    #define CREATE_FONT_MANAGER() SkFontMgr_New_DirectWrite()
+#include "include/ports/SkTypeface_win.h"
+#define CREATE_FONT_MANAGER() SkFontMgr_New_DirectWrite()
 #else
-    #include "include/ports/SkFontMgr_fontconfig.h"
-    #include "include/ports/SkFontScanner_FreeType.h"
-    #define CREATE_FONT_MANAGER() SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType())
+#include "include/ports/SkFontMgr_fontconfig.h"
+#include "include/ports/SkFontScanner_FreeType.h"
+#define CREATE_FONT_MANAGER() SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType())
 #endif
 
-#include <mutex>
-#include <memory>
-#include <string>
-#include <vector>
-#include <unordered_set>
-#include <unordered_map>
-#include <cstring>
-#include <cstdio>
-#include <cmath>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 // =============================================================================
 // Internal Types
@@ -263,60 +264,73 @@ void updateSVGForCurrentTime(SVGPlayer* player) {
 
         // Restore container size
         player->svgDom->setContainerSize(
-            SkSize::Make(static_cast<float>(player->svgWidth),
-                        static_cast<float>(player->svgHeight)));
+            SkSize::Make(static_cast<float>(player->svgWidth), static_cast<float>(player->svgHeight)));
     }
 }
 
 /// Convert SVGPlaybackState to controller PlaybackState
 svgplayer::PlaybackState toControllerState(SVGPlaybackState state) {
     switch (state) {
-        case SVGPlaybackState_Playing: return svgplayer::PlaybackState::Playing;
-        case SVGPlaybackState_Paused: return svgplayer::PlaybackState::Paused;
+        case SVGPlaybackState_Playing:
+            return svgplayer::PlaybackState::Playing;
+        case SVGPlaybackState_Paused:
+            return svgplayer::PlaybackState::Paused;
         case SVGPlaybackState_Stopped:
-        default: return svgplayer::PlaybackState::Stopped;
+        default:
+            return svgplayer::PlaybackState::Stopped;
     }
 }
 
 /// Convert controller PlaybackState to SVGPlaybackState
 SVGPlaybackState fromControllerState(svgplayer::PlaybackState state) {
     switch (state) {
-        case svgplayer::PlaybackState::Playing: return SVGPlaybackState_Playing;
-        case svgplayer::PlaybackState::Paused: return SVGPlaybackState_Paused;
+        case svgplayer::PlaybackState::Playing:
+            return SVGPlaybackState_Playing;
+        case svgplayer::PlaybackState::Paused:
+            return SVGPlaybackState_Paused;
         case svgplayer::PlaybackState::Stopped:
-        default: return SVGPlaybackState_Stopped;
+        default:
+            return SVGPlaybackState_Stopped;
     }
 }
 
 /// Convert SVGRepeatMode to controller RepeatMode
 svgplayer::RepeatMode toControllerRepeatMode(SVGRepeatMode mode) {
     switch (mode) {
-        case SVGRepeatMode_Loop: return svgplayer::RepeatMode::Loop;
-        case SVGRepeatMode_Reverse: return svgplayer::RepeatMode::Reverse;
-        case SVGRepeatMode_Count: return svgplayer::RepeatMode::Count;
+        case SVGRepeatMode_Loop:
+            return svgplayer::RepeatMode::Loop;
+        case SVGRepeatMode_Reverse:
+            return svgplayer::RepeatMode::Reverse;
+        case SVGRepeatMode_Count:
+            return svgplayer::RepeatMode::Count;
         case SVGRepeatMode_None:
-        default: return svgplayer::RepeatMode::None;
+        default:
+            return svgplayer::RepeatMode::None;
     }
 }
 
 /// Convert controller RepeatMode to SVGRepeatMode
 SVGRepeatMode fromControllerRepeatMode(svgplayer::RepeatMode mode) {
     switch (mode) {
-        case svgplayer::RepeatMode::Loop: return SVGRepeatMode_Loop;
-        case svgplayer::RepeatMode::Reverse: return SVGRepeatMode_Reverse;
-        case svgplayer::RepeatMode::Count: return SVGRepeatMode_Count;
+        case svgplayer::RepeatMode::Loop:
+            return SVGRepeatMode_Loop;
+        case svgplayer::RepeatMode::Reverse:
+            return SVGRepeatMode_Reverse;
+        case svgplayer::RepeatMode::Count:
+            return SVGRepeatMode_Count;
         case svgplayer::RepeatMode::None:
-        default: return SVGRepeatMode_None;
+        default:
+            return SVGRepeatMode_None;
     }
 }
 
 /// Clamp value to range
-template<typename T>
+template <typename T>
 T clamp(T value, T min, T max) {
     return std::max(min, std::min(max, value));
 }
 
-} // anonymous namespace
+}  // anonymous namespace
 
 // =============================================================================
 // Section 1: Lifecycle Functions
@@ -518,9 +532,15 @@ void SVGPlayer_TogglePlayback(SVGPlayerRef player) {
 
 void SVGPlayer_SetPlaybackState(SVGPlayerRef player, SVGPlaybackState state) {
     switch (state) {
-        case SVGPlaybackState_Playing: SVGPlayer_Play(player); break;
-        case SVGPlaybackState_Paused: SVGPlayer_Pause(player); break;
-        case SVGPlaybackState_Stopped: SVGPlayer_Stop(player); break;
+        case SVGPlaybackState_Playing:
+            SVGPlayer_Play(player);
+            break;
+        case SVGPlaybackState_Paused:
+            SVGPlayer_Pause(player);
+            break;
+        case SVGPlaybackState_Stopped:
+            SVGPlayer_Stop(player);
+            break;
     }
 }
 
@@ -531,17 +551,11 @@ SVGPlaybackState SVGPlayer_GetPlaybackState(SVGPlayerRef player) {
     return fromControllerState(player->controller->getPlaybackState());
 }
 
-bool SVGPlayer_IsPlaying(SVGPlayerRef player) {
-    return SVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Playing;
-}
+bool SVGPlayer_IsPlaying(SVGPlayerRef player) { return SVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Playing; }
 
-bool SVGPlayer_IsPaused(SVGPlayerRef player) {
-    return SVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Paused;
-}
+bool SVGPlayer_IsPaused(SVGPlayerRef player) { return SVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Paused; }
 
-bool SVGPlayer_IsStopped(SVGPlayerRef player) {
-    return SVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Stopped;
-}
+bool SVGPlayer_IsStopped(SVGPlayerRef player) { return SVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Stopped; }
 
 // =============================================================================
 // Section 5: Repeat Mode Functions
@@ -673,8 +687,7 @@ bool SVGPlayer_Update(SVGPlayerRef player, double deltaTime) {
 
         // Update statistics
         auto updateEnd = std::chrono::high_resolution_clock::now();
-        player->stats.updateTimeMs = std::chrono::duration<double, std::milli>(
-            updateEnd - updateStart).count();
+        player->stats.updateTimeMs = std::chrono::duration<double, std::milli>(updateEnd - updateStart).count();
         player->stats.currentFrame = player->controller->getCurrentFrame();
         player->stats.totalFrames = player->controller->getTotalFrames();
         player->stats.animationTimeMs = player->controller->getCurrentTime() * 1000.0;
@@ -770,13 +783,9 @@ void SVGPlayer_SeekToProgress(SVGPlayerRef player, float progress) {
     SVGPlayer_SeekTo(player, duration * clamp(progress, 0.0f, 1.0f));
 }
 
-void SVGPlayer_SeekToStart(SVGPlayerRef player) {
-    SVGPlayer_SeekTo(player, 0.0);
-}
+void SVGPlayer_SeekToStart(SVGPlayerRef player) { SVGPlayer_SeekTo(player, 0.0); }
 
-void SVGPlayer_SeekToEnd(SVGPlayerRef player) {
-    SVGPlayer_SeekTo(player, SVGPlayer_GetDuration(player));
-}
+void SVGPlayer_SeekToEnd(SVGPlayerRef player) { SVGPlayer_SeekTo(player, SVGPlayer_GetDuration(player)); }
 
 void SVGPlayer_SeekForwardByTime(SVGPlayerRef player, double seconds) {
     double current = SVGPlayer_GetCurrentTime(player);
@@ -859,11 +868,7 @@ bool SVGPlayer_IsScrubbing(SVGPlayerRef player) {
 // Section 11: Rendering Functions
 // =============================================================================
 
-bool SVGPlayer_Render(SVGPlayerRef player,
-                       void* pixelBuffer,
-                       int width,
-                       int height,
-                       float scale) {
+bool SVGPlayer_Render(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale) {
     if (!player || !pixelBuffer || width <= 0 || height <= 0) return false;
 
     auto renderStart = std::chrono::high_resolution_clock::now();
@@ -876,22 +881,14 @@ bool SVGPlayer_Render(SVGPlayerRef player,
     }
 
     // Create image info for RGBA pixels
-    SkImageInfo imageInfo = SkImageInfo::Make(
-        width, height,
-        kRGBA_8888_SkColorType,
-        kPremul_SkAlphaType,
-        SkColorSpace::MakeSRGB()
-    );
+    SkImageInfo imageInfo =
+        SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType, SkColorSpace::MakeSRGB());
 
     // Calculate stride (bytes per row)
     size_t rowBytes = static_cast<size_t>(width) * 4;
 
     // Create surface that wraps the caller's pixel buffer
-    sk_sp<SkSurface> surface = SkSurfaces::WrapPixels(
-        imageInfo,
-        pixelBuffer,
-        rowBytes
-    );
+    sk_sp<SkSurface> surface = SkSurfaces::WrapPixels(imageInfo, pixelBuffer, rowBytes);
 
     if (!surface) {
         setError(player, 21, "Failed to create rendering surface");
@@ -939,21 +936,15 @@ bool SVGPlayer_Render(SVGPlayerRef player,
 
     // Update statistics
     auto renderEnd = std::chrono::high_resolution_clock::now();
-    player->stats.renderTimeMs = std::chrono::duration<double, std::milli>(
-        renderEnd - renderStart).count();
+    player->stats.renderTimeMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
     player->stats.elementsRendered++;
-    player->stats.fps = (player->stats.renderTimeMs > 0) ?
-        1000.0 / player->stats.renderTimeMs : 0.0;
+    player->stats.fps = (player->stats.renderTimeMs > 0) ? 1000.0 / player->stats.renderTimeMs : 0.0;
 
     return true;
 }
 
-bool SVGPlayer_RenderAtTime(SVGPlayerRef player,
-                             void* pixelBuffer,
-                             int width,
-                             int height,
-                             float scale,
-                             double timeSeconds) {
+bool SVGPlayer_RenderAtTime(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale,
+                            double timeSeconds) {
     if (!player || !player->controller) return false;
 
     // Temporarily seek to the specified time
@@ -978,12 +969,7 @@ bool SVGPlayer_RenderAtTime(SVGPlayerRef player,
     return result;
 }
 
-bool SVGPlayer_RenderFrame(SVGPlayerRef player,
-                            void* pixelBuffer,
-                            int width,
-                            int height,
-                            float scale,
-                            int frame) {
+bool SVGPlayer_RenderFrame(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale, int frame) {
     if (!player || !player->controller) return false;
 
     // Convert frame to time
@@ -996,8 +982,7 @@ bool SVGPlayer_RenderFrame(SVGPlayerRef player,
         frame = clamp(frame, 0, totalFrames - 1);
     }
 
-    double timeSeconds = (totalFrames > 0) ?
-        (static_cast<double>(frame) / totalFrames) * duration : 0.0;
+    double timeSeconds = (totalFrames > 0) ? (static_cast<double>(frame) / totalFrames) * duration : 0.0;
 
     return SVGPlayer_RenderAtTime(player, pixelBuffer, width, height, scale, timeSeconds);
 }
@@ -1006,10 +991,8 @@ bool SVGPlayer_RenderFrame(SVGPlayerRef player,
 // Section 12: Coordinate Conversion Functions
 // =============================================================================
 
-bool SVGPlayer_ViewToSVG(SVGPlayerRef player,
-                          float viewX, float viewY,
-                          int viewWidth, int viewHeight,
-                          float* svgX, float* svgY) {
+bool SVGPlayer_ViewToSVG(SVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight, float* svgX,
+                         float* svgY) {
     if (!player || !svgX || !svgY) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1038,10 +1021,8 @@ bool SVGPlayer_ViewToSVG(SVGPlayerRef player,
     return true;
 }
 
-bool SVGPlayer_SVGToView(SVGPlayerRef player,
-                          float svgX, float svgY,
-                          int viewWidth, int viewHeight,
-                          float* viewX, float* viewY) {
+bool SVGPlayer_SVGToView(SVGPlayerRef player, float svgX, float svgY, int viewWidth, int viewHeight, float* viewX,
+                         float* viewY) {
     if (!player || !viewX || !viewY) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1095,9 +1076,7 @@ void SVGPlayer_UnsubscribeFromAllElements(SVGPlayerRef player) {
     player->subscribedElements.clear();
 }
 
-const char* SVGPlayer_HitTest(SVGPlayerRef player,
-                               float viewX, float viewY,
-                               int viewWidth, int viewHeight) {
+const char* SVGPlayer_HitTest(SVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight) {
     if (!player) return nullptr;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1113,8 +1092,8 @@ const char* SVGPlayer_HitTest(SVGPlayerRef player,
         auto it = player->elementBoundsCache.find(elementId);
         if (it != player->elementBoundsCache.end()) {
             const SVGRect& bounds = it->second;
-            if (svgX >= bounds.x && svgX <= bounds.x + bounds.width &&
-                svgY >= bounds.y && svgY <= bounds.y + bounds.height) {
+            if (svgX >= bounds.x && svgX <= bounds.x + bounds.width && svgY >= bounds.y &&
+                svgY <= bounds.y + bounds.height) {
                 player->lastHitTestResult = elementId;
                 return player->lastHitTestResult.c_str();
             }
@@ -1124,9 +1103,7 @@ const char* SVGPlayer_HitTest(SVGPlayerRef player,
     return nullptr;
 }
 
-bool SVGPlayer_GetElementBounds(SVGPlayerRef player,
-                                 const char* objectID,
-                                 SVGRect* bounds) {
+bool SVGPlayer_GetElementBounds(SVGPlayerRef player, const char* objectID, SVGRect* bounds) {
     if (!player || !objectID || !bounds) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1145,11 +1122,8 @@ bool SVGPlayer_GetElementBounds(SVGPlayerRef player,
     return false;
 }
 
-int SVGPlayer_GetElementsAtPoint(SVGPlayerRef player,
-                                  float viewX, float viewY,
-                                  int viewWidth, int viewHeight,
-                                  const char** outElements,
-                                  int maxElements) {
+int SVGPlayer_GetElementsAtPoint(SVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight,
+                                 const char** outElements, int maxElements) {
     if (!player || !outElements || maxElements <= 0) return 0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1168,8 +1142,8 @@ int SVGPlayer_GetElementsAtPoint(SVGPlayerRef player,
         auto it = player->elementBoundsCache.find(elementId);
         if (it != player->elementBoundsCache.end()) {
             const SVGRect& bounds = it->second;
-            if (svgX >= bounds.x && svgX <= bounds.x + bounds.width &&
-                svgY >= bounds.y && svgY <= bounds.y + bounds.height) {
+            if (svgX >= bounds.x && svgX <= bounds.x + bounds.width && svgY >= bounds.y &&
+                svgY <= bounds.y + bounds.height) {
                 outElements[count++] = elementId.c_str();
             }
         }
@@ -1193,11 +1167,8 @@ bool SVGPlayer_ElementExists(SVGPlayerRef player, const char* elementID) {
     return player->originalSvgData.find(searchPattern) != std::string::npos;
 }
 
-bool SVGPlayer_GetElementProperty(SVGPlayerRef player,
-                                   const char* elementID,
-                                   const char* propertyName,
-                                   char* outValue,
-                                   int maxLength) {
+bool SVGPlayer_GetElementProperty(SVGPlayerRef player, const char* elementID, const char* propertyName, char* outValue,
+                                  int maxLength) {
     if (!player || !elementID || !propertyName || !outValue || maxLength <= 0) {
         return false;
     }
@@ -1215,9 +1186,7 @@ bool SVGPlayer_GetElementProperty(SVGPlayerRef player,
 // Section 15: Callback Functions
 // =============================================================================
 
-void SVGPlayer_SetStateChangeCallback(SVGPlayerRef player,
-                                       SVGStateChangeCallback callback,
-                                       void* userData) {
+void SVGPlayer_SetStateChangeCallback(SVGPlayerRef player, SVGStateChangeCallback callback, void* userData) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1226,22 +1195,15 @@ void SVGPlayer_SetStateChangeCallback(SVGPlayerRef player,
 
     // Also set up controller callback
     if (player->controller && callback) {
-        player->controller->setStateChangeCallback(
-            [player](svgplayer::PlaybackState state) {
-                if (player->stateChangeCallback) {
-                    player->stateChangeCallback(
-                        player->stateChangeUserData,
-                        fromControllerState(state)
-                    );
-                }
+        player->controller->setStateChangeCallback([player](svgplayer::PlaybackState state) {
+            if (player->stateChangeCallback) {
+                player->stateChangeCallback(player->stateChangeUserData, fromControllerState(state));
             }
-        );
+        });
     }
 }
 
-void SVGPlayer_SetLoopCallback(SVGPlayerRef player,
-                                SVGLoopCallback callback,
-                                void* userData) {
+void SVGPlayer_SetLoopCallback(SVGPlayerRef player, SVGLoopCallback callback, void* userData) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1250,20 +1212,16 @@ void SVGPlayer_SetLoopCallback(SVGPlayerRef player,
 
     // Set up controller callback
     if (player->controller && callback) {
-        player->controller->setLoopCallback(
-            [player](int loopCount) {
-                player->completedLoops = loopCount;
-                if (player->loopCallback) {
-                    player->loopCallback(player->loopUserData, loopCount);
-                }
+        player->controller->setLoopCallback([player](int loopCount) {
+            player->completedLoops = loopCount;
+            if (player->loopCallback) {
+                player->loopCallback(player->loopUserData, loopCount);
             }
-        );
+        });
     }
 }
 
-void SVGPlayer_SetEndCallback(SVGPlayerRef player,
-                               SVGEndCallback callback,
-                               void* userData) {
+void SVGPlayer_SetEndCallback(SVGPlayerRef player, SVGEndCallback callback, void* userData) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1272,19 +1230,15 @@ void SVGPlayer_SetEndCallback(SVGPlayerRef player,
 
     // Set up controller callback
     if (player->controller && callback) {
-        player->controller->setEndCallback(
-            [player]() {
-                if (player->endCallback) {
-                    player->endCallback(player->endUserData);
-                }
+        player->controller->setEndCallback([player]() {
+            if (player->endCallback) {
+                player->endCallback(player->endUserData);
             }
-        );
+        });
     }
 }
 
-void SVGPlayer_SetErrorCallback(SVGPlayerRef player,
-                                 SVGErrorCallback callback,
-                                 void* userData) {
+void SVGPlayer_SetErrorCallback(SVGPlayerRef player, SVGErrorCallback callback, void* userData) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1292,9 +1246,7 @@ void SVGPlayer_SetErrorCallback(SVGPlayerRef player,
     player->errorUserData = userData;
 }
 
-void SVGPlayer_SetElementTouchCallback(SVGPlayerRef player,
-                                        SVGElementTouchCallback callback,
-                                        void* userData) {
+void SVGPlayer_SetElementTouchCallback(SVGPlayerRef player, SVGElementTouchCallback callback, void* userData) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1416,9 +1368,7 @@ uint32_t SVGPlayer_GetDebugFlags(SVGPlayerRef player) {
 // Section 19: Utility Functions
 // =============================================================================
 
-const char* SVGPlayer_FormatTime(double timeSeconds,
-                                  char* outBuffer,
-                                  int bufferSize) {
+const char* SVGPlayer_FormatTime(double timeSeconds, char* outBuffer, int bufferSize) {
     if (!outBuffer || bufferSize <= 0) return "";
 
     int totalMs = static_cast<int>(timeSeconds * 1000);

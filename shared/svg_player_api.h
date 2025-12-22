@@ -20,9 +20,9 @@
 #ifndef SVG_PLAYER_API_H
 #define SVG_PLAYER_API_H
 
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 // Include shared type definitions
 #include "SVGTypes.h"
@@ -45,17 +45,17 @@ extern "C" {
 
 // Export/import macros for shared library builds
 #ifdef _WIN32
-    #ifdef SVG_PLAYER_BUILDING_DLL
-        #define SVG_PLAYER_API __declspec(dllexport)
-    #else
-        #define SVG_PLAYER_API __declspec(dllimport)
-    #endif
+#ifdef SVG_PLAYER_BUILDING_DLL
+#define SVG_PLAYER_API __declspec(dllexport)
 #else
-    #ifdef SVG_PLAYER_BUILDING_DLL
-        #define SVG_PLAYER_API __attribute__((visibility("default")))
-    #else
-        #define SVG_PLAYER_API
-    #endif
+#define SVG_PLAYER_API __declspec(dllimport)
+#endif
+#else
+#ifdef SVG_PLAYER_BUILDING_DLL
+#define SVG_PLAYER_API __attribute__((visibility("default")))
+#else
+#define SVG_PLAYER_API
+#endif
 #endif
 
 // =============================================================================
@@ -406,11 +406,7 @@ SVG_PLAYER_API bool SVGPlayer_IsScrubbing(SVGPlayerRef player);
 /// @param height Height in pixels
 /// @param scale HiDPI scale factor (1.0 = standard, 2.0 = Retina)
 /// @return true on success
-SVG_PLAYER_API bool SVGPlayer_Render(SVGPlayerRef player,
-                                      void* pixelBuffer,
-                                      int width,
-                                      int height,
-                                      float scale);
+SVG_PLAYER_API bool SVGPlayer_Render(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale);
 
 /// Render a specific time to a pixel buffer
 /// @param player Handle to the player
@@ -420,12 +416,8 @@ SVG_PLAYER_API bool SVGPlayer_Render(SVGPlayerRef player,
 /// @param scale HiDPI scale factor
 /// @param timeSeconds Time in seconds for the frame to render
 /// @return true on success
-SVG_PLAYER_API bool SVGPlayer_RenderAtTime(SVGPlayerRef player,
-                                            void* pixelBuffer,
-                                            int width,
-                                            int height,
-                                            float scale,
-                                            double timeSeconds);
+SVG_PLAYER_API bool SVGPlayer_RenderAtTime(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale,
+                                           double timeSeconds);
 
 /// Render a specific frame to a pixel buffer
 /// @param player Handle to the player
@@ -435,12 +427,8 @@ SVG_PLAYER_API bool SVGPlayer_RenderAtTime(SVGPlayerRef player,
 /// @param scale HiDPI scale factor
 /// @param frame Frame number (0-indexed)
 /// @return true on success
-SVG_PLAYER_API bool SVGPlayer_RenderFrame(SVGPlayerRef player,
-                                           void* pixelBuffer,
-                                           int width,
-                                           int height,
-                                           float scale,
-                                           int frame);
+SVG_PLAYER_API bool SVGPlayer_RenderFrame(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale,
+                                          int frame);
 
 // =============================================================================
 // Section 12: Coordinate Conversion Functions
@@ -455,10 +443,8 @@ SVG_PLAYER_API bool SVGPlayer_RenderFrame(SVGPlayerRef player,
 /// @param svgX Output: X in SVG coordinates
 /// @param svgY Output: Y in SVG coordinates
 /// @return true on success
-SVG_PLAYER_API bool SVGPlayer_ViewToSVG(SVGPlayerRef player,
-                                         float viewX, float viewY,
-                                         int viewWidth, int viewHeight,
-                                         float* svgX, float* svgY);
+SVG_PLAYER_API bool SVGPlayer_ViewToSVG(SVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight,
+                                        float* svgX, float* svgY);
 
 /// Convert SVG coordinates to view coordinates
 /// @param player Handle to the player
@@ -469,10 +455,8 @@ SVG_PLAYER_API bool SVGPlayer_ViewToSVG(SVGPlayerRef player,
 /// @param viewX Output: X in view coordinates
 /// @param viewY Output: Y in view coordinates
 /// @return true on success
-SVG_PLAYER_API bool SVGPlayer_SVGToView(SVGPlayerRef player,
-                                         float svgX, float svgY,
-                                         int viewWidth, int viewHeight,
-                                         float* viewX, float* viewY);
+SVG_PLAYER_API bool SVGPlayer_SVGToView(SVGPlayerRef player, float svgX, float svgY, int viewWidth, int viewHeight,
+                                        float* viewX, float* viewY);
 
 // =============================================================================
 // Section 13: Hit Testing Functions
@@ -500,18 +484,15 @@ SVG_PLAYER_API void SVGPlayer_UnsubscribeFromAllElements(SVGPlayerRef player);
 /// @param viewHeight Height of the view
 /// @return The objectID of the hit element, or NULL if none
 /// @note The returned string is valid until the next call to this function
-SVG_PLAYER_API const char* SVGPlayer_HitTest(SVGPlayerRef player,
-                                              float viewX, float viewY,
-                                              int viewWidth, int viewHeight);
+SVG_PLAYER_API const char* SVGPlayer_HitTest(SVGPlayerRef player, float viewX, float viewY, int viewWidth,
+                                             int viewHeight);
 
 /// Get the bounding rect of an element in SVG coordinates
 /// @param player Handle to the player
 /// @param objectID The id attribute of the SVG element
 /// @param bounds Output: bounding rectangle
 /// @return true if element found, false otherwise
-SVG_PLAYER_API bool SVGPlayer_GetElementBounds(SVGPlayerRef player,
-                                                const char* objectID,
-                                                SVGRect* bounds);
+SVG_PLAYER_API bool SVGPlayer_GetElementBounds(SVGPlayerRef player, const char* objectID, SVGRect* bounds);
 
 /// Get all elements at a point (for layered SVGs)
 /// @param player Handle to the player
@@ -522,11 +503,8 @@ SVG_PLAYER_API bool SVGPlayer_GetElementBounds(SVGPlayerRef player,
 /// @param outElements Output: array of element IDs (caller allocates)
 /// @param maxElements Maximum number of elements to return
 /// @return Number of elements found
-SVG_PLAYER_API int SVGPlayer_GetElementsAtPoint(SVGPlayerRef player,
-                                                 float viewX, float viewY,
-                                                 int viewWidth, int viewHeight,
-                                                 const char** outElements,
-                                                 int maxElements);
+SVG_PLAYER_API int SVGPlayer_GetElementsAtPoint(SVGPlayerRef player, float viewX, float viewY, int viewWidth,
+                                                int viewHeight, const char** outElements, int maxElements);
 
 // =============================================================================
 // Section 14: Element Information Functions
@@ -545,11 +523,8 @@ SVG_PLAYER_API bool SVGPlayer_ElementExists(SVGPlayerRef player, const char* ele
 /// @param outValue Output: buffer for property value
 /// @param maxLength Maximum length of outValue buffer
 /// @return true if property was found
-SVG_PLAYER_API bool SVGPlayer_GetElementProperty(SVGPlayerRef player,
-                                                  const char* elementID,
-                                                  const char* propertyName,
-                                                  char* outValue,
-                                                  int maxLength);
+SVG_PLAYER_API bool SVGPlayer_GetElementProperty(SVGPlayerRef player, const char* elementID, const char* propertyName,
+                                                 char* outValue, int maxLength);
 
 // =============================================================================
 // Section 15: Callback Functions
@@ -559,41 +534,33 @@ SVG_PLAYER_API bool SVGPlayer_GetElementProperty(SVGPlayerRef player,
 /// @param player Handle to the player
 /// @param callback Function to call on state change (NULL to remove)
 /// @param userData Context pointer passed to callback
-SVG_PLAYER_API void SVGPlayer_SetStateChangeCallback(SVGPlayerRef player,
-                                                      SVGStateChangeCallback callback,
-                                                      void* userData);
+SVG_PLAYER_API void SVGPlayer_SetStateChangeCallback(SVGPlayerRef player, SVGStateChangeCallback callback,
+                                                     void* userData);
 
 /// Set callback for loop events
 /// @param player Handle to the player
 /// @param callback Function to call when animation loops (NULL to remove)
 /// @param userData Context pointer passed to callback
-SVG_PLAYER_API void SVGPlayer_SetLoopCallback(SVGPlayerRef player,
-                                               SVGLoopCallback callback,
-                                               void* userData);
+SVG_PLAYER_API void SVGPlayer_SetLoopCallback(SVGPlayerRef player, SVGLoopCallback callback, void* userData);
 
 /// Set callback for end events (non-looping mode)
 /// @param player Handle to the player
 /// @param callback Function to call when animation ends (NULL to remove)
 /// @param userData Context pointer passed to callback
-SVG_PLAYER_API void SVGPlayer_SetEndCallback(SVGPlayerRef player,
-                                              SVGEndCallback callback,
-                                              void* userData);
+SVG_PLAYER_API void SVGPlayer_SetEndCallback(SVGPlayerRef player, SVGEndCallback callback, void* userData);
 
 /// Set callback for error events
 /// @param player Handle to the player
 /// @param callback Function to call on errors (NULL to remove)
 /// @param userData Context pointer passed to callback
-SVG_PLAYER_API void SVGPlayer_SetErrorCallback(SVGPlayerRef player,
-                                                SVGErrorCallback callback,
-                                                void* userData);
+SVG_PLAYER_API void SVGPlayer_SetErrorCallback(SVGPlayerRef player, SVGErrorCallback callback, void* userData);
 
 /// Set callback for element touch events
 /// @param player Handle to the player
 /// @param callback Function to call when subscribed element is touched (NULL to remove)
 /// @param userData Context pointer passed to callback
-SVG_PLAYER_API void SVGPlayer_SetElementTouchCallback(SVGPlayerRef player,
-                                                       SVGElementTouchCallback callback,
-                                                       void* userData);
+SVG_PLAYER_API void SVGPlayer_SetElementTouchCallback(SVGPlayerRef player, SVGElementTouchCallback callback,
+                                                      void* userData);
 
 // =============================================================================
 // Section 16: Statistics and Diagnostics
@@ -678,9 +645,7 @@ SVG_PLAYER_API uint32_t SVGPlayer_GetDebugFlags(SVGPlayerRef player);
 /// @param outBuffer Output buffer for formatted string
 /// @param bufferSize Size of output buffer
 /// @return Pointer to outBuffer
-SVG_PLAYER_API const char* SVGPlayer_FormatTime(double timeSeconds,
-                                                 char* outBuffer,
-                                                 int bufferSize);
+SVG_PLAYER_API const char* SVGPlayer_FormatTime(double timeSeconds, char* outBuffer, int bufferSize);
 
 /// Convert time to frame number
 /// @param player Handle to the player
@@ -705,17 +670,19 @@ SVG_PLAYER_API double SVGPlayer_FrameToTime(SVGPlayerRef player, int frame);
 #ifdef __cplusplus
 #ifdef SVG_PLAYER_USE_CXX_WRAPPER
 
-#include <string>
-#include <memory>
 #include <functional>
+#include <memory>
+#include <string>
 
 namespace svgplayer {
 
 /// RAII wrapper for SVGPlayerRef
 class Player {
-public:
+   public:
     Player() : handle_(SVGPlayer_Create()) {}
-    ~Player() { if (handle_) SVGPlayer_Destroy(handle_); }
+    ~Player() {
+        if (handle_) SVGPlayer_Destroy(handle_);
+    }
 
     // Non-copyable
     Player(const Player&) = delete;
@@ -745,13 +712,13 @@ public:
     bool update(double dt) { return SVGPlayer_Update(handle_, dt); }
     bool render(void* buf, int w, int h, float s = 1.0f) { return SVGPlayer_Render(handle_, buf, w, h, s); }
 
-private:
+   private:
     SVGPlayerRef handle_;
 };
 
-} // namespace svgplayer
+}  // namespace svgplayer
 
-#endif // SVG_PLAYER_USE_CXX_WRAPPER
-#endif // __cplusplus
+#endif  // SVG_PLAYER_USE_CXX_WRAPPER
+#endif  // __cplusplus
 
-#endif // SVG_PLAYER_API_H
+#endif  // SVG_PLAYER_API_H

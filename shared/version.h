@@ -40,16 +40,15 @@
 #define SVG_PLAYER_STRINGIFY(x) SVG_PLAYER_STRINGIFY_(x)
 
 // Core version string: "0.9.0"
-#define SVG_PLAYER_VERSION_CORE \
-    SVG_PLAYER_STRINGIFY(SVG_PLAYER_VERSION_MAJOR) "." \
-    SVG_PLAYER_STRINGIFY(SVG_PLAYER_VERSION_MINOR) "." \
-    SVG_PLAYER_STRINGIFY(SVG_PLAYER_VERSION_PATCH)
+#define SVG_PLAYER_VERSION_CORE                    \
+    SVG_PLAYER_STRINGIFY(SVG_PLAYER_VERSION_MAJOR) \
+    "." SVG_PLAYER_STRINGIFY(SVG_PLAYER_VERSION_MINOR) "." SVG_PLAYER_STRINGIFY(SVG_PLAYER_VERSION_PATCH)
 
 // Full version with pre-release if present
 #if SVG_PLAYER_HAS_PRERELEASE
-    #define SVG_PLAYER_VERSION_STRING SVG_PLAYER_VERSION_CORE "-" SVG_PLAYER_VERSION_PRERELEASE
+#define SVG_PLAYER_VERSION_STRING SVG_PLAYER_VERSION_CORE "-" SVG_PLAYER_VERSION_PRERELEASE
 #else
-    #define SVG_PLAYER_VERSION_STRING SVG_PLAYER_VERSION_CORE
+#define SVG_PLAYER_VERSION_STRING SVG_PLAYER_VERSION_CORE
 #endif
 
 // Alias for compatibility
@@ -65,59 +64,59 @@
 
 // Platform detection
 #if defined(__APPLE__)
-    #include <TargetConditionals.h>
-    #if TARGET_OS_IPHONE || TARGET_OS_SIMULATOR
-        #define SVG_PLAYER_PLATFORM "iOS"
-        #define SVG_PLAYER_PLATFORM_IOS 1
-    #else
-        #define SVG_PLAYER_PLATFORM "macOS"
-        #define SVG_PLAYER_PLATFORM_MACOS 1
-    #endif
-#elif defined(__linux__)
-    #define SVG_PLAYER_PLATFORM "Linux"
-    #define SVG_PLAYER_PLATFORM_LINUX 1
-#elif defined(_WIN32)
-    #define SVG_PLAYER_PLATFORM "Windows"
-    #define SVG_PLAYER_PLATFORM_WINDOWS 1
+#include <TargetConditionals.h>
+#if TARGET_OS_IPHONE || TARGET_OS_SIMULATOR
+#define SVG_PLAYER_PLATFORM "iOS"
+#define SVG_PLAYER_PLATFORM_IOS 1
 #else
-    #define SVG_PLAYER_PLATFORM "Unknown"
+#define SVG_PLAYER_PLATFORM "macOS"
+#define SVG_PLAYER_PLATFORM_MACOS 1
+#endif
+#elif defined(__linux__)
+#define SVG_PLAYER_PLATFORM "Linux"
+#define SVG_PLAYER_PLATFORM_LINUX 1
+#elif defined(_WIN32)
+#define SVG_PLAYER_PLATFORM "Windows"
+#define SVG_PLAYER_PLATFORM_WINDOWS 1
+#else
+#define SVG_PLAYER_PLATFORM "Unknown"
 #endif
 
 // Architecture detection
 #if defined(__aarch64__) || defined(_M_ARM64)
-    #define SVG_PLAYER_ARCH "arm64"
+#define SVG_PLAYER_ARCH "arm64"
 #elif defined(__x86_64__) || defined(_M_X64)
-    #define SVG_PLAYER_ARCH "x64"
+#define SVG_PLAYER_ARCH "x64"
 #elif defined(__i386__) || defined(_M_IX86)
-    #define SVG_PLAYER_ARCH "x86"
+#define SVG_PLAYER_ARCH "x86"
 #elif defined(__arm__) || defined(_M_ARM)
-    #define SVG_PLAYER_ARCH "arm"
+#define SVG_PLAYER_ARCH "arm"
 #else
-    #define SVG_PLAYER_ARCH "unknown"
+#define SVG_PLAYER_ARCH "unknown"
 #endif
 
 // Compiler detection
 #if defined(__clang__)
-    #define SVG_PLAYER_COMPILER "Clang " __clang_version__
+#define SVG_PLAYER_COMPILER "Clang " __clang_version__
 #elif defined(__GNUC__)
-    #define SVG_PLAYER_COMPILER "GCC " SVG_PLAYER_STRINGIFY(__GNUC__) "." SVG_PLAYER_STRINGIFY(__GNUC_MINOR__)
+#define SVG_PLAYER_COMPILER "GCC " SVG_PLAYER_STRINGIFY(__GNUC__) "." SVG_PLAYER_STRINGIFY(__GNUC_MINOR__)
 #elif defined(_MSC_VER)
-    #define SVG_PLAYER_COMPILER "MSVC " SVG_PLAYER_STRINGIFY(_MSC_VER)
+#define SVG_PLAYER_COMPILER "MSVC " SVG_PLAYER_STRINGIFY(_MSC_VER)
 #else
-    #define SVG_PLAYER_COMPILER "Unknown"
+#define SVG_PLAYER_COMPILER "Unknown"
 #endif
 
 // Build type
 #ifdef NDEBUG
-    #define SVG_PLAYER_BUILD_TYPE "Release"
+#define SVG_PLAYER_BUILD_TYPE "Release"
 #else
-    #define SVG_PLAYER_BUILD_TYPE "Debug"
+#define SVG_PLAYER_BUILD_TYPE "Debug"
 #endif
 
 // Combined build info string for display
-#define SVG_PLAYER_BUILD_INFO \
-    SVG_PLAYER_PLATFORM "/" SVG_PLAYER_ARCH " " SVG_PLAYER_BUILD_TYPE \
-    " (" SVG_PLAYER_BUILD_DATE " " SVG_PLAYER_BUILD_TIME ")"
+#define SVG_PLAYER_BUILD_INFO                                                                    \
+    SVG_PLAYER_PLATFORM "/" SVG_PLAYER_ARCH " " SVG_PLAYER_BUILD_TYPE " (" SVG_PLAYER_BUILD_DATE \
+                        " " SVG_PLAYER_BUILD_TIME ")"
 
 // =============================================================================
 // PROJECT INFORMATION
@@ -134,8 +133,8 @@
 // =============================================================================
 
 #ifdef __cplusplus
-#include <string>
 #include <sstream>
+#include <string>
 
 namespace SVGPlayerVersion {
 
@@ -169,7 +168,8 @@ inline std::string getVersionBanner() {
     oss << SVG_PLAYER_NAME << " v" << SVG_PLAYER_VERSION << "\n"
         << SVG_PLAYER_DESCRIPTION << "\n"
         << "\n"
-        << "Build:    " << SVG_PLAYER_BUILD_TYPE << " (" << SVG_PLAYER_BUILD_DATE << " " << SVG_PLAYER_BUILD_TIME << ")\n"
+        << "Build:    " << SVG_PLAYER_BUILD_TYPE << " (" << SVG_PLAYER_BUILD_DATE << " " << SVG_PLAYER_BUILD_TIME
+        << ")\n"
         << "Platform: " << SVG_PLAYER_PLATFORM << " " << SVG_PLAYER_ARCH << "\n"
         << "Compiler: " << SVG_PLAYER_COMPILER << "\n"
         << "\n"
@@ -182,28 +182,23 @@ inline std::string getVersionBanner() {
 // Get short version line (for startup banner)
 inline std::string getStartupBanner() {
     std::ostringstream oss;
-    oss << SVG_PLAYER_NAME << " v" << SVG_PLAYER_VERSION
-        << " [" << SVG_PLAYER_PLATFORM << "/" << SVG_PLAYER_ARCH << "]";
+    oss << SVG_PLAYER_NAME << " v" << SVG_PLAYER_VERSION << " [" << SVG_PLAYER_PLATFORM << "/" << SVG_PLAYER_ARCH
+        << "]";
     return oss.str();
 }
 
 // Compare version (returns -1, 0, or 1)
 inline int compareVersion(int major, int minor, int patch) {
-    if (SVG_PLAYER_VERSION_MAJOR != major)
-        return SVG_PLAYER_VERSION_MAJOR < major ? -1 : 1;
-    if (SVG_PLAYER_VERSION_MINOR != minor)
-        return SVG_PLAYER_VERSION_MINOR < minor ? -1 : 1;
-    if (SVG_PLAYER_VERSION_PATCH != patch)
-        return SVG_PLAYER_VERSION_PATCH < patch ? -1 : 1;
+    if (SVG_PLAYER_VERSION_MAJOR != major) return SVG_PLAYER_VERSION_MAJOR < major ? -1 : 1;
+    if (SVG_PLAYER_VERSION_MINOR != minor) return SVG_PLAYER_VERSION_MINOR < minor ? -1 : 1;
+    if (SVG_PLAYER_VERSION_PATCH != patch) return SVG_PLAYER_VERSION_PATCH < patch ? -1 : 1;
     return 0;
 }
 
 // Check if version is at least the specified version
-inline bool isAtLeast(int major, int minor = 0, int patch = 0) {
-    return compareVersion(major, minor, patch) >= 0;
-}
+inline bool isAtLeast(int major, int minor = 0, int patch = 0) { return compareVersion(major, minor, patch) >= 0; }
 
-} // namespace SVGPlayerVersion
-#endif // __cplusplus
+}  // namespace SVGPlayerVersion
+#endif  // __cplusplus
 
-#endif // SVG_PLAYER_VERSION_H
+#endif  // SVG_PLAYER_VERSION_H
