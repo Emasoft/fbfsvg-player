@@ -18,6 +18,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <csignal>
 #include <cstring>
 #include <deque>
 #include <fstream>
@@ -27,6 +28,7 @@
 #include <memory>
 #include <mutex>
 #include <sstream>
+#include <sys/stat.h>
 #include <thread>
 #include <vector>
 
@@ -46,6 +48,61 @@
 
 // Cross-platform abstractions for CPU monitoring, font management, etc.
 #include "platform.h"
+
+// =============================================================================
+// Global shutdown flag for graceful termination
+// =============================================================================
+static std::atomic<bool> g_shutdownRequested{false};
+
+// Signal handler for graceful shutdown (SIGINT, SIGTERM)
+void signalHandler(int signum) {
+    if (signum == SIGINT || signum == SIGTERM) {
+        g_shutdownRequested.store(true);
+        std::cerr << "\nShutdown requested (signal " << signum << ")..." << std::endl;
+    }
+}
+
+// Install signal handlers for graceful shutdown
+void installSignalHandlers() {
+    std::signal(SIGINT, signalHandler);
+    std::signal(SIGTERM, signalHandler);
+}
+
+// =============================================================================
+// File validation helpers
+// =============================================================================
+
+// Check if file exists and is readable
+bool fileExists(const char* path) {
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+// Get file size in bytes
+size_t getFileSize(const char* path) {
+    struct stat st;
+    if (stat(path, &st) == 0) {
+        return static_cast<size_t>(st.st_size);
+    }
+    return 0;
+}
+
+// Maximum SVG file size (100 MB - reasonable limit to prevent memory issues)
+static constexpr size_t MAX_SVG_FILE_SIZE = 100 * 1024 * 1024;
+
+// Validate SVG content (basic check for SVG structure)
+bool validateSVGContent(const std::string& content) {
+    // Check minimum length
+    if (content.length() < 20) {
+        return false;
+    }
+    // Check for SVG tag (case-insensitive search for <svg)
+    size_t pos = content.find("<svg");
+    if (pos == std::string::npos) {
+        pos = content.find("<SVG");
+    }
+    return pos != std::string::npos;
+}
 
 // Print extensive help screen
 void printHelp(const char* programName) {
@@ -915,6 +972,9 @@ std::string generateScreenshotFilename(int width, int height) {
 }
 
 int main(int argc, char* argv[]) {
+    // Install signal handlers for graceful shutdown (Ctrl+C, kill)
+    installSignalHandlers();
+
     // Print startup banner (always shown on execution)
     std::cerr << SVGPlayerVersion::getStartupBanner() << std::endl;
 
@@ -954,6 +1014,23 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Validate input file before processing
+    if (!fileExists(inputPath)) {
+        std::cerr << "Error: File not found: " << inputPath << std::endl;
+        return 1;
+    }
+
+    size_t fileSize = getFileSize(inputPath);
+    if (fileSize == 0) {
+        std::cerr << "Error: File is empty: " << inputPath << std::endl;
+        return 1;
+    }
+    if (fileSize > MAX_SVG_FILE_SIZE) {
+        std::cerr << "Error: File too large (" << (fileSize / (1024 * 1024)) << " MB). Maximum: "
+                  << (MAX_SVG_FILE_SIZE / (1024 * 1024)) << " MB" << std::endl;
+        return 1;
+    }
+
     // Initialize font support for SVG text rendering (must be done before any SVG parsing)
     initializeFontSupport();
 
@@ -967,6 +1044,12 @@ int main(int argc, char* argv[]) {
     buffer << file.rdbuf();
     std::string originalContent = buffer.str();
     file.close();
+
+    // Validate SVG content
+    if (!validateSVGContent(originalContent)) {
+        std::cerr << "Error: File does not appear to be a valid SVG: " << inputPath << std::endl;
+        return 1;
+    }
 
     // Pre-process SVG to inject IDs into <use> elements that contain <animate> but lack IDs
     // This is necessary for panther_bird.fbf.svg and similar files where <use> has no id
@@ -1298,7 +1381,7 @@ int main(int argc, char* argv[]) {
     std::cout << "      Animation sync remains correct even during stutters." << std::endl;
     std::cout << "\nRendering..." << std::endl;
 
-    while (running) {
+    while (running && !g_shutdownRequested.load()) {
         auto frameStart = Clock::now();
         displayCycles++;  // Count every main loop iteration (display refresh attempt)
 
