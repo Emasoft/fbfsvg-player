@@ -1324,15 +1324,12 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 - (void)setViewport:(SVGViewport)viewport animated:(BOOL)animated {
     SVGViewport previousViewport = self.internalViewport;
 
-    // TODO: When C++ core supports viewbox manipulation, call the appropriate API
-    // For now, store the viewport for future use
-    self.internalViewport = viewport;
+    // Use the shared library to set the viewBox directly
+    [self.controller setViewBoxX:viewport.x y:viewport.y width:viewport.width height:viewport.height];
 
-    // Calculate zoom scale from viewport
-    SVGViewport defaultVP = self.defaultViewport;
-    if (defaultVP.width > 0 && defaultVP.height > 0 && viewport.width > 0) {
-        self.internalZoomScale = defaultVP.width / viewport.width;
-    }
+    // Sync internal state with shared library
+    self.internalZoomScale = self.controller.zoom;
+    [self syncViewportFromController];
 
     // Update pan gesture state
     self.panGestureRecognizer.enabled = self.panEnabled && self.isZoomed;
@@ -1341,15 +1338,11 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didChangeViewport:)]) {
         SVGZoomInfo info;
         info.previousViewport = previousViewport;
-        info.newViewport = viewport;
+        info.newViewport = self.internalViewport;
         info.zoomScale = self.internalZoomScale;
         info.isUserGesture = NO;
         info.zoomCenter = CGPointMake(self.bounds.size.width / 2, self.bounds.size.height / 2);
         [self.delegate svgPlayerView:self didChangeViewport:info];
-    }
-
-    if (animated) {
-        // TODO: Animate viewport transition when C++ core supports it
     }
 
     [self setNeedsRender];
@@ -1365,34 +1358,17 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (void)zoomToScale:(CGFloat)scale centeredAt:(CGPoint)center animated:(BOOL)animated {
-    // Clamp scale
+    // Clamp scale to local limits (will also be clamped by shared library)
     scale = MAX(self.internalMinZoomScale, MIN(scale, self.internalMaxZoomScale));
 
     SVGViewport previousViewport = self.internalViewport;
-    SVGViewport defaultVP = self.defaultViewport;
 
-    if (defaultVP.width <= 0 || defaultVP.height <= 0) {
-        return;
-    }
+    // Use the shared library zoom API - this handles all viewBox calculation and clamping
+    [self.controller setZoom:scale centeredAt:center viewSize:self.bounds.size];
 
-    // Calculate new viewport dimensions
-    CGFloat newWidth = defaultVP.width / scale;
-    CGFloat newHeight = defaultVP.height / scale;
-
-    // Convert center point to SVG coordinates
-    CGPoint svgCenter = [self convertPointToSVGCoordinates:center];
-
-    // Calculate new viewport origin centered on the point
-    CGFloat newX = svgCenter.x - newWidth / 2;
-    CGFloat newY = svgCenter.y - newHeight / 2;
-
-    // Clamp to valid bounds
-    newX = MAX(0, MIN(newX, defaultVP.width - newWidth));
-    newY = MAX(0, MIN(newY, defaultVP.height - newHeight));
-
-    self.internalZoomScale = scale;
-    SVGViewport newViewport = SVGViewportMake(newX, newY, newWidth, newHeight);
-    self.internalViewport = newViewport;
+    // Sync internal state with shared library
+    self.internalZoomScale = self.controller.zoom;
+    [self syncViewportFromController];
 
     // Update pan gesture state
     self.panGestureRecognizer.enabled = self.panEnabled && self.isZoomed;
@@ -1401,8 +1377,8 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didChangeViewport:)]) {
         SVGZoomInfo info;
         info.previousViewport = previousViewport;
-        info.newViewport = newViewport;
-        info.zoomScale = scale;
+        info.newViewport = self.internalViewport;
+        info.zoomScale = self.internalZoomScale;
         info.isUserGesture = NO;
         info.zoomCenter = center;
         [self.delegate svgPlayerView:self didChangeViewport:info];
@@ -1428,8 +1404,12 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 - (void)resetZoomAnimated:(BOOL)animated {
     SVGViewport previousViewport = self.internalViewport;
 
-    self.internalZoomScale = 1.0;
-    self.internalViewport = self.defaultViewport;
+    // Use the shared library reset API - this restores the original viewBox
+    [self.controller resetViewBox];
+
+    // Sync internal state with shared library
+    self.internalZoomScale = self.controller.zoom;
+    [self syncViewportFromController];
 
     // Update pan gesture state
     self.panGestureRecognizer.enabled = NO;
@@ -1443,7 +1423,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
         SVGZoomInfo info;
         info.previousViewport = previousViewport;
         info.newViewport = self.internalViewport;
-        info.zoomScale = 1.0;
+        info.zoomScale = self.internalZoomScale;
         info.isUserGesture = NO;
         info.zoomCenter = CGPointMake(self.bounds.size.width / 2, self.bounds.size.height / 2);
         [self.delegate svgPlayerView:self didChangeViewport:info];
@@ -1453,8 +1433,9 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (CGPoint)convertPointToSVGCoordinates:(CGPoint)point {
-    // TODO: Implement proper coordinate conversion when C++ core supports it
-    // For now, simple linear mapping
+    // Coordinate conversion using current viewport (handles zoom/pan)
+    // The controller's convertViewPointToSVG: is also available but this local
+    // implementation handles our custom viewport state including zoom/pan
     CGSize viewSize = self.bounds.size;
     SVGViewport vp = self.internalViewport;
 
@@ -1502,6 +1483,24 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     return CGRectMake(origin.x, origin.y, corner.x - origin.x, corner.y - origin.y);
 }
 
+#pragma mark - Shared Library Sync
+
+/// Sync internal viewport state from shared library viewBox
+/// Call this after any zoom/pan operation that modifies the shared library viewBox
+- (void)syncViewportFromController {
+    CGFloat x = 0, y = 0, width = 0, height = 0;
+    if ([self.controller getViewBoxX:&x y:&y width:&width height:&height]) {
+        self.internalViewport = SVGViewportMake(x, y, width, height);
+    }
+}
+
+/// Sync shared library viewBox from internal viewport state
+/// Call this to push internal viewport changes to the shared library
+- (void)syncViewportToController {
+    SVGViewport vp = self.internalViewport;
+    [self.controller setViewBoxX:vp.x y:vp.y width:vp.width height:vp.height];
+}
+
 #pragma mark - Gesture Handlers
 
 - (void)handlePinchGesture:(UIPinchGestureRecognizer *)gesture {
@@ -1513,12 +1512,24 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     if (gesture.state == UIGestureRecognizerStateBegan ||
         gesture.state == UIGestureRecognizerStateChanged) {
 
-        CGFloat newScale = self.internalZoomScale * gesture.scale;
-        newScale = MAX(self.internalMinZoomScale, MIN(newScale, self.internalMaxZoomScale));
+        // Calculate new zoom level based on gesture scale
+        CGFloat currentZoom = self.controller.zoom;
+        CGFloat newZoom = currentZoom * gesture.scale;
+        newZoom = MAX(self.controller.minZoom, MIN(newZoom, self.controller.maxZoom));
 
-        [self zoomToScale:newScale centeredAt:center animated:NO];
+        // Use the shared library zoom API - this modifies the viewBox
+        [self.controller setZoom:newZoom centeredAt:center viewSize:self.bounds.size];
+
+        // Sync internal state with shared library
+        self.internalZoomScale = self.controller.zoom;
+        [self syncViewportFromController];
 
         gesture.scale = 1.0; // Reset for incremental changes
+
+        // Update pan gesture state based on zoom
+        self.panGestureRecognizer.enabled = self.panEnabled && self.isZoomed;
+
+        [self setNeedsRender];
     }
 
     if (gesture.state == UIGestureRecognizerStateEnded ||
@@ -1543,21 +1554,12 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     CGPoint translation = [gesture translationInView:self];
 
     if (gesture.state == UIGestureRecognizerStateChanged) {
-        // Convert translation to SVG coordinates
-        SVGViewport vp = self.internalViewport;
-        SVGViewport defaultVP = self.defaultViewport;
+        // Use the shared library pan API - this modifies the viewBox with bounds clamping
+        // Note: pan delta is negated because dragging right should move content left (viewport moves right)
+        [self.controller panByDelta:CGPointMake(-translation.x, -translation.y) viewSize:self.bounds.size];
 
-        CGFloat svgDeltaX = -(translation.x / self.bounds.size.width) * vp.width;
-        CGFloat svgDeltaY = -(translation.y / self.bounds.size.height) * vp.height;
-
-        CGFloat newX = vp.x + svgDeltaX;
-        CGFloat newY = vp.y + svgDeltaY;
-
-        // Clamp to bounds
-        newX = MAX(0, MIN(newX, defaultVP.width - vp.width));
-        newY = MAX(0, MIN(newY, defaultVP.height - vp.height));
-
-        self.internalViewport = SVGViewportMake(newX, newY, vp.width, vp.height);
+        // Sync internal state with shared library
+        [self syncViewportFromController];
 
         [gesture setTranslation:CGPointZero inView:self];
         [self setNeedsRender];
@@ -1695,8 +1697,8 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 - (void)subscribeToTouchEventsForObjectID:(NSString *)objectID {
     if (objectID.length == 0) return;
     [self.subscribedObjectIDsStorage addObject:objectID];
-    // TODO: Register objectID with the cross-platform C++ hit testing system
-    // The C++ core will need to track which element IDs to monitor for touches
+    // Register with the C++ hit testing system via the controller
+    [_controller subscribeToElementWithID:objectID];
 }
 
 - (void)subscribeToTouchEventsForObjectIDs:(NSArray<NSString *> *)objectIDs {
@@ -1708,7 +1710,8 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 - (void)unsubscribeFromTouchEventsForObjectID:(NSString *)objectID {
     if (objectID.length == 0) return;
     [self.subscribedObjectIDsStorage removeObject:objectID];
-    // TODO: Unregister objectID from the cross-platform C++ hit testing system
+    // Unregister from the C++ hit testing system via the controller
+    [_controller unsubscribeFromElementWithID:objectID];
 }
 
 - (void)unsubscribeFromTouchEventsForObjectIDs:(NSArray<NSString *> *)objectIDs {
@@ -1719,7 +1722,8 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
 - (void)unsubscribeFromAllElementTouchEvents {
     [self.subscribedObjectIDsStorage removeAllObjects];
-    // TODO: Clear all subscriptions in the cross-platform C++ hit testing system
+    // Clear all subscriptions in the C++ hit testing system via the controller
+    [_controller unsubscribeFromAllElements];
 }
 
 - (BOOL)isSubscribedToObjectID:(NSString *)objectID {
@@ -1727,58 +1731,70 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (nullable NSString *)hitTestSubscribedElementAtPoint:(CGPoint)point {
-    // TODO: Implement hit testing via cross-platform C++ core
-    // 1. Convert point to SVG coordinate space
-    // 2. Query C++ hit testing system for element at that point
-    // 3. Return objectID if it's in our subscribed set, nil otherwise
-    //
-    // The C++ implementation will need to:
-    // - Walk the SVG DOM tree
-    // - Test each subscribed element's bounds/path against the point
-    // - Return the topmost hit element's id attribute
+    // Query C++ hit testing system via the controller
+    // The controller converts view coords to SVG coords and performs hit testing
+    CGSize viewSize = self.bounds.size;
+    NSString *hitElement = [_controller hitTestAtPoint:point viewSize:viewSize];
+
+    // Only return if the element is in our subscribed set
+    if (hitElement && [self.subscribedObjectIDsStorage containsObject:hitElement]) {
+        return hitElement;
+    }
     return nil;
 }
 
 - (NSArray<NSString *> *)hitTestAllSubscribedElementsAtPoint:(CGPoint)point {
-    // TODO: Implement multi-hit testing via cross-platform C++ core
-    // Similar to hitTestSubscribedElementAtPoint: but returns all hits in z-order
-    //
-    // The C++ implementation will need to:
-    // - Walk the SVG DOM tree in z-order
-    // - Collect all subscribed elements that contain the point
-    // - Return array of objectIDs from topmost to bottommost
-    return @[];
+    // Query C++ hit testing system via the controller for all elements at the point
+    CGSize viewSize = self.bounds.size;
+    NSInteger maxElements = self.subscribedObjectIDsStorage.count;
+    if (maxElements == 0) return @[];
+
+    NSArray<NSString *> *allHits = [_controller elementsAtPoint:point
+                                                        viewSize:viewSize
+                                                     maxElements:maxElements];
+
+    // Filter to only return subscribed elements
+    NSMutableArray<NSString *> *subscribedHits = [NSMutableArray array];
+    for (NSString *elementID in allHits) {
+        if ([self.subscribedObjectIDsStorage containsObject:elementID]) {
+            [subscribedHits addObject:elementID];
+        }
+    }
+    return [subscribedHits copy];
 }
 
 - (BOOL)elementWithObjectID:(NSString *)objectID containsPoint:(CGPoint)point {
-    // TODO: Implement point-in-element test via cross-platform C++ core
-    // 1. Find the element with the given objectID in the SVG DOM
-    // 2. Convert point to SVG coordinate space
-    // 3. Test if point is inside the element's bounds/path
-    //
-    // The C++ implementation should use Skia's path contains point testing
-    // for accurate results with complex shapes (paths, curves, etc.)
-    return NO;
+    // Check if the element exists and get its bounds
+    if (![_controller elementExistsWithID:objectID]) {
+        return NO;
+    }
+
+    // Get all elements at the point and check if our element is among them
+    CGSize viewSize = self.bounds.size;
+    NSArray<NSString *> *elements = [_controller elementsAtPoint:point
+                                                         viewSize:viewSize
+                                                      maxElements:100];
+    return [elements containsObject:objectID];
 }
 
 - (CGRect)boundingRectForObjectID:(NSString *)objectID {
-    // TODO: Implement bounding rect lookup via cross-platform C++ core
-    // 1. Find the element with the given objectID in the SVG DOM
-    // 2. Get its bounding rect in SVG coordinate space
-    // 3. Transform to view coordinate space
-    //
-    // The C++ implementation will use SkSVGNode::objectBoundingBox()
-    // or similar Skia API to get the element bounds
-    return CGRectNull;
+    // Get the bounding rect in SVG coordinates from the controller
+    CGRect svgRect = [_controller boundingRectForElementID:objectID];
+    if (CGRectIsEmpty(svgRect)) {
+        return CGRectNull;
+    }
+
+    // Transform from SVG coordinates to view coordinates
+    return [self convertRectFromSVGCoordinates:svgRect];
 }
 
 - (CGRect)svgBoundingRectForObjectID:(NSString *)objectID {
-    // TODO: Implement SVG bounding rect lookup via cross-platform C++ core
-    // 1. Find the element with the given objectID in the SVG DOM
-    // 2. Return its bounding rect in SVG coordinate space
-    //
-    // The C++ implementation will use SkSVGNode::objectBoundingBox()
-    return CGRectNull;
+    // Get the bounding rect in SVG coordinates directly from the controller
+    CGRect svgRect = [_controller boundingRectForElementID:objectID];
+    if (CGRectIsEmpty(svgRect)) {
+        return CGRectNull;
+    }
+    return svgRect;
 }
 
 #pragma mark - Element Touch Handling (Internal)
@@ -1803,8 +1819,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 /// @param viewPoint The point in view coordinates
 /// @return SVGDualPoint with both view and SVG coordinates
 - (SVGDualPoint)dualPointFromViewPoint:(CGPoint)viewPoint {
-    // TODO: Convert view coordinates to SVG coordinates using current viewport/zoom
-    // For now, return the view point for both (placeholder until C++ integration)
+    // Convert view coordinates to SVG coordinates using current viewport/zoom
     CGPoint svgPoint = [self convertPointToSVGCoordinates:viewPoint];
     return SVGDualPointMake(viewPoint, svgPoint);
 }
