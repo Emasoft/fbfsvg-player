@@ -645,6 +645,207 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     return 0;
 }
 
+#pragma mark - Hit Testing - Element Subscription
+
+- (void)subscribeToElementWithID:(NSString *)objectID {
+    if (!self.handle || !objectID) return;
+    SVGPlayer_SubscribeToElement(self.handle, [objectID UTF8String]);
+}
+
+- (void)unsubscribeFromElementWithID:(NSString *)objectID {
+    if (!self.handle || !objectID) return;
+    SVGPlayer_UnsubscribeFromElement(self.handle, [objectID UTF8String]);
+}
+
+- (void)unsubscribeFromAllElements {
+    if (!self.handle) return;
+    SVGPlayer_UnsubscribeFromAllElements(self.handle);
+}
+
+#pragma mark - Hit Testing - Queries
+
+- (nullable NSString *)hitTestAtPoint:(CGPoint)point viewSize:(CGSize)viewSize {
+    if (!self.handle) return nil;
+
+    const char *elementID = SVGPlayer_HitTest(self.handle,
+                                               (float)point.x, (float)point.y,
+                                               (int)viewSize.width, (int)viewSize.height);
+    if (elementID && strlen(elementID) > 0) {
+        return @(elementID);
+    }
+    return nil;
+}
+
+- (NSArray<NSString *> *)elementsAtPoint:(CGPoint)point
+                                viewSize:(CGSize)viewSize
+                             maxElements:(NSInteger)maxElements {
+    if (!self.handle || maxElements <= 0) return @[];
+
+    // Allocate array for element IDs (C API uses const char**)
+    const char **elements = (const char **)malloc(sizeof(const char *) * maxElements);
+    if (!elements) return @[];
+
+    int count = SVGPlayer_GetElementsAtPoint(self.handle,
+                                              (float)point.x, (float)point.y,
+                                              (int)viewSize.width, (int)viewSize.height,
+                                              elements, (int)maxElements);
+
+    NSMutableArray<NSString *> *result = [NSMutableArray arrayWithCapacity:count];
+    for (int i = 0; i < count; i++) {
+        if (elements[i]) {
+            [result addObject:@(elements[i])];
+        }
+    }
+
+    free(elements);
+    return [result copy];
+}
+
+- (CGRect)boundingRectForElementID:(NSString *)objectID {
+    if (!self.handle || !objectID) return CGRectZero;
+
+    SVGRect bounds;
+    if (SVGPlayer_GetElementBounds(self.handle, [objectID UTF8String], &bounds)) {
+        return CGRectMake(bounds.x, bounds.y, bounds.width, bounds.height);
+    }
+    return CGRectZero;
+}
+
+- (BOOL)elementExistsWithID:(NSString *)objectID {
+    if (!self.handle || !objectID) return NO;
+    return SVGPlayer_ElementExists(self.handle, [objectID UTF8String]);
+}
+
+- (nullable NSString *)propertyValue:(NSString *)propertyName forElementID:(NSString *)objectID {
+    if (!self.handle || !propertyName || !objectID) return nil;
+
+    // API uses output buffer pattern
+    char valueBuffer[1024];
+    if (SVGPlayer_GetElementProperty(self.handle,
+                                      [objectID UTF8String],
+                                      [propertyName UTF8String],
+                                      valueBuffer,
+                                      sizeof(valueBuffer))) {
+        if (strlen(valueBuffer) > 0) {
+            return @(valueBuffer);
+        }
+    }
+    return nil;
+}
+
+#pragma mark - Coordinate Conversion
+
+- (CGPoint)convertViewPointToSVG:(CGPoint)viewPoint viewSize:(CGSize)viewSize {
+    if (!self.handle) return CGPointZero;
+
+    float svgX = 0, svgY = 0;
+    if (SVGPlayer_ViewToSVG(self.handle,
+                            (float)viewPoint.x, (float)viewPoint.y,
+                            (int)viewSize.width, (int)viewSize.height,
+                            &svgX, &svgY)) {
+        return CGPointMake(svgX, svgY);
+    }
+    return CGPointZero;
+}
+
+- (CGPoint)convertSVGPointToView:(CGPoint)svgPoint viewSize:(CGSize)viewSize {
+    if (!self.handle) return CGPointZero;
+
+    float viewX = 0, viewY = 0;
+    if (SVGPlayer_SVGToView(self.handle,
+                            (float)svgPoint.x, (float)svgPoint.y,
+                            (int)viewSize.width, (int)viewSize.height,
+                            &viewX, &viewY)) {
+        return CGPointMake(viewX, viewY);
+    }
+    return CGPointZero;
+}
+
+#pragma mark - Zoom and ViewBox
+
+- (BOOL)getViewBoxX:(CGFloat *)x y:(CGFloat *)y width:(CGFloat *)width height:(CGFloat *)height {
+    if (!self.handle || !x || !y || !width || !height) return NO;
+
+    float fx = 0, fy = 0, fw = 0, fh = 0;
+    if (SVGPlayer_GetViewBox(self.handle, &fx, &fy, &fw, &fh)) {
+        *x = (CGFloat)fx;
+        *y = (CGFloat)fy;
+        *width = (CGFloat)fw;
+        *height = (CGFloat)fh;
+        return YES;
+    }
+    return NO;
+}
+
+- (void)setViewBoxX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (!self.handle) return;
+    SVGPlayer_SetViewBox(self.handle, (float)x, (float)y, (float)width, (float)height);
+}
+
+- (void)resetViewBox {
+    if (!self.handle) return;
+    SVGPlayer_ResetViewBox(self.handle);
+}
+
+- (CGFloat)zoom {
+    if (!self.handle) return 1.0;
+    return (CGFloat)SVGPlayer_GetZoom(self.handle);
+}
+
+- (void)setZoom:(CGFloat)zoom centeredAt:(CGPoint)center viewSize:(CGSize)viewSize {
+    if (!self.handle) return;
+    SVGPlayer_SetZoom(self.handle, (float)zoom,
+                      (float)center.x, (float)center.y,
+                      (int)viewSize.width, (int)viewSize.height);
+}
+
+- (void)zoomInByFactor:(CGFloat)factor viewSize:(CGSize)viewSize {
+    if (!self.handle) return;
+    SVGPlayer_ZoomIn(self.handle, (float)factor, (int)viewSize.width, (int)viewSize.height);
+}
+
+- (void)zoomOutByFactor:(CGFloat)factor viewSize:(CGSize)viewSize {
+    if (!self.handle) return;
+    SVGPlayer_ZoomOut(self.handle, (float)factor, (int)viewSize.width, (int)viewSize.height);
+}
+
+- (void)zoomToRect:(CGRect)rect {
+    if (!self.handle) return;
+    SVGPlayer_ZoomToRect(self.handle, (float)rect.origin.x, (float)rect.origin.y,
+                         (float)rect.size.width, (float)rect.size.height);
+}
+
+- (BOOL)zoomToElementWithID:(NSString *)objectID padding:(CGFloat)padding {
+    if (!self.handle || !objectID) return NO;
+    return SVGPlayer_ZoomToElement(self.handle, [objectID UTF8String], (float)padding);
+}
+
+- (void)panByDelta:(CGPoint)delta viewSize:(CGSize)viewSize {
+    if (!self.handle) return;
+    SVGPlayer_Pan(self.handle, (float)delta.x, (float)delta.y,
+                  (int)viewSize.width, (int)viewSize.height);
+}
+
+- (CGFloat)minZoom {
+    if (!self.handle) return 0.1;
+    return (CGFloat)SVGPlayer_GetMinZoom(self.handle);
+}
+
+- (void)setMinZoom:(CGFloat)minZoom {
+    if (!self.handle) return;
+    SVGPlayer_SetMinZoom(self.handle, (float)minZoom);
+}
+
+- (CGFloat)maxZoom {
+    if (!self.handle) return 10.0;
+    return (CGFloat)SVGPlayer_GetMaxZoom(self.handle);
+}
+
+- (void)setMaxZoom:(CGFloat)maxZoom {
+    if (!self.handle) return;
+    SVGPlayer_SetMaxZoom(self.handle, (float)maxZoom);
+}
+
 #pragma mark - Error Handling
 
 - (void)setError:(NSError * _Nullable *)error code:(SVGPlayerControllerErrorCode)code message:(NSString *)message {
@@ -655,6 +856,103 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
                                      code:code
                                  userInfo:@{NSLocalizedDescriptionKey: message}];
     }
+}
+
+#pragma mark - Multi-SVG Compositing
+
+- (SVGLayer *)createLayerFromPath:(NSString *)path error:(NSError * _Nullable *)error {
+    if (!self.handle) {
+        [self setError:error code:SVGPlayerControllerErrorNotInitialized message:@"Player not initialized"];
+        return nil;
+    }
+
+    SVGLayerRef layerRef = SVGPlayer_CreateLayer(self.handle, [path UTF8String]);
+    if (!layerRef) {
+        const char *errorMsg = SVGPlayer_GetLastError(self.handle);
+        NSString *message = errorMsg ? @(errorMsg) : @"Failed to create layer";
+        [self setError:error code:SVGPlayerControllerErrorParseFailed message:message];
+        return nil;
+    }
+
+    return [[SVGLayer alloc] initWithLayerRef:layerRef];
+}
+
+- (SVGLayer *)createLayerFromData:(NSData *)data error:(NSError * _Nullable *)error {
+    if (!self.handle) {
+        [self setError:error code:SVGPlayerControllerErrorNotInitialized message:@"Player not initialized"];
+        return nil;
+    }
+
+    if (!data || data.length == 0) {
+        [self setError:error code:SVGPlayerControllerErrorInvalidData message:@"Invalid SVG data"];
+        return nil;
+    }
+
+    SVGLayerRef layerRef = SVGPlayer_CreateLayerFromData(self.handle, data.bytes, data.length);
+    if (!layerRef) {
+        const char *errorMsg = SVGPlayer_GetLastError(self.handle);
+        NSString *message = errorMsg ? @(errorMsg) : @"Failed to create layer from data";
+        [self setError:error code:SVGPlayerControllerErrorParseFailed message:message];
+        return nil;
+    }
+
+    return [[SVGLayer alloc] initWithLayerRef:layerRef];
+}
+
+- (void)destroyLayer:(SVGLayer *)layer {
+    if (!self.handle || !layer) return;
+    SVGPlayer_DestroyLayer(self.handle, layer.layerRef);
+}
+
+- (NSInteger)layerCount {
+    if (!self.handle) return 0;
+    return SVGPlayer_GetLayerCount(self.handle);
+}
+
+- (SVGLayer *)layerAtIndex:(NSInteger)index {
+    if (!self.handle) return nil;
+
+    SVGLayerRef layerRef = SVGPlayer_GetLayerAtIndex(self.handle, (int)index);
+    if (!layerRef) return nil;
+
+    return [[SVGLayer alloc] initWithLayerRef:layerRef];
+}
+
+- (BOOL)renderCompositeToBuffer:(void *)buffer
+                          width:(NSInteger)width
+                         height:(NSInteger)height
+                          scale:(CGFloat)scale {
+    if (!self.handle || !buffer) return NO;
+    return SVGPlayer_RenderComposite(self.handle, buffer, (int)width, (int)height, (float)scale);
+}
+
+- (BOOL)renderCompositeToBuffer:(void *)buffer
+                          width:(NSInteger)width
+                         height:(NSInteger)height
+                          scale:(CGFloat)scale
+                         atTime:(NSTimeInterval)time {
+    if (!self.handle || !buffer) return NO;
+    return SVGPlayer_RenderCompositeAtTime(self.handle, buffer, (int)width, (int)height, (float)scale, time);
+}
+
+- (BOOL)updateAllLayers:(NSTimeInterval)deltaTime {
+    if (!self.handle) return NO;
+    return SVGPlayer_UpdateAllLayers(self.handle, deltaTime);
+}
+
+- (void)playAllLayers {
+    if (!self.handle) return;
+    SVGPlayer_PlayAllLayers(self.handle);
+}
+
+- (void)pauseAllLayers {
+    if (!self.handle) return;
+    SVGPlayer_PauseAllLayers(self.handle);
+}
+
+- (void)stopAllLayers {
+    if (!self.handle) return;
+    SVGPlayer_StopAllLayers(self.handle);
 }
 
 #pragma mark - Version Information
@@ -676,6 +974,168 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 + (NSString *)buildInfo {
     // Return build info from version.h
     return [NSString stringWithUTF8String:SVG_PLAYER_BUILD_INFO];
+}
+
+@end
+
+#pragma mark - SVGLayer Implementation
+
+@interface SVGLayer ()
+@property (nonatomic, assign) SVGLayerRef layerRef;
+@end
+
+@implementation SVGLayer
+
+- (instancetype)initWithLayerRef:(SVGLayerRef)layerRef {
+    if (self = [super init]) {
+        _layerRef = layerRef;
+    }
+    return self;
+}
+
+#pragma mark - Position
+
+- (void)setPosition:(CGPoint)position {
+    if (!self.layerRef) return;
+    SVGLayer_SetPosition(self.layerRef, position.x, position.y);
+}
+
+- (CGPoint)position {
+    if (!self.layerRef) return CGPointZero;
+    float x = 0, y = 0;
+    SVGLayer_GetPosition(self.layerRef, &x, &y);
+    return CGPointMake(x, y);
+}
+
+#pragma mark - Opacity
+
+- (void)setOpacity:(CGFloat)opacity {
+    if (!self.layerRef) return;
+    SVGLayer_SetOpacity(self.layerRef, (float)opacity);
+}
+
+- (CGFloat)opacity {
+    if (!self.layerRef) return 1.0;
+    return SVGLayer_GetOpacity(self.layerRef);
+}
+
+#pragma mark - Z-Order
+
+- (void)setZOrder:(NSInteger)zOrder {
+    if (!self.layerRef) return;
+    SVGLayer_SetZOrder(self.layerRef, (int)zOrder);
+}
+
+- (NSInteger)zOrder {
+    if (!self.layerRef) return 0;
+    return SVGLayer_GetZOrder(self.layerRef);
+}
+
+#pragma mark - Visibility
+
+- (void)setVisible:(BOOL)visible {
+    if (!self.layerRef) return;
+    SVGLayer_SetVisible(self.layerRef, visible);
+}
+
+- (BOOL)isVisible {
+    if (!self.layerRef) return NO;
+    return SVGLayer_IsVisible(self.layerRef);
+}
+
+#pragma mark - Scale
+
+- (void)setScale:(CGPoint)scale {
+    if (!self.layerRef) return;
+    SVGLayer_SetScale(self.layerRef, scale.x, scale.y);
+}
+
+- (CGPoint)scale {
+    if (!self.layerRef) return CGPointMake(1.0, 1.0);
+    float scaleX = 1.0, scaleY = 1.0;
+    SVGLayer_GetScale(self.layerRef, &scaleX, &scaleY);
+    return CGPointMake(scaleX, scaleY);
+}
+
+#pragma mark - Rotation
+
+- (void)setRotation:(CGFloat)rotation {
+    if (!self.layerRef) return;
+    SVGLayer_SetRotation(self.layerRef, (float)rotation);
+}
+
+- (CGFloat)rotation {
+    if (!self.layerRef) return 0.0;
+    return SVGLayer_GetRotation(self.layerRef);
+}
+
+#pragma mark - Blend Mode
+
+- (void)setBlendMode:(SVGLayerBlendMode)blendMode {
+    if (!self.layerRef) return;
+    SVGLayer_SetBlendMode(self.layerRef, (SVGLayerBlendMode)blendMode);
+}
+
+- (SVGLayerBlendMode)blendMode {
+    if (!self.layerRef) return SVGLayerBlendModeNormal;
+    return (SVGLayerBlendMode)SVGLayer_GetBlendMode(self.layerRef);
+}
+
+#pragma mark - Size
+
+- (CGSize)size {
+    if (!self.layerRef) return CGSizeZero;
+    int width = 0, height = 0;
+    if (SVGLayer_GetSize(self.layerRef, &width, &height)) {
+        return CGSizeMake(width, height);
+    }
+    return CGSizeZero;
+}
+
+#pragma mark - Animation Properties
+
+- (NSTimeInterval)duration {
+    if (!self.layerRef) return 0;
+    return SVGLayer_GetDuration(self.layerRef);
+}
+
+- (NSTimeInterval)currentTime {
+    if (!self.layerRef) return 0;
+    // Note: currentTime getter is not in C API, would need to track it
+    // For now, return 0 (this is a readonly property used for display)
+    return 0;
+}
+
+- (BOOL)hasAnimations {
+    if (!self.layerRef) return NO;
+    return SVGLayer_HasAnimations(self.layerRef);
+}
+
+#pragma mark - Playback Control
+
+- (void)play {
+    if (!self.layerRef) return;
+    SVGLayer_Play(self.layerRef);
+}
+
+- (void)pause {
+    if (!self.layerRef) return;
+    SVGLayer_Pause(self.layerRef);
+}
+
+- (void)stop {
+    if (!self.layerRef) return;
+    SVGLayer_Stop(self.layerRef);
+}
+
+- (void)seekToTime:(NSTimeInterval)time {
+    if (!self.layerRef) return;
+    SVGLayer_SeekTo(self.layerRef, time);
+}
+
+- (BOOL)update:(NSTimeInterval)deltaTime {
+    if (!self.layerRef) return NO;
+    return SVGLayer_Update(self.layerRef, deltaTime);
 }
 
 @end
