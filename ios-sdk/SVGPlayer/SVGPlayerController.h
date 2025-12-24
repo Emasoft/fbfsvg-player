@@ -477,6 +477,49 @@ typedef NS_ENUM(NSInteger, SVGLayerBlendMode) {
 /// Maximum zoom level (default 10.0)
 @property (nonatomic, assign) CGFloat maxZoom;
 
+#pragma mark - Frame Rate Control
+
+/// Target frame rate in FPS (affects frame pacing calculations)
+@property (nonatomic, assign) CGFloat targetFrameRate;
+
+/// Ideal frame interval based on target frame rate (readonly)
+/// Returns 1.0 / targetFrameRate in seconds
+@property (nonatomic, readonly) NSTimeInterval idealFrameInterval;
+
+/// Duration of the last completed frame in seconds (readonly)
+@property (nonatomic, readonly) NSTimeInterval lastFrameDuration;
+
+/// Average frame duration over recent frames in seconds (readonly)
+@property (nonatomic, readonly) NSTimeInterval averageFrameDuration;
+
+/// Measured FPS based on actual render times (readonly)
+@property (nonatomic, readonly) CGFloat measuredFPS;
+
+/// Number of dropped/skipped frames since last reset (readonly)
+@property (nonatomic, readonly) NSInteger droppedFrameCount;
+
+/// Begin a new frame timing measurement
+/// Call at the start of each render frame
+- (void)beginFrame;
+
+/// End frame timing measurement
+/// Call at the end of each render frame
+- (void)endFrame;
+
+/// Check if enough time has passed to render the next frame
+/// Useful for frame limiting/pacing without VSync
+/// @param currentTime Current time in seconds (e.g., from CACurrentMediaTime())
+/// @return YES if a new frame should be rendered
+- (BOOL)shouldRenderFrameAtTime:(NSTimeInterval)currentTime;
+
+/// Mark that a frame was rendered at the specified time
+/// Updates internal timing for frame pacing
+/// @param renderTime Time when frame was rendered in seconds
+- (void)markFrameRenderedAtTime:(NSTimeInterval)renderTime;
+
+/// Reset frame statistics (dropped count, timing averages)
+- (void)resetFrameStats;
+
 #pragma mark - Multi-SVG Compositing
 
 /// Create a new layer by loading an SVG file

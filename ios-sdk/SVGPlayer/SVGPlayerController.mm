@@ -846,6 +846,68 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     SVGPlayer_SetMaxZoom(self.handle, (float)maxZoom);
 }
 
+#pragma mark - Frame Rate Control
+
+- (CGFloat)targetFrameRate {
+    if (!self.handle) return 60.0;
+    return (CGFloat)SVGPlayer_GetTargetFrameRate(self.handle);
+}
+
+- (void)setTargetFrameRate:(CGFloat)targetFrameRate {
+    if (!self.handle) return;
+    SVGPlayer_SetTargetFrameRate(self.handle, (float)targetFrameRate);
+}
+
+- (NSTimeInterval)idealFrameInterval {
+    if (!self.handle) return 1.0 / 60.0;
+    return SVGPlayer_GetIdealFrameInterval(self.handle);
+}
+
+- (NSTimeInterval)lastFrameDuration {
+    if (!self.handle) return 0;
+    return SVGPlayer_GetLastFrameDuration(self.handle);
+}
+
+- (NSTimeInterval)averageFrameDuration {
+    if (!self.handle) return 0;
+    return SVGPlayer_GetAverageFrameDuration(self.handle);
+}
+
+- (CGFloat)measuredFPS {
+    if (!self.handle) return 0;
+    return (CGFloat)SVGPlayer_GetMeasuredFPS(self.handle);
+}
+
+- (NSInteger)droppedFrameCount {
+    if (!self.handle) return 0;
+    return SVGPlayer_GetDroppedFrameCount(self.handle);
+}
+
+- (void)beginFrame {
+    if (!self.handle) return;
+    SVGPlayer_BeginFrame(self.handle);
+}
+
+- (void)endFrame {
+    if (!self.handle) return;
+    SVGPlayer_EndFrame(self.handle);
+}
+
+- (BOOL)shouldRenderFrameAtTime:(NSTimeInterval)currentTime {
+    if (!self.handle) return YES;
+    return SVGPlayer_ShouldRenderFrame(self.handle, currentTime);
+}
+
+- (void)markFrameRenderedAtTime:(NSTimeInterval)renderTime {
+    if (!self.handle) return;
+    SVGPlayer_MarkFrameRendered(self.handle, renderTime);
+}
+
+- (void)resetFrameStats {
+    if (!self.handle) return;
+    SVGPlayer_ResetFrameStats(self.handle);
+}
+
 #pragma mark - Error Handling
 
 - (void)setError:(NSError * _Nullable *)error code:(SVGPlayerControllerErrorCode)code message:(NSString *)message {
