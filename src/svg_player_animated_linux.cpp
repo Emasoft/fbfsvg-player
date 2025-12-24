@@ -212,6 +212,7 @@ class SkiaParallelRenderer {
     // === Mode A: Pre-buffer data ===
     struct RenderedFrame {
         size_t frameIndex;
+        double elapsedTimeSeconds;  // Time-based sync for multi-animation support
         std::vector<uint32_t> pixels;
         int width;
         int height;
@@ -229,10 +230,10 @@ class SkiaParallelRenderer {
     int svgWidth{0};
     int svgHeight{0};
 
-    // Animation info for pre-buffered frames
-    std::string animTargetId;
-    std::string animAttributeName;
-    std::vector<std::string> animValues;
+    // Animation info for pre-buffered frames (supports multiple simultaneous animations)
+    std::vector<SMILAnimation> animations;
+    double totalDuration{1.0};  // Total animation cycle duration for time-based sync
+    size_t totalFrameCount{1};  // Total frames for frame-to-time conversion
 
     // Per-worker cached DOM and surface (parse SVG once per thread, not per frame!)
     struct WorkerCache {
@@ -282,16 +283,17 @@ class SkiaParallelRenderer {
     }
 
     void configure(const std::string& svgContent, int width, int height, int svgW, int svgH,
-                   const std::string& targetId = "", const std::string& attrName = "",
-                   const std::vector<std::string>& values = {}) {
+                   const std::vector<SMILAnimation>& anims = {},
+                   double animDuration = 1.0, size_t animFrames = 1) {
         svgData = svgContent;
         renderWidth = width;
         renderHeight = height;
         svgWidth = svgW;
         svgHeight = svgH;
-        animTargetId = targetId;
-        animAttributeName = attrName;
-        animValues = values;
+        animations = anims;
+        // Store duration and frame count for time-based frame calculation
+        totalDuration = animDuration > 0 ? animDuration : 1.0;
+        totalFrameCount = animFrames > 0 ? animFrames : 1;
     }
 
     // Update render dimensions on window resize - clears cached frames since they're wrong size
@@ -378,6 +380,9 @@ class SkiaParallelRenderer {
 
         auto framePtr = std::make_shared<RenderedFrame>();
         framePtr->frameIndex = frameIndex;
+        // Calculate elapsed time for this frame: time = (frameIndex / totalFrames) * duration
+        // This ensures each animation can calculate its own correct frame based on time
+        framePtr->elapsedTimeSeconds = (static_cast<double>(frameIndex) / totalFrameCount) * totalDuration;
         framePtr->width = renderWidth;
         framePtr->height = renderHeight;
 
@@ -464,12 +469,17 @@ class SkiaParallelRenderer {
             if (!cache->surface) return;
         }
 
-        // Apply animation state for this specific frame index
-        if (!animTargetId.empty() && !animAttributeName.empty() && !animValues.empty()) {
-            size_t valueIndex = frame->frameIndex % animValues.size();
-            sk_sp<SkSVGNode>* nodePtr = cache->dom->findNodeById(animTargetId.c_str());
-            if (nodePtr && *nodePtr) {
-                (*nodePtr)->setAttribute(animAttributeName.c_str(), animValues[valueIndex].c_str());
+        // Apply ALL animation states for this specific time point
+        // Each animation calculates its own frame based on elapsed time, not frame index
+        // This correctly handles animations with different durations and frame counts
+        for (const auto& anim : animations) {
+            if (!anim.targetId.empty() && !anim.attributeName.empty() && !anim.values.empty()) {
+                // Use time-based calculation: each animation determines its frame from elapsed time
+                std::string value = anim.getCurrentValue(frame->elapsedTimeSeconds);
+                sk_sp<SkSVGNode>* nodePtr = cache->dom->findNodeById(anim.targetId.c_str());
+                if (nodePtr && *nodePtr) {
+                    (*nodePtr)->setAttribute(anim.attributeName.c_str(), value.c_str());
+                }
             }
         }
 
@@ -532,10 +542,14 @@ class ThreadedRenderer {
     std::string svgData;
     size_t currentFrameIndex{0};
 
-    // Animation state (for applying to render thread's DOM)
-    std::string animTargetId;
-    std::string animAttributeName;
-    std::string animCurrentValue;
+    // Animation states (for applying to render thread's DOM)
+    // Supports multiple simultaneous animations - each has targetId, attributeName, currentValue
+    struct AnimState {
+        std::string targetId;
+        std::string attributeName;
+        std::string currentValue;
+    };
+    std::vector<AnimState> animationStates;
 
     // Statistics
     std::atomic<double> lastRenderTimeMs{0};
@@ -591,12 +605,25 @@ class ThreadedRenderer {
         }
     }
 
-    // Called from main thread - update animation state (non-blocking!)
+    // Called from main thread - update animation states (non-blocking!)
+    // Accepts all animation states at once to ensure they're applied together
+    void setAnimationStates(const std::vector<AnimState>& states) {
+        std::lock_guard<std::mutex> lock(paramsMutex);
+        animationStates = states;
+    }
+
+    // Convenience method - add/update a single animation state
+    // For backward compatibility and simpler single-animation cases
     void setAnimationState(const std::string& targetId, const std::string& attrName, const std::string& value) {
         std::lock_guard<std::mutex> lock(paramsMutex);
-        animTargetId = targetId;
-        animAttributeName = attrName;
-        animCurrentValue = value;
+        // Find existing or add new
+        for (auto& state : animationStates) {
+            if (state.targetId == targetId && state.attributeName == attrName) {
+                state.currentValue = value;
+                return;
+            }
+        }
+        animationStates.push_back({targetId, attrName, value});
     }
 
     // Called from main thread - request a new frame (non-blocking!)
@@ -709,11 +736,11 @@ class ThreadedRenderer {
             if (!newFrameRequested) continue;
             newFrameRequested = false;
 
-            // Get render parameters and animation state
+            // Get render parameters and animation states
             std::string localSvgData;
             int localWidth, localHeight, localSvgW, localSvgH;
             size_t localFrameIndex;
-            std::string localAnimTargetId, localAnimAttr, localAnimValue;
+            std::vector<AnimState> localAnimStates;
             {
                 std::lock_guard<std::mutex> lock(paramsMutex);
                 localSvgData = svgData;
@@ -722,9 +749,7 @@ class ThreadedRenderer {
                 localSvgW = svgWidth;
                 localSvgH = svgHeight;
                 localFrameIndex = currentFrameIndex;
-                localAnimTargetId = animTargetId;
-                localAnimAttr = animAttributeName;
-                localAnimValue = animCurrentValue;
+                localAnimStates = animationStates;
             }
 
             if (localWidth <= 0 || localHeight <= 0) continue;
@@ -765,11 +790,15 @@ class ThreadedRenderer {
                 if (threadSurface && threadDom) {
                     threadDom->setContainerSize(SkSize::Make(localSvgW, localSvgH));
 
-                    // Apply animation state to render thread's DOM (sync with main thread)
-                    if (!localAnimTargetId.empty() && !localAnimAttr.empty()) {
-                        sk_sp<SkSVGNode>* nodePtr = threadDom->findNodeById(localAnimTargetId.c_str());
-                        if (nodePtr && *nodePtr) {
-                            (*nodePtr)->setAttribute(localAnimAttr.c_str(), localAnimValue.c_str());
+                    // Apply ALL animation states to render thread's DOM (sync with main thread)
+                    // This ensures multiple simultaneous animations are rendered correctly
+                    for (const auto& animState : localAnimStates) {
+                        if (!animState.targetId.empty() && !animState.attributeName.empty()) {
+                            sk_sp<SkSVGNode>* nodePtr = threadDom->findNodeById(animState.targetId.c_str());
+                            if (nodePtr && *nodePtr) {
+                                (*nodePtr)->setAttribute(animState.attributeName.c_str(),
+                                                         animState.currentValue.c_str());
+                            }
                         }
                     }
 
@@ -1326,14 +1355,26 @@ int main(int argc, char* argv[]) {
     int totalCores = parallelRenderer.totalCores;
     int availableCores = parallelRenderer.getWorkerCount();
 
-    // Initialize parallel renderer with SVG data and animation info
-    // PreBuffer mode is started by default for best animation performance
+    // Calculate animation timing parameters for PreBuffer mode
+    // maxFrames: largest frame count across all animations (for buffer indexing)
+    // maxDuration: longest animation duration (for time-based frame calculation)
+    size_t maxFrames = 1;
+    double maxDuration = 1.0;
     if (!animations.empty()) {
-        parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
-                                   animations[0].targetId, animations[0].attributeName, animations[0].values);
-    } else {
-        parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+        for (const auto& anim : animations) {
+            if (anim.values.size() > maxFrames) {
+                maxFrames = anim.values.size();
+            }
+            if (anim.duration > maxDuration) {
+                maxDuration = anim.duration;
+            }
+        }
     }
+
+    // Initialize parallel renderer with SVG data, ALL animations, and timing info
+    // PreBuffer mode uses time-based frame calculation for multi-animation sync
+    parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                               animations, maxDuration, maxFrames);
 
     // Start parallel renderer in PreBuffer mode by default (best for animations)
     parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
@@ -1349,9 +1390,7 @@ int main(int argc, char* argv[]) {
     threadedRenderer.cachedActiveWorkers = parallelRenderer.activeWorkers.load();
 
     // Set total animation frames so PreBuffer mode can pre-render ahead
-    if (!animations.empty()) {
-        threadedRenderer.setTotalAnimationFrames(animations[0].values.size());
-    }
+    threadedRenderer.setTotalAnimationFrames(maxFrames);
 
     std::cout << "\nCPU cores detected: " << totalCores << std::endl;
     std::cout << "Skia thread pool size: " << availableCores << " (1 reserved for system)" << std::endl;

@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstring>
 #include <fstream>
@@ -113,11 +114,13 @@ void printHelp(const char* programName) {
     std::cerr << "OPTIONS:\n";
     std::cerr << "    -h, --help        Show this help message and exit\n";
     std::cerr << "    -v, --version     Show version information and exit\n";
-    std::cerr << "    -f, --fullscreen  Start in fullscreen mode\n\n";
+    std::cerr << "    -w, --windowed    Start in windowed mode (default is fullscreen)\n";
+    std::cerr << "    -f, --fullscreen  Start in fullscreen mode (default)\n\n";
     std::cerr << "KEYBOARD CONTROLS:\n";
     std::cerr << "    Space         Play/Pause animation\n";
     std::cerr << "    R             Restart animation from beginning\n";
-    std::cerr << "    F             Toggle fullscreen mode\n";
+    std::cerr << "    G             Toggle fullscreen mode\n";
+    std::cerr << "    F             Toggle frame limiter\n";
     std::cerr << "    Left/Right    Seek backward/forward 1 second\n";
     std::cerr << "    Up/Down       Speed up/slow down playback\n";
     std::cerr << "    L             Toggle loop mode\n";
@@ -129,8 +132,8 @@ void printHelp(const char* programName) {
     std::cerr << "    - Discrete frame animations via xlink:href\n";
     std::cerr << "    - FBF (Frame-by-Frame) SVG format\n\n";
     std::cerr << "EXAMPLES:\n";
-    std::cerr << "    " << programName << " animation.svg\n";
-    std::cerr << "    " << programName << " animation.svg --fullscreen\n";
+    std::cerr << "    " << programName << " animation.svg              # Starts in fullscreen (default)\n";
+    std::cerr << "    " << programName << " animation.svg --windowed   # Starts in a window\n";
     std::cerr << "    " << programName << " --version\n\n";
     std::cerr << "BUILD INFO:\n";
     std::cerr << "    " << SVG_PLAYER_BUILD_INFO << "\n";
@@ -210,6 +213,7 @@ class SkiaParallelRenderer {
     // === Mode A: Pre-buffer data ===
     struct RenderedFrame {
         size_t frameIndex;
+        double elapsedTimeSeconds;  // Time-based sync for multi-animation support
         std::vector<uint32_t> pixels;
         int width;
         int height;
@@ -227,10 +231,10 @@ class SkiaParallelRenderer {
     int svgWidth{0};
     int svgHeight{0};
 
-    // Animation info for pre-buffered frames
-    std::string animTargetId;
-    std::string animAttributeName;
-    std::vector<std::string> animValues;
+    // Animation info for pre-buffered frames (supports multiple simultaneous animations)
+    std::vector<SMILAnimation> animations;
+    double totalDuration{1.0};  // Total animation cycle duration for time-based sync
+    size_t totalFrameCount{1};  // Total frames for frame-to-time conversion
 
     // Per-worker cached DOM and surface (parse SVG once per thread, not per frame!)
     struct WorkerCache {
@@ -280,16 +284,17 @@ class SkiaParallelRenderer {
     }
 
     void configure(const std::string& svgContent, int width, int height, int svgW, int svgH,
-                   const std::string& targetId = "", const std::string& attrName = "",
-                   const std::vector<std::string>& values = {}) {
+                   const std::vector<SMILAnimation>& anims = {},
+                   double animDuration = 1.0, size_t animFrames = 1) {
         svgData = svgContent;
         renderWidth = width;
         renderHeight = height;
         svgWidth = svgW;
         svgHeight = svgH;
-        animTargetId = targetId;
-        animAttributeName = attrName;
-        animValues = values;
+        animations = anims;
+        // Store duration and frame count for time-based frame calculation
+        totalDuration = animDuration > 0 ? animDuration : 1.0;
+        totalFrameCount = animFrames > 0 ? animFrames : 1;
     }
 
     // Update render dimensions on window resize - clears cached frames since they're wrong size
@@ -376,6 +381,9 @@ class SkiaParallelRenderer {
 
         auto framePtr = std::make_shared<RenderedFrame>();
         framePtr->frameIndex = frameIndex;
+        // Calculate elapsed time for this frame: time = (frameIndex / totalFrames) * duration
+        // This ensures each animation can calculate its own correct frame based on time
+        framePtr->elapsedTimeSeconds = (static_cast<double>(frameIndex) / totalFrameCount) * totalDuration;
         framePtr->width = renderWidth;
         framePtr->height = renderHeight;
 
@@ -450,7 +458,6 @@ class SkiaParallelRenderer {
             auto stream = SkMemoryStream::MakeDirect(svgData.data(), svgData.size());
             cache->dom = makeSVGDOMWithFontSupport(*stream);
             if (!cache->dom) return;
-            cache->dom->setContainerSize(SkSize::Make(svgWidth, svgHeight));
         }
 
         // Recreate surface if size changed
@@ -462,30 +469,31 @@ class SkiaParallelRenderer {
             if (!cache->surface) return;
         }
 
-        // Apply animation state for this specific frame index
-        if (!animTargetId.empty() && !animAttributeName.empty() && !animValues.empty()) {
-            size_t valueIndex = frame->frameIndex % animValues.size();
-            sk_sp<SkSVGNode>* nodePtr = cache->dom->findNodeById(animTargetId.c_str());
-            if (nodePtr && *nodePtr) {
-                (*nodePtr)->setAttribute(animAttributeName.c_str(), animValues[valueIndex].c_str());
+        // Set container size to render dimensions (Chrome-like behavior)
+        // This makes percentage dimensions resolve to render window size,
+        // so background rects fill the entire window with no letterboxing
+        cache->dom->setContainerSize(SkSize::Make(renderWidth, renderHeight));
+
+        // Apply ALL animation states for this specific time point
+        // Each animation calculates its own frame based on elapsed time, not frame index
+        // This correctly handles animations with different durations and frame counts
+        for (const auto& anim : animations) {
+            if (!anim.targetId.empty() && !anim.attributeName.empty() && !anim.values.empty()) {
+                // Use time-based calculation: each animation determines its frame from elapsed time
+                std::string value = anim.getCurrentValue(frame->elapsedTimeSeconds);
+                sk_sp<SkSVGNode>* nodePtr = cache->dom->findNodeById(anim.targetId.c_str());
+                if (nodePtr && *nodePtr) {
+                    (*nodePtr)->setAttribute(anim.attributeName.c_str(), value.c_str());
+                }
             }
         }
 
         SkCanvas* canvas = cache->surface->getCanvas();
-        canvas->clear(SK_ColorWHITE);
+        canvas->clear(SK_ColorTRANSPARENT);
 
-        // Apply same transform as main render loop
-        float scaleX = static_cast<float>(renderWidth) / svgWidth;
-        float scaleY = static_cast<float>(renderHeight) / svgHeight;
-        float scale = std::min(scaleX, scaleY);
-        float offsetX = (renderWidth - svgWidth * scale) / 2.0f;
-        float offsetY = (renderHeight - svgHeight * scale) / 2.0f;
-
-        canvas->save();
-        canvas->translate(offsetX, offsetY);
-        canvas->scale(scale, scale);
+        // No manual scaling - let the SVG handle aspect ratio via preserveAspectRatio
+        // Container size is set to render dimensions, so percentages resolve correctly
         cache->dom->render(canvas);
-        canvas->restore();
 
         SkPixmap pixmap;
         if (cache->surface->peekPixels(&pixmap)) {
@@ -530,10 +538,14 @@ class ThreadedRenderer {
     std::string svgData;
     size_t currentFrameIndex{0};
 
-    // Animation state (for applying to render thread's DOM)
-    std::string animTargetId;
-    std::string animAttributeName;
-    std::string animCurrentValue;
+    // Animation states (for applying to render thread's DOM)
+    // Supports multiple simultaneous animations - each has targetId, attributeName, currentValue
+    struct AnimState {
+        std::string targetId;
+        std::string attributeName;
+        std::string currentValue;
+    };
+    std::vector<AnimState> animationStates;
 
     // Statistics
     std::atomic<double> lastRenderTimeMs{0};
@@ -589,12 +601,25 @@ class ThreadedRenderer {
         }
     }
 
-    // Called from main thread - update animation state (non-blocking!)
+    // Called from main thread - update animation states (non-blocking!)
+    // Accepts all animation states at once to ensure they're applied together
+    void setAnimationStates(const std::vector<AnimState>& states) {
+        std::lock_guard<std::mutex> lock(paramsMutex);
+        animationStates = states;
+    }
+
+    // Convenience method - add/update a single animation state
+    // For backward compatibility and simpler single-animation cases
     void setAnimationState(const std::string& targetId, const std::string& attrName, const std::string& value) {
         std::lock_guard<std::mutex> lock(paramsMutex);
-        animTargetId = targetId;
-        animAttributeName = attrName;
-        animCurrentValue = value;
+        // Find existing or add new
+        for (auto& state : animationStates) {
+            if (state.targetId == targetId && state.attributeName == attrName) {
+                state.currentValue = value;
+                return;
+            }
+        }
+        animationStates.push_back({targetId, attrName, value});
     }
 
     // Called from main thread - request a new frame (non-blocking!)
@@ -707,11 +732,11 @@ class ThreadedRenderer {
             if (!newFrameRequested) continue;
             newFrameRequested = false;
 
-            // Get render parameters and animation state
+            // Get render parameters and animation states
             std::string localSvgData;
             int localWidth, localHeight, localSvgW, localSvgH;
             size_t localFrameIndex;
-            std::string localAnimTargetId, localAnimAttr, localAnimValue;
+            std::vector<AnimState> localAnimStates;
             {
                 std::lock_guard<std::mutex> lock(paramsMutex);
                 localSvgData = svgData;
@@ -720,9 +745,7 @@ class ThreadedRenderer {
                 localSvgW = svgWidth;
                 localSvgH = svgHeight;
                 localFrameIndex = currentFrameIndex;
-                localAnimTargetId = animTargetId;
-                localAnimAttr = animAttributeName;
-                localAnimValue = animCurrentValue;
+                localAnimStates = animationStates;
             }
 
             if (localWidth <= 0 || localHeight <= 0) continue;
@@ -761,43 +784,37 @@ class ThreadedRenderer {
                 }
 
                 if (threadSurface && threadDom) {
-                    threadDom->setContainerSize(SkSize::Make(localSvgW, localSvgH));
+                    // Set container size to render dimensions (Chrome-like behavior)
+                    // This makes percentage dimensions resolve to render window size
+                    threadDom->setContainerSize(SkSize::Make(localWidth, localHeight));
 
-                    // Apply animation state to render thread's DOM (sync with main thread)
-                    if (!localAnimTargetId.empty() && !localAnimAttr.empty()) {
-                        sk_sp<SkSVGNode>* nodePtr = threadDom->findNodeById(localAnimTargetId.c_str());
-                        if (nodePtr && *nodePtr) {
-                            (*nodePtr)->setAttribute(localAnimAttr.c_str(), localAnimValue.c_str());
+                    // Apply ALL animation states to render thread's DOM (sync with main thread)
+                    // This ensures multiple simultaneous animations are rendered correctly
+                    for (const auto& animState : localAnimStates) {
+                        if (!animState.targetId.empty() && !animState.attributeName.empty()) {
+                            sk_sp<SkSVGNode>* nodePtr = threadDom->findNodeById(animState.targetId.c_str());
+                            if (nodePtr && *nodePtr) {
+                                (*nodePtr)->setAttribute(animState.attributeName.c_str(),
+                                                         animState.currentValue.c_str());
+                            }
                         }
                     }
 
                     SkCanvas* canvas = threadSurface->getCanvas();
-                    canvas->clear(SK_ColorWHITE);
-
-                    // Calculate transform
-                    float scaleX = static_cast<float>(localWidth) / localSvgW;
-                    float scaleY = static_cast<float>(localHeight) / localSvgH;
-                    float scale = std::min(scaleX, scaleY);
-                    float offsetX = (localWidth - localSvgW * scale) / 2.0f;
-                    float offsetY = (localHeight - localSvgH * scale) / 2.0f;
-
-                    canvas->save();
-                    canvas->translate(offsetX, offsetY);
-                    canvas->scale(scale, scale);
+                    canvas->clear(SK_ColorTRANSPARENT);
 
                     // Check timeout before expensive render
                     auto elapsed =
                         std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - renderStart).count();
 
                     if (elapsed < RENDER_TIMEOUT_MS) {
+                        // No manual scaling - let SVG handle aspect ratio via preserveAspectRatio
                         threadDom->render(canvas);
                         renderSuccess = true;
                     } else {
                         renderTimedOut = true;
                         timeoutCount++;
                     }
-
-                    canvas->restore();
 
                     // Copy to back buffer
                     if (renderSuccess) {
@@ -1000,7 +1017,7 @@ int main(int argc, char* argv[]) {
 
     // Parse command-line arguments
     const char* inputPath = nullptr;
-    bool startFullscreen = false;
+    bool startFullscreen = true;  // Default to fullscreen for best viewing experience
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
@@ -1016,6 +1033,8 @@ int main(int argc, char* argv[]) {
         }
         if (strcmp(argv[i], "--fullscreen") == 0 || strcmp(argv[i], "-f") == 0) {
             startFullscreen = true;
+        } else if (strcmp(argv[i], "--windowed") == 0 || strcmp(argv[i], "-w") == 0) {
+            startFullscreen = false;  // Override default fullscreen
         } else if (argv[i][0] != '-') {
             // Non-option argument is the input file
             inputPath = argv[i];
@@ -1120,12 +1139,24 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // Get SVG intrinsic dimensions
-    SkSize defaultSize = SkSize::Make(800, 600);
-    SkSize svgSize = root->intrinsicSize(SkSVGLengthContext(defaultSize));
+    // Get SVG dimensions - prefer viewBox over intrinsicSize for percentage-based SVGs
+    // When SVG has width="100%" height="100%", intrinsicSize returns the context size (wrong)
+    // The viewBox defines the actual content dimensions and should be used instead
+    int svgWidth = 800;
+    int svgHeight = 600;
 
-    int svgWidth = (svgSize.width() > 0) ? static_cast<int>(svgSize.width()) : 800;
-    int svgHeight = (svgSize.height() > 0) ? static_cast<int>(svgSize.height()) : 600;
+    const auto& viewBox = root->getViewBox();
+    if (viewBox.isValid()) {
+        // Use viewBox dimensions - this is the actual content coordinate space
+        svgWidth = static_cast<int>(viewBox->width());
+        svgHeight = static_cast<int>(viewBox->height());
+    } else {
+        // Fall back to intrinsicSize if no viewBox
+        SkSize defaultSize = SkSize::Make(800, 600);
+        SkSize svgSize = root->intrinsicSize(SkSVGLengthContext(defaultSize));
+        svgWidth = (svgSize.width() > 0) ? static_cast<int>(svgSize.width()) : 800;
+        svgHeight = (svgSize.height() > 0) ? static_cast<int>(svgSize.height()) : 600;
+    }
     float aspectRatio = static_cast<float>(svgWidth) / svgHeight;
 
     std::cout << "SVG dimensions: " << svgWidth << "x" << svgHeight << std::endl;
@@ -1147,9 +1178,21 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Create window at SVG native resolution (or scaled if too large)
+    // Create window at SVG native resolution (scaled to fit reasonable bounds)
     int windowWidth = svgWidth;
     int windowHeight = svgHeight;
+
+    // Ensure minimum window size of 400px (maintain aspect ratio)
+    const int MIN_WINDOW_SIZE = 400;
+    if (windowWidth < MIN_WINDOW_SIZE && windowHeight < MIN_WINDOW_SIZE) {
+        if (windowWidth > windowHeight) {
+            windowWidth = MIN_WINDOW_SIZE;
+            windowHeight = static_cast<int>(MIN_WINDOW_SIZE / aspectRatio);
+        } else {
+            windowHeight = MIN_WINDOW_SIZE;
+            windowWidth = static_cast<int>(MIN_WINDOW_SIZE * aspectRatio);
+        }
+    }
 
     // Limit initial window size to 1200px max dimension
     if (windowWidth > 1200 || windowHeight > 1200) {
@@ -1290,6 +1333,11 @@ int main(int argc, char* argv[]) {
     size_t currentFrameIndex = 0;
     std::string lastFrameValue;
 
+    // PreBuffer mode timing parameters (for global frame index calculation)
+    // These MUST match what was passed to parallelRenderer.configure()
+    size_t preBufferTotalFrames = 1;
+    double preBufferTotalDuration = 1.0;
+
     // Frame skip tracking for synchronization verification
     size_t framesRendered = 0;  // Actual frames we rendered
     size_t framesSkipped = 0;   // Frames skipped due to slow rendering
@@ -1339,14 +1387,31 @@ int main(int argc, char* argv[]) {
     int totalCores = parallelRenderer.totalCores;
     int availableCores = parallelRenderer.getWorkerCount();
 
-    // Initialize parallel renderer with SVG data and animation info
-    // PreBuffer mode is started by default for best animation performance
+    // Calculate animation timing parameters for PreBuffer mode
+    // maxFrames: largest frame count across all animations (for buffer indexing)
+    // maxDuration: longest animation duration (for time-based frame calculation)
+    size_t maxFrames = 1;
+    double maxDuration = 1.0;
     if (!animations.empty()) {
-        parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
-                                   animations[0].targetId, animations[0].attributeName, animations[0].values);
-    } else {
-        parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+        for (const auto& anim : animations) {
+            if (anim.values.size() > maxFrames) {
+                maxFrames = anim.values.size();
+            }
+            if (anim.duration > maxDuration) {
+                maxDuration = anim.duration;
+            }
+        }
     }
+
+    // Store timing parameters for PreBuffer frame index calculation in main loop
+    // CRITICAL: These MUST match what parallelRenderer.configure() receives
+    preBufferTotalFrames = maxFrames;
+    preBufferTotalDuration = maxDuration;
+
+    // Initialize parallel renderer with SVG data, ALL animations, and timing info
+    // PreBuffer mode uses time-based frame calculation for multi-animation sync
+    parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                               animations, maxDuration, maxFrames);
 
     // Start parallel renderer in PreBuffer mode by default (best for animations)
     parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
@@ -1362,9 +1427,7 @@ int main(int argc, char* argv[]) {
     threadedRenderer.cachedActiveWorkers = parallelRenderer.activeWorkers.load();
 
     // Set total animation frames so PreBuffer mode can pre-render ahead
-    if (!animations.empty()) {
-        threadedRenderer.setTotalAnimationFrames(animations[0].values.size());
-    }
+    threadedRenderer.setTotalAnimationFrames(maxFrames);
 
     std::cout << "\nCPU cores detected: " << totalCores << std::endl;
     std::cout << "Skia thread pool size: " << availableCores << " (1 reserved for system)" << std::endl;
@@ -1564,6 +1627,11 @@ int main(int argc, char* argv[]) {
                         skipStatsThisFrame = true;
                     } else if (event.key.keysym.sym == SDLK_g) {
                         // Toggle fullscreen mode (exclusive fullscreen - takes over display)
+                        // Clear screen to black BEFORE mode switch to prevent ghosting artifacts
+                        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                        SDL_RenderClear(renderer);
+                        SDL_RenderPresent(renderer);
+
                         isFullscreen = !isFullscreen;
                         if (isFullscreen) {
                             // Use SDL_WINDOW_FULLSCREEN for exclusive fullscreen (no compositor, direct display)
@@ -1572,6 +1640,14 @@ int main(int argc, char* argv[]) {
                             // Back to windowed mode
                             SDL_SetWindowFullscreen(window, 0);
                         }
+
+                        // Clear again AFTER mode switch to ensure clean slate
+                        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                        SDL_RenderClear(renderer);
+                        SDL_RenderPresent(renderer);
+
+                        // Force resize detection on next frame
+                        skipStatsThisFrame = true;
                         std::cout << "Fullscreen: " << (isFullscreen ? "ON (exclusive)" : "OFF") << std::endl;
                     } else if (event.key.keysym.sym == SDLK_d) {
                         // Toggle debug overlay
@@ -1601,15 +1677,10 @@ int main(int argc, char* argv[]) {
                         int actualW, actualH;
                         SDL_GetRendererOutputSize(renderer, &actualW, &actualH);
 
-                        float windowAspect = static_cast<float>(actualW) / actualH;
-
-                        if (windowAspect > aspectRatio) {
-                            renderHeight = actualH;
-                            renderWidth = static_cast<int>(actualH * aspectRatio);
-                        } else {
-                            renderWidth = actualW;
-                            renderHeight = static_cast<int>(actualW / aspectRatio);
-                        }
+                        // Use full output size - SVG's preserveAspectRatio handles centering
+                        // This ensures debug overlay at (0,0) is truly at top-left of window
+                        renderWidth = actualW;
+                        renderHeight = actualH;
 
                         SDL_DestroyTexture(texture);
                         texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
@@ -1637,7 +1708,27 @@ int main(int argc, char* argv[]) {
         auto animStart = Clock::now();
         for (const auto& anim : animations) {
             std::string newValue = anim.getCurrentValue(animTime);
-            currentFrameIndex = anim.getCurrentFrameIndex(animTime);
+
+            // CRITICAL FIX: Frame index calculation must match PreBuffer's calculation
+            // PreBuffer pre-renders frames using GLOBAL frame index based on time ratio
+            // Direct mode uses per-animation frame index
+            if (threadedRenderer.isPreBufferMode() && preBufferTotalDuration > 0) {
+                // PreBuffer mode: calculate GLOBAL frame index from time ratio
+                // This MUST match parallelRenderer's frame calculation:
+                // framePtr->elapsedTimeSeconds = (frameIndex / totalFrameCount) * totalDuration
+                // Inverting: frameIndex = floor((elapsedTime / totalDuration) * totalFrameCount)
+                double timeRatio = animTime / preBufferTotalDuration;
+                // Wrap around for looping animations
+                timeRatio = timeRatio - std::floor(timeRatio);
+                currentFrameIndex = static_cast<size_t>(std::floor(timeRatio * preBufferTotalFrames));
+                // Clamp to valid range
+                if (currentFrameIndex >= preBufferTotalFrames) {
+                    currentFrameIndex = preBufferTotalFrames - 1;
+                }
+            } else {
+                // Direct mode: per-animation frame index
+                currentFrameIndex = anim.getCurrentFrameIndex(animTime);
+            }
             lastFrameValue = newValue;
 
             // Track frame skips (for sync verification)
@@ -2055,17 +2146,10 @@ int main(int argc, char* argv[]) {
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             SDL_RenderClear(renderer);
 
-            // Get actual renderer output size for proper centering
-            int outW, outH;
-            SDL_GetRendererOutputSize(renderer, &outW, &outH);
-
-            SDL_Rect destRect;
-            destRect.w = renderWidth;
-            destRect.h = renderHeight;
-            destRect.x = (outW - renderWidth) / 2;
-            destRect.y = (outH - renderHeight) / 2;
-
-            SDL_RenderCopy(renderer, texture, nullptr, &destRect);
+            // Render texture at full size - no centering needed
+            // SVG's preserveAspectRatio handles centering within the texture
+            // This keeps debug overlay at true top-left corner
+            SDL_RenderCopy(renderer, texture, nullptr, nullptr);
 
             // Measure SDL_RenderPresent time separately (often the stutter source)
             auto presentStart = Clock::now();
