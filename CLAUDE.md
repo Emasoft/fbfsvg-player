@@ -481,6 +481,108 @@ If you get linker errors about undefined symbols:
 
 ---
 
+## SVG Combining Workflow (CRITICAL)
+
+When combining multiple SVGs into a composite document (e.g., for the SVG browser feature), you **MUST** follow this exact workflow:
+
+### The Golden Rule: PREFIX FIRST, THEN COMBINE
+
+```
+CORRECT WORKFLOW:
+   SVG_A.svg → prefix_svg_ids(prefix="a_") → prefixed_A ─┐
+   SVG_B.svg → prefix_svg_ids(prefix="b_") → prefixed_B ─┼→ COMBINE → composite.svg
+   SVG_C.svg → prefix_svg_ids(prefix="c_") → prefixed_C ─┘
+
+WRONG (NEVER DO THIS):
+   SVG_A.svg ─┐
+   SVG_B.svg ─┼→ COMBINE → composite.svg → prefix_svg_ids() ✗ IDs already collided!
+   SVG_C.svg ─┘
+```
+
+### Why This Order Matters
+
+1. **ID uniqueness is required in SVG** - If two elements have the same ID, only one will be addressable
+2. **References break on collision** - `url(#grad1)` becomes ambiguous if multiple `grad1` exist
+3. **Prefixing after combining is impossible** - You cannot know which `grad1` belongs to which original SVG
+4. **SMIL animations depend on IDs** - Animation `values="#frame1;#frame2"` breaks if IDs collide
+
+### The SVG ID Prefixer Tool
+
+Location: `scripts/svg_id_prefixer.py`
+
+```bash
+# Prefix a single SVG (Step 1)
+python3 scripts/svg_id_prefixer.py input.svg -o prefixed.svg -p "a_"
+
+# The tool handles ALL reference patterns:
+# - id="..." declarations
+# - xlink:href="#id" and href="#id"
+# - url(#id) in fill, stroke, clip-path, mask, filter, marker-*, etc.
+# - xlink:href="url(#id)" (non-standard but exists)
+# - Animation values="#id1;#id2;#id3"
+# - Animation begin/end="id.event"
+# - CSS url(#id) in style attributes and <style> blocks
+# - JavaScript getElementById("id") and querySelector("#id")
+# - data-* attributes with #id references
+```
+
+### Programmatic Usage
+
+```python
+from svg_id_prefixer import prefix_svg_ids, combine_svgs_with_prefixes
+
+# Method 1: Manual prefix + combine
+svg_a = open('a.svg').read()
+svg_b = open('b.svg').read()
+
+result_a = prefix_svg_ids(svg_a, prefix="a_")
+result_b = prefix_svg_ids(svg_b, prefix="b_")
+
+# Now safe to combine...
+
+# Method 2: Automatic (recommended)
+# This function does PREFIX FIRST, THEN COMBINE internally
+result = combine_svgs_with_prefixes([
+    (svg_a_content, "svg_a"),
+    (svg_b_content, "svg_b"),
+    (svg_c_content, "svg_c"),
+])
+# Each SVG gets unique prefix: a_, b_, c_, ... z_, aa_, ab_, ...
+```
+
+### Recursive Embedding
+
+The process is iterative for nested composites:
+
+```
+Level 1: PREFIX each original SVG → COMBINE into composite_1
+Level 2: PREFIX composite_1 → COMBINE with other SVGs → composite_2
+Level 3: PREFIX composite_2 → COMBINE with other SVGs → composite_3
+...
+```
+
+Each level of prefixing is additive: `grad1` → `a_grad1` → `x_a_grad1`
+
+### Coordinate-Based Tiling
+
+After combining, each embedded SVG should be positioned using `<g transform="translate(x, y)">`:
+
+```xml
+<svg viewBox="0 0 3600 2400">
+  <g id="a_root" transform="translate(0, 0)">
+    <!-- Prefixed SVG A content -->
+  </g>
+  <g id="b_root" transform="translate(1200, 0)">
+    <!-- Prefixed SVG B content -->
+  </g>
+  <g id="c_root" transform="translate(0, 800)">
+    <!-- Prefixed SVG C content -->
+  </g>
+</svg>
+```
+
+---
+
 ## File Ownership
 
 | File/Directory | Owner | Notes |
