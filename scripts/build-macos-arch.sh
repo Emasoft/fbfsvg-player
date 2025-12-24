@@ -219,6 +219,15 @@ if [ $? -eq 0 ]; then
     # Show binary info
     file "$TARGET"
     lipo -info "$TARGET" 2>/dev/null || true
+
+    # Sign the executable (required for macOS to run unsigned binaries)
+    log_info "Signing executable..."
+    codesign --force --sign - "$TARGET"
+    if [ $? -eq 0 ]; then
+        log_info "Code signing successful"
+    else
+        log_warn "Code signing failed - binary may not run on macOS"
+    fi
 else
     log_error "Build failed"
     exit 1

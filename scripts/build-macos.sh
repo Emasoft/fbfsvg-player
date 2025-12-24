@@ -105,6 +105,11 @@ if [ "$build_universal" = true ]; then
         log_info "Architectures in universal binary:"
         lipo -info "$UNIVERSAL_BIN"
 
+        # Sign the universal binary (required for macOS)
+        log_step "Signing universal binary..."
+        codesign --force --sign - "$UNIVERSAL_BIN"
+        log_info "Code signing complete"
+
         # Clean up architecture-specific binaries
         rm -f "$X64_BIN" "$ARM64_BIN"
     else
@@ -123,6 +128,12 @@ else
     if [ -f "$ARCH_BIN" ]; then
         cp "$ARCH_BIN" "$GENERIC_BIN"
         rm -f "$ARCH_BIN"
+
+        # Sign the binary (required for macOS)
+        log_step "Signing binary..."
+        codesign --force --sign - "$GENERIC_BIN"
+        log_info "Code signing complete"
+
         log_info "Build complete: $GENERIC_BIN"
     fi
 fi
