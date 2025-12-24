@@ -459,7 +459,109 @@ SVG_PLAYER_API bool SVGPlayer_SVGToView(SVGPlayerRef player, float svgX, float s
                                         float* viewX, float* viewY);
 
 // =============================================================================
-// Section 13: Hit Testing Functions
+// Section 13: Zoom and ViewBox Functions
+// =============================================================================
+// These functions control the visible area of the SVG (zoom/pan).
+// The zoom is implemented by modifying the viewBox sent to the Skia renderer.
+// This allows both programmatic zoom and gesture-based zoom (iOS pinch) to
+// share the same underlying logic.
+
+/// Get the current viewBox (visible area in SVG coordinates)
+/// @param player Handle to the player
+/// @param x Output: viewBox origin X
+/// @param y Output: viewBox origin Y
+/// @param width Output: viewBox width
+/// @param height Output: viewBox height
+/// @return true if SVG is loaded
+SVG_PLAYER_API bool SVGPlayer_GetViewBox(SVGPlayerRef player, float* x, float* y, float* width, float* height);
+
+/// Set the viewBox (visible area in SVG coordinates)
+/// This is the core zoom mechanism - a smaller viewBox = zoomed in
+/// @param player Handle to the player
+/// @param x ViewBox origin X
+/// @param y ViewBox origin Y
+/// @param width ViewBox width
+/// @param height ViewBox height
+SVG_PLAYER_API void SVGPlayer_SetViewBox(SVGPlayerRef player, float x, float y, float width, float height);
+
+/// Reset viewBox to the SVG's original viewBox
+/// @param player Handle to the player
+SVG_PLAYER_API void SVGPlayer_ResetViewBox(SVGPlayerRef player);
+
+/// Get the current zoom level (1.0 = no zoom)
+/// @param player Handle to the player
+/// @return Current zoom level
+SVG_PLAYER_API float SVGPlayer_GetZoom(SVGPlayerRef player);
+
+/// Set zoom level centered on a point
+/// @param player Handle to the player
+/// @param zoom Zoom level (1.0 = original, 2.0 = 2x zoom, 0.5 = zoom out)
+/// @param centerX Center point X in view coordinates (use -1 for view center)
+/// @param centerY Center point Y in view coordinates (use -1 for view center)
+/// @param viewWidth Current view width (for center calculation)
+/// @param viewHeight Current view height (for center calculation)
+SVG_PLAYER_API void SVGPlayer_SetZoom(SVGPlayerRef player, float zoom, float centerX, float centerY,
+                                       int viewWidth, int viewHeight);
+
+/// Zoom in by a factor, centered on view center
+/// @param player Handle to the player
+/// @param factor Zoom factor (e.g., 1.5 = zoom in 50%)
+/// @param viewWidth Current view width
+/// @param viewHeight Current view height
+SVG_PLAYER_API void SVGPlayer_ZoomIn(SVGPlayerRef player, float factor, int viewWidth, int viewHeight);
+
+/// Zoom out by a factor, centered on view center
+/// @param player Handle to the player
+/// @param factor Zoom factor (e.g., 0.75 = zoom out 25%)
+/// @param viewWidth Current view width
+/// @param viewHeight Current view height
+SVG_PLAYER_API void SVGPlayer_ZoomOut(SVGPlayerRef player, float factor, int viewWidth, int viewHeight);
+
+/// Zoom to fit a specific rectangle in view
+/// @param player Handle to the player
+/// @param svgX Rectangle X in SVG coordinates
+/// @param svgY Rectangle Y in SVG coordinates
+/// @param svgWidth Rectangle width in SVG coordinates
+/// @param svgHeight Rectangle height in SVG coordinates
+SVG_PLAYER_API void SVGPlayer_ZoomToRect(SVGPlayerRef player, float svgX, float svgY, float svgWidth, float svgHeight);
+
+/// Zoom to fit an element by its ID
+/// @param player Handle to the player
+/// @param elementID The id attribute of the SVG element
+/// @param padding Padding around element (in SVG units, 0 for tight fit)
+/// @return true if element found and zoom applied
+SVG_PLAYER_API bool SVGPlayer_ZoomToElement(SVGPlayerRef player, const char* elementID, float padding);
+
+/// Pan the viewBox by a delta (for drag gestures)
+/// @param player Handle to the player
+/// @param deltaX Pan delta X in view coordinates
+/// @param deltaY Pan delta Y in view coordinates
+/// @param viewWidth Current view width (for coordinate conversion)
+/// @param viewHeight Current view height (for coordinate conversion)
+SVG_PLAYER_API void SVGPlayer_Pan(SVGPlayerRef player, float deltaX, float deltaY, int viewWidth, int viewHeight);
+
+/// Get minimum allowed zoom level
+/// @param player Handle to the player
+/// @return Minimum zoom (default 0.1)
+SVG_PLAYER_API float SVGPlayer_GetMinZoom(SVGPlayerRef player);
+
+/// Set minimum allowed zoom level
+/// @param player Handle to the player
+/// @param minZoom Minimum zoom level (default 0.1)
+SVG_PLAYER_API void SVGPlayer_SetMinZoom(SVGPlayerRef player, float minZoom);
+
+/// Get maximum allowed zoom level
+/// @param player Handle to the player
+/// @return Maximum zoom (default 10.0)
+SVG_PLAYER_API float SVGPlayer_GetMaxZoom(SVGPlayerRef player);
+
+/// Set maximum allowed zoom level
+/// @param player Handle to the player
+/// @param maxZoom Maximum zoom level (default 10.0)
+SVG_PLAYER_API void SVGPlayer_SetMaxZoom(SVGPlayerRef player, float maxZoom);
+
+// =============================================================================
+// Section 14: Hit Testing Functions
 // =============================================================================
 
 /// Subscribe to touch events for an SVG element by its ID
@@ -658,6 +760,299 @@ SVG_PLAYER_API int SVGPlayer_TimeToFrame(SVGPlayerRef player, double timeSeconds
 /// @param frame Frame number (0-indexed)
 /// @return Time in seconds
 SVG_PLAYER_API double SVGPlayer_FrameToTime(SVGPlayerRef player, int frame);
+
+// =============================================================================
+// Section 20: Multi-SVG Compositing Functions
+// =============================================================================
+// These functions allow compositing multiple SVGs into a single scene.
+// Each SVG becomes a "layer" with its own position, opacity, z-order, and transform.
+// Layers are rendered in z-order (lowest first) when using RenderComposite.
+// The "primary" SVG (loaded via LoadSVG) is always layer 0 with z-order 0.
+
+/// Opaque handle to an SVG layer within a scene
+typedef struct SVGLayer* SVGLayerRef;
+
+/// Layer blend mode for compositing
+typedef enum {
+    /// Normal alpha blending (default)
+    SVGLayerBlend_Normal = 0,
+    /// Multiply blend mode
+    SVGLayerBlend_Multiply,
+    /// Screen blend mode
+    SVGLayerBlend_Screen,
+    /// Overlay blend mode
+    SVGLayerBlend_Overlay,
+    /// Darken blend mode
+    SVGLayerBlend_Darken,
+    /// Lighten blend mode
+    SVGLayerBlend_Lighten
+} SVGLayerBlendMode;
+
+/// Create a new layer by loading an SVG file
+/// @param player Handle to the player
+/// @param filepath Path to the SVG file
+/// @return Handle to the new layer, or NULL on failure
+SVG_PLAYER_API SVGLayerRef SVGPlayer_CreateLayer(SVGPlayerRef player, const char* filepath);
+
+/// Create a new layer from SVG data in memory
+/// @param player Handle to the player
+/// @param data Pointer to SVG data (UTF-8 encoded XML)
+/// @param length Length of data in bytes
+/// @return Handle to the new layer, or NULL on failure
+SVG_PLAYER_API SVGLayerRef SVGPlayer_CreateLayerFromData(SVGPlayerRef player, const void* data, size_t length);
+
+/// Destroy a layer and free its resources
+/// @param player Handle to the player
+/// @param layer Handle to the layer to destroy
+SVG_PLAYER_API void SVGPlayer_DestroyLayer(SVGPlayerRef player, SVGLayerRef layer);
+
+/// Get the number of layers (including primary SVG as layer 0)
+/// @param player Handle to the player
+/// @return Number of layers
+SVG_PLAYER_API int SVGPlayer_GetLayerCount(SVGPlayerRef player);
+
+/// Get a layer by index (0 = primary SVG)
+/// @param player Handle to the player
+/// @param index Layer index (0-based)
+/// @return Layer handle, or NULL if index out of range
+SVG_PLAYER_API SVGLayerRef SVGPlayer_GetLayerAtIndex(SVGPlayerRef player, int index);
+
+/// Set layer position (offset from origin)
+/// @param layer Handle to the layer
+/// @param x X offset in pixels
+/// @param y Y offset in pixels
+SVG_PLAYER_API void SVGLayer_SetPosition(SVGLayerRef layer, float x, float y);
+
+/// Get layer position
+/// @param layer Handle to the layer
+/// @param x Output: X offset (can be NULL)
+/// @param y Output: Y offset (can be NULL)
+SVG_PLAYER_API void SVGLayer_GetPosition(SVGLayerRef layer, float* x, float* y);
+
+/// Set layer opacity
+/// @param layer Handle to the layer
+/// @param opacity Opacity value (0.0 = transparent, 1.0 = opaque)
+SVG_PLAYER_API void SVGLayer_SetOpacity(SVGLayerRef layer, float opacity);
+
+/// Get layer opacity
+/// @param layer Handle to the layer
+/// @return Current opacity (0.0 to 1.0)
+SVG_PLAYER_API float SVGLayer_GetOpacity(SVGLayerRef layer);
+
+/// Set layer z-order (render order)
+/// @param layer Handle to the layer
+/// @param zOrder Z-order value (higher = rendered on top)
+SVG_PLAYER_API void SVGLayer_SetZOrder(SVGLayerRef layer, int zOrder);
+
+/// Get layer z-order
+/// @param layer Handle to the layer
+/// @return Current z-order value
+SVG_PLAYER_API int SVGLayer_GetZOrder(SVGLayerRef layer);
+
+/// Set layer visibility
+/// @param layer Handle to the layer
+/// @param visible true to show, false to hide
+SVG_PLAYER_API void SVGLayer_SetVisible(SVGLayerRef layer, bool visible);
+
+/// Check if layer is visible
+/// @param layer Handle to the layer
+/// @return true if visible
+SVG_PLAYER_API bool SVGLayer_IsVisible(SVGLayerRef layer);
+
+/// Set layer scale
+/// @param layer Handle to the layer
+/// @param scaleX Horizontal scale (1.0 = original size)
+/// @param scaleY Vertical scale (1.0 = original size)
+SVG_PLAYER_API void SVGLayer_SetScale(SVGLayerRef layer, float scaleX, float scaleY);
+
+/// Get layer scale
+/// @param layer Handle to the layer
+/// @param scaleX Output: horizontal scale (can be NULL)
+/// @param scaleY Output: vertical scale (can be NULL)
+SVG_PLAYER_API void SVGLayer_GetScale(SVGLayerRef layer, float* scaleX, float* scaleY);
+
+/// Set layer rotation around its center
+/// @param layer Handle to the layer
+/// @param angleDegrees Rotation angle in degrees (clockwise)
+SVG_PLAYER_API void SVGLayer_SetRotation(SVGLayerRef layer, float angleDegrees);
+
+/// Get layer rotation
+/// @param layer Handle to the layer
+/// @return Current rotation in degrees
+SVG_PLAYER_API float SVGLayer_GetRotation(SVGLayerRef layer);
+
+/// Set layer blend mode
+/// @param layer Handle to the layer
+/// @param blendMode Blend mode for compositing
+SVG_PLAYER_API void SVGLayer_SetBlendMode(SVGLayerRef layer, SVGLayerBlendMode blendMode);
+
+/// Get layer blend mode
+/// @param layer Handle to the layer
+/// @return Current blend mode
+SVG_PLAYER_API SVGLayerBlendMode SVGLayer_GetBlendMode(SVGLayerRef layer);
+
+/// Get the intrinsic size of a layer's SVG
+/// @param layer Handle to the layer
+/// @param width Output: width in SVG units (can be NULL)
+/// @param height Output: height in SVG units (can be NULL)
+/// @return true if layer is valid
+SVG_PLAYER_API bool SVGLayer_GetSize(SVGLayerRef layer, int* width, int* height);
+
+/// Get layer animation duration
+/// @param layer Handle to the layer
+/// @return Duration in seconds (0 for static SVG)
+SVG_PLAYER_API double SVGLayer_GetDuration(SVGLayerRef layer);
+
+/// Check if layer has animations
+/// @param layer Handle to the layer
+/// @return true if layer contains SMIL animations
+SVG_PLAYER_API bool SVGLayer_HasAnimations(SVGLayerRef layer);
+
+/// Start or resume layer animation
+/// @param layer Handle to the layer
+SVG_PLAYER_API void SVGLayer_Play(SVGLayerRef layer);
+
+/// Pause layer animation
+/// @param layer Handle to the layer
+SVG_PLAYER_API void SVGLayer_Pause(SVGLayerRef layer);
+
+/// Stop layer animation and reset to beginning
+/// @param layer Handle to the layer
+SVG_PLAYER_API void SVGLayer_Stop(SVGLayerRef layer);
+
+/// Seek layer to specific time
+/// @param layer Handle to the layer
+/// @param timeSeconds Time in seconds
+SVG_PLAYER_API void SVGLayer_SeekTo(SVGLayerRef layer, double timeSeconds);
+
+/// Update layer animation (call from render loop)
+/// @param layer Handle to the layer
+/// @param deltaTime Time since last update in seconds
+/// @return true if layer needs re-render
+SVG_PLAYER_API bool SVGLayer_Update(SVGLayerRef layer, double deltaTime);
+
+/// Update all layers at once
+/// @param player Handle to the player
+/// @param deltaTime Time since last update in seconds
+/// @return true if any layer needs re-render
+SVG_PLAYER_API bool SVGPlayer_UpdateAllLayers(SVGPlayerRef player, double deltaTime);
+
+/// Play all layers simultaneously
+/// @param player Handle to the player
+SVG_PLAYER_API void SVGPlayer_PlayAllLayers(SVGPlayerRef player);
+
+/// Pause all layers
+/// @param player Handle to the player
+SVG_PLAYER_API void SVGPlayer_PauseAllLayers(SVGPlayerRef player);
+
+/// Stop all layers and reset to beginning
+/// @param player Handle to the player
+SVG_PLAYER_API void SVGPlayer_StopAllLayers(SVGPlayerRef player);
+
+/// Render all visible layers composited together
+/// Layers are rendered in z-order (lowest first)
+/// @param player Handle to the player
+/// @param pixelBuffer Pointer to RGBA pixel buffer
+/// @param width Width in pixels
+/// @param height Height in pixels
+/// @param scale HiDPI scale factor
+/// @return true on success
+SVG_PLAYER_API bool SVGPlayer_RenderComposite(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale);
+
+/// Render composite at a specific time
+/// @param player Handle to the player
+/// @param pixelBuffer Pointer to RGBA pixel buffer
+/// @param width Width in pixels
+/// @param height Height in pixels
+/// @param scale HiDPI scale factor
+/// @param timeSeconds Time in seconds (applied to all layers)
+/// @return true on success
+SVG_PLAYER_API bool SVGPlayer_RenderCompositeAtTime(SVGPlayerRef player, void* pixelBuffer, int width, int height,
+                                                     float scale, double timeSeconds);
+
+// =============================================================================
+// Section 21: Frame Rate and Timing Control
+// =============================================================================
+//
+// These functions provide frame rate control and timing utilities for
+// smooth animation playback. The actual VSync synchronization is handled
+// by platform-specific display systems (CADisplayLink on iOS/macOS,
+// EGL/vsync on Linux). This API provides the timing infrastructure.
+
+/// Set target frame rate for animation playback
+/// Affects frame pacing calculations
+/// @param player Handle to the player
+/// @param fps Target frames per second (e.g., 30, 60, 120)
+SVG_PLAYER_API void SVGPlayer_SetTargetFrameRate(SVGPlayerRef player, float fps);
+
+/// Get target frame rate
+/// @param player Handle to the player
+/// @return Current target frame rate in FPS
+SVG_PLAYER_API float SVGPlayer_GetTargetFrameRate(SVGPlayerRef player);
+
+/// Get ideal frame interval based on target frame rate
+/// @param player Handle to the player
+/// @return Frame interval in seconds (1.0 / targetFPS)
+SVG_PLAYER_API double SVGPlayer_GetIdealFrameInterval(SVGPlayerRef player);
+
+/// Begin a new frame timing measurement
+/// Call at the start of each render frame
+/// @param player Handle to the player
+SVG_PLAYER_API void SVGPlayer_BeginFrame(SVGPlayerRef player);
+
+/// End frame timing measurement
+/// Call at the end of each render frame
+/// @param player Handle to the player
+SVG_PLAYER_API void SVGPlayer_EndFrame(SVGPlayerRef player);
+
+/// Get duration of the last completed frame
+/// @param player Handle to the player
+/// @return Frame duration in seconds
+SVG_PLAYER_API double SVGPlayer_GetLastFrameDuration(SVGPlayerRef player);
+
+/// Get average frame duration (rolling average of last N frames)
+/// @param player Handle to the player
+/// @return Average frame duration in seconds
+SVG_PLAYER_API double SVGPlayer_GetAverageFrameDuration(SVGPlayerRef player);
+
+/// Get measured frames per second (based on actual render times)
+/// @param player Handle to the player
+/// @return Measured FPS (1.0 / averageFrameDuration)
+SVG_PLAYER_API float SVGPlayer_GetMeasuredFPS(SVGPlayerRef player);
+
+/// Check if enough time has passed to render the next frame
+/// Useful for frame limiting/pacing without VSync
+/// @param player Handle to the player
+/// @param currentTimeSeconds Current time (e.g., from clock)
+/// @return true if a new frame should be rendered
+SVG_PLAYER_API bool SVGPlayer_ShouldRenderFrame(SVGPlayerRef player, double currentTimeSeconds);
+
+/// Mark that a frame was rendered at the specified time
+/// Updates internal timing for frame pacing
+/// @param player Handle to the player
+/// @param renderTimeSeconds Time when frame was rendered
+SVG_PLAYER_API void SVGPlayer_MarkFrameRendered(SVGPlayerRef player, double renderTimeSeconds);
+
+/// Get number of dropped/skipped frames
+/// A frame is considered dropped if more than 1.5x the ideal interval passes
+/// @param player Handle to the player
+/// @return Number of dropped frames since last reset
+SVG_PLAYER_API int SVGPlayer_GetDroppedFrameCount(SVGPlayerRef player);
+
+/// Reset frame statistics (dropped count, timing averages)
+/// @param player Handle to the player
+SVG_PLAYER_API void SVGPlayer_ResetFrameStats(SVGPlayerRef player);
+
+/// Get timestamp of last rendered frame
+/// @param player Handle to the player
+/// @return Time of last render in seconds (as passed to MarkFrameRendered)
+SVG_PLAYER_API double SVGPlayer_GetLastRenderTime(SVGPlayerRef player);
+
+/// Get time since last frame was rendered
+/// @param player Handle to the player
+/// @param currentTimeSeconds Current time
+/// @return Elapsed time since last render in seconds
+SVG_PLAYER_API double SVGPlayer_GetTimeSinceLastRender(SVGPlayerRef player, double currentTimeSeconds);
 
 #ifdef __cplusplus
 }

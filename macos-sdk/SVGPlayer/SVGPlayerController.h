@@ -78,6 +78,25 @@ typedef NS_ENUM(NSInteger, SVGControllerRepeatMode) {
     SVGControllerRepeatModeCount
 };
 
+/// Layer blend mode for compositing
+typedef NS_ENUM(NSInteger, SVGLayerBlendMode) {
+    /// Normal alpha blending (default)
+    SVGLayerBlendModeNormal = 0,
+    /// Multiply blend mode
+    SVGLayerBlendModeMultiply,
+    /// Screen blend mode
+    SVGLayerBlendModeScreen,
+    /// Overlay blend mode
+    SVGLayerBlendModeOverlay,
+    /// Darken blend mode
+    SVGLayerBlendModeDarken,
+    /// Lighten blend mode
+    SVGLayerBlendModeLighten
+};
+
+// Forward declaration
+@class SVGLayer;
+
 #pragma mark - SVGPlayerController
 
 /// Low-level controller for SVG rendering on macOS
@@ -333,6 +352,310 @@ typedef NS_ENUM(NSInteger, SVGControllerRepeatMode) {
 /// @param frame Frame number (0-indexed)
 /// @return Time in seconds
 - (NSTimeInterval)timeForFrame:(NSInteger)frame;
+
+#pragma mark - Hit Testing - Element Subscription
+
+/// Subscribe to an element for hit testing
+/// Subscribed elements can be detected via hitTestAtPoint: and related methods.
+/// @param objectID The SVG element ID to subscribe to (e.g., "button1")
+- (void)subscribeToElementWithID:(NSString *)objectID;
+
+/// Unsubscribe from a previously subscribed element
+/// @param objectID The SVG element ID to unsubscribe from
+- (void)unsubscribeFromElementWithID:(NSString *)objectID;
+
+/// Unsubscribe from all currently subscribed elements
+- (void)unsubscribeFromAllElements;
+
+#pragma mark - Hit Testing - Queries
+
+/// Perform hit test to find the topmost subscribed element at a point
+/// @param point Point in view coordinates
+/// @param viewSize The current view size (for coordinate transformation)
+/// @return The element ID if a subscribed element was hit, nil otherwise
+- (nullable NSString *)hitTestAtPoint:(NSPoint)point viewSize:(NSSize)viewSize;
+
+/// Get all subscribed elements at a point (for overlapping elements)
+/// @param point Point in view coordinates
+/// @param viewSize The current view size
+/// @param maxElements Maximum number of elements to return
+/// @return Array of element IDs that contain the point
+- (NSArray<NSString *> *)elementsAtPoint:(NSPoint)point
+                                viewSize:(NSSize)viewSize
+                             maxElements:(NSInteger)maxElements;
+
+/// Get the bounding rectangle of an element in SVG coordinates
+/// @param objectID The SVG element ID
+/// @return The bounding rect in SVG coordinates, or NSZeroRect if not found
+- (NSRect)boundingRectForElementID:(NSString *)objectID;
+
+/// Check if an element exists in the current SVG
+/// @param objectID The SVG element ID to check
+/// @return YES if the element exists
+- (BOOL)elementExistsWithID:(NSString *)objectID;
+
+/// Get a property value for an SVG element
+/// @param propertyName The property to query (e.g., "fill", "opacity", "transform")
+/// @param objectID The SVG element ID
+/// @return The property value as a string, or nil if not found
+- (nullable NSString *)propertyValue:(NSString *)propertyName forElementID:(NSString *)objectID;
+
+#pragma mark - Coordinate Conversion
+
+/// Convert a point from view coordinates to SVG coordinates
+/// @param viewPoint Point in view coordinates
+/// @param viewSize The current view size
+/// @return The point in SVG coordinates
+- (NSPoint)convertViewPointToSVG:(NSPoint)viewPoint viewSize:(NSSize)viewSize;
+
+/// Convert a point from SVG coordinates to view coordinates
+/// @param svgPoint Point in SVG coordinates
+/// @param viewSize The current view size
+/// @return The point in view coordinates
+- (NSPoint)convertSVGPointToView:(NSPoint)svgPoint viewSize:(NSSize)viewSize;
+
+#pragma mark - Zoom and ViewBox
+
+/// Get the current viewBox
+/// @param x Output: x coordinate of viewBox origin
+/// @param y Output: y coordinate of viewBox origin
+/// @param width Output: width of viewBox
+/// @param height Output: height of viewBox
+/// @return YES if viewBox was retrieved successfully
+- (BOOL)getViewBoxX:(CGFloat *)x y:(CGFloat *)y width:(CGFloat *)width height:(CGFloat *)height;
+
+/// Set the viewBox directly (for custom zoom/pan)
+/// @param x x coordinate of viewBox origin
+/// @param y y coordinate of viewBox origin
+/// @param width width of viewBox
+/// @param height height of viewBox
+- (void)setViewBoxX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+
+/// Reset the viewBox to the original SVG viewBox
+- (void)resetViewBox;
+
+/// Current zoom level (1.0 = no zoom, >1.0 = zoomed in)
+@property (nonatomic, readonly) CGFloat zoom;
+
+/// Set zoom level centered on a point
+/// @param zoom Zoom level (1.0 = no zoom)
+/// @param center Center point in view coordinates
+/// @param viewSize Current view size
+- (void)setZoom:(CGFloat)zoom centeredAt:(NSPoint)center viewSize:(NSSize)viewSize;
+
+/// Zoom in by a factor
+/// @param factor Zoom factor (e.g., 1.5 = zoom in 50%)
+/// @param viewSize Current view size
+- (void)zoomInByFactor:(CGFloat)factor viewSize:(NSSize)viewSize;
+
+/// Zoom out by a factor
+/// @param factor Zoom factor (e.g., 1.5 = zoom out 50%)
+/// @param viewSize Current view size
+- (void)zoomOutByFactor:(CGFloat)factor viewSize:(NSSize)viewSize;
+
+/// Zoom to show a specific rectangle in SVG coordinates
+/// @param rect Rectangle in SVG coordinates to zoom to
+- (void)zoomToRect:(NSRect)rect;
+
+/// Zoom to show a specific element with optional padding
+/// @param objectID The SVG element ID to zoom to
+/// @param padding Padding around the element in SVG units
+/// @return YES if element was found and zoom applied
+- (BOOL)zoomToElementWithID:(NSString *)objectID padding:(CGFloat)padding;
+
+/// Pan the view by a delta in view coordinates
+/// @param delta Delta in view coordinates
+/// @param viewSize Current view size
+- (void)panByDelta:(NSPoint)delta viewSize:(NSSize)viewSize;
+
+/// Minimum zoom level (default 0.1)
+@property (nonatomic, assign) CGFloat minZoom;
+
+/// Maximum zoom level (default 10.0)
+@property (nonatomic, assign) CGFloat maxZoom;
+
+#pragma mark - Frame Rate Control
+
+/// Target frame rate for rendering (in frames per second)
+/// Set this to match your display's refresh rate or a lower value for throttling.
+/// Default: 60.0 fps
+@property (nonatomic, assign) CGFloat targetFrameRate;
+
+/// Ideal frame interval in seconds (1.0 / targetFrameRate)
+/// This is the target time between frames. Read-only.
+@property (nonatomic, readonly) NSTimeInterval idealFrameInterval;
+
+/// Duration of the last rendered frame in seconds
+/// Useful for performance monitoring. Read-only.
+@property (nonatomic, readonly) NSTimeInterval lastFrameDuration;
+
+/// Average frame duration over recent frames in seconds
+/// Useful for detecting performance issues. Read-only.
+@property (nonatomic, readonly) NSTimeInterval averageFrameDuration;
+
+/// Measured frames per second based on actual render times
+/// This is the actual FPS, not the target. Read-only.
+@property (nonatomic, readonly) CGFloat measuredFPS;
+
+/// Number of frames that were dropped due to timing constraints
+/// Read-only. Reset with resetFrameStats.
+@property (nonatomic, readonly) NSInteger droppedFrameCount;
+
+/// Mark the beginning of a frame rendering cycle
+/// Call this before rendering to track frame timing.
+- (void)beginFrame;
+
+/// Mark the end of a frame rendering cycle
+/// Call this after rendering to update frame statistics.
+- (void)endFrame;
+
+/// Check if a frame should be rendered at the given time
+/// @param currentTime Current time in seconds
+/// @return YES if enough time has passed since last render
+- (BOOL)shouldRenderFrameAtTime:(NSTimeInterval)currentTime;
+
+/// Mark that a frame was rendered at a specific time
+/// @param renderTime Time in seconds when the frame was rendered
+- (void)markFrameRenderedAtTime:(NSTimeInterval)renderTime;
+
+/// Reset all frame timing statistics
+/// Clears dropped frame count, average duration, etc.
+- (void)resetFrameStats;
+
+#pragma mark - Version Information
+
+/// Get the library version string (e.g., "0.9.0-alpha")
+/// @return Version string
++ (NSString *)version;
+
+/// Get the library version as separate components
+/// @param major Output: major version number
+/// @param minor Output: minor version number
+/// @param patch Output: patch version number
++ (void)getVersionMajor:(NSInteger *)major minor:(NSInteger *)minor patch:(NSInteger *)patch;
+
+/// Get detailed build information
+/// @return Build info string including platform, architecture, and build date
++ (NSString *)buildInfo;
+
+#pragma mark - Multi-SVG Compositing
+
+/// Create a new layer from an SVG file
+/// @param filepath Path to the SVG file
+/// @param error Output error if loading fails (optional)
+/// @return New layer instance, or nil on failure
+- (nullable SVGLayer *)createLayerFromPath:(NSString *)filepath error:(NSError * _Nullable * _Nullable)error;
+
+/// Create a new layer from SVG data
+/// @param data The SVG file data
+/// @param error Output error if loading fails (optional)
+/// @return New layer instance, or nil on failure
+- (nullable SVGLayer *)createLayerFromData:(NSData *)data error:(NSError * _Nullable * _Nullable)error;
+
+/// Destroy a layer and free its resources
+/// @param layer The layer to destroy
+- (void)destroyLayer:(SVGLayer *)layer;
+
+/// Number of layers (including primary SVG as layer 0)
+@property (nonatomic, readonly) NSInteger layerCount;
+
+/// Get a layer by index (0 = primary SVG)
+/// @param index Layer index (0-based)
+/// @return Layer at index, or nil if out of range
+- (nullable SVGLayer *)layerAtIndex:(NSInteger)index;
+
+/// Render all visible layers composited together
+/// @param buffer Pointer to RGBA pixel buffer
+/// @param width Width of the buffer in pixels
+/// @param height Height of the buffer in pixels
+/// @param scale HiDPI scale factor
+/// @return YES if rendering succeeded
+- (BOOL)renderCompositeToBuffer:(void *)buffer
+                          width:(NSInteger)width
+                         height:(NSInteger)height
+                          scale:(CGFloat)scale;
+
+/// Render composite at a specific time
+/// @param buffer Pointer to RGBA pixel buffer
+/// @param width Width of the buffer in pixels
+/// @param height Height of the buffer in pixels
+/// @param scale HiDPI scale factor
+/// @param time Time in seconds (applied to all layers)
+/// @return YES if rendering succeeded
+- (BOOL)renderCompositeToBuffer:(void *)buffer
+                          width:(NSInteger)width
+                         height:(NSInteger)height
+                          scale:(CGFloat)scale
+                         atTime:(NSTimeInterval)time;
+
+/// Update all layers at once
+/// @param deltaTime Time since last update in seconds
+/// @return YES if any layer needs re-render
+- (BOOL)updateAllLayers:(NSTimeInterval)deltaTime;
+
+/// Play all layers simultaneously
+- (void)playAllLayers;
+
+/// Pause all layers
+- (void)pauseAllLayers;
+
+/// Stop all layers and reset to beginning
+- (void)stopAllLayers;
+
+@end
+
+#pragma mark - SVGLayer
+
+/// Represents a single SVG layer in a composite scene
+@interface SVGLayer : NSObject
+
+/// Layer position offset from origin
+@property (nonatomic, assign) NSPoint position;
+
+/// Layer opacity (0.0 = transparent, 1.0 = opaque)
+@property (nonatomic, assign) CGFloat opacity;
+
+/// Layer z-order (higher = rendered on top)
+@property (nonatomic, assign) NSInteger zOrder;
+
+/// Layer visibility
+@property (nonatomic, assign, getter=isVisible) BOOL visible;
+
+/// Layer scale (scaleX, scaleY)
+@property (nonatomic, assign) NSPoint scale;
+
+/// Layer rotation in degrees (clockwise)
+@property (nonatomic, assign) CGFloat rotation;
+
+/// Layer blend mode for compositing
+@property (nonatomic, assign) SVGLayerBlendMode blendMode;
+
+/// Intrinsic size of the layer's SVG (read-only)
+@property (nonatomic, readonly) NSSize size;
+
+/// Animation duration in seconds (read-only)
+@property (nonatomic, readonly) NSTimeInterval duration;
+
+/// Current animation time in seconds (read-only)
+@property (nonatomic, readonly) NSTimeInterval currentTime;
+
+/// Start or resume layer animation
+- (void)play;
+
+/// Pause layer animation
+- (void)pause;
+
+/// Stop layer animation and reset to beginning
+- (void)stop;
+
+/// Seek layer to specific time
+/// @param time Time in seconds
+- (void)seekToTime:(NSTimeInterval)time;
+
+/// Update layer animation
+/// @param deltaTime Time since last update in seconds
+/// @return YES if layer needs re-render
+- (BOOL)update:(NSTimeInterval)deltaTime;
 
 @end
 
