@@ -28,6 +28,8 @@
 #include <sstream>
 #include <sys/stat.h>
 #include <thread>
+#include <unistd.h>
+#include <limits.h>
 #include <vector>
 
 #include "modules/skshaper/include/SkShaper_factory.h"
@@ -47,10 +49,54 @@
 // Cross-platform abstractions for CPU monitoring, font management, etc.
 #include "platform.h"
 
+// Native file dialog for opening SVG files
+#include "file_dialog.h"
+
+// Visual folder browser for file navigation
+#include "folder_browser.h"
+
+// Thumbnail cache for background-threaded SVG thumbnail loading
+#include "thumbnail_cache.h"
+
 // =============================================================================
 // Global shutdown flag for graceful termination
 // =============================================================================
 static std::atomic<bool> g_shutdownRequested{false};
+
+// =============================================================================
+// Folder browser state
+// =============================================================================
+static bool g_browserMode = false;
+static bool g_browserAsyncScanning = false;  // True when async scan in progress
+static svgplayer::FolderBrowser g_folderBrowser;
+static sk_sp<SkSVGDOM> g_browserSvgDom;  // Parsed browser SVG for rendering
+
+// Atomic progress values (updated from scan thread, read from main thread)
+static std::atomic<float> g_browserScanProgress{0.0f};
+static std::string g_browserScanMessage;
+static std::mutex g_browserScanMessageMutex;
+
+// Async DOM parsing infrastructure - main thread NEVER blocks on parsing
+static std::thread g_browserDomParseThread;
+static std::atomic<bool> g_browserDomParsing{false};  // True when background parse in progress
+static std::atomic<bool> g_browserDomReady{false};    // True when new DOM ready to swap
+static sk_sp<SkSVGDOM> g_browserPendingDom;           // DOM being parsed in background
+static std::mutex g_browserDomMutex;                  // Protects g_browserPendingDom
+static std::string g_browserPendingSvg;               // SVG being parsed
+static std::mutex g_browserPendingSvgMutex;           // Protects g_browserPendingSvg
+
+// Browser animation support - composite SVG with all cells animating live
+// Animation extraction happens in background thread, animations swapped atomically with DOM
+static std::vector<svgplayer::SMILAnimation> g_browserAnimations;   // Active animations (render loop reads)
+static std::vector<svgplayer::SMILAnimation> g_browserPendingAnimations;  // Parsed in background thread
+static std::chrono::steady_clock::time_point g_browserAnimStartTime; // Animation time origin
+static std::mutex g_browserAnimMutex;                                // Protects active animations
+static std::mutex g_browserPendingAnimMutex;                         // Protects pending animations
+
+// Double-click detection for folder browser
+static const Uint32 DOUBLE_CLICK_THRESHOLD_MS = 400;  // Max time between clicks for double-click
+static Uint32 g_lastClickTime = 0;                    // SDL_GetTicks() at last click
+static int g_lastClickIndex = -1;                     // Last clicked entry index
 
 // Signal handler for graceful shutdown (SIGINT, SIGTERM)
 void signalHandler(int signum) {
@@ -58,6 +104,139 @@ void signalHandler(int signum) {
         g_shutdownRequested.store(true);
         std::cerr << "\nShutdown requested (signal " << signum << ")..." << std::endl;
     }
+}
+
+// =============================================================================
+// Async DOM Parsing - Main thread NEVER blocks on SVG parsing
+// =============================================================================
+
+// Forward declaration (defined after global font manager setup)
+sk_sp<SkSVGDOM> makeSVGDOMWithFontSupport(SkStream& stream);
+
+// Start async parsing of browser SVG (called from main thread, non-blocking)
+void startAsyncBrowserDomParse(const std::string& svgContent) {
+    // If already parsing, skip (current parse will complete)
+    if (g_browserDomParsing.load()) {
+        return;
+    }
+
+    // Store SVG content for background thread
+    {
+        std::lock_guard<std::mutex> lock(g_browserPendingSvgMutex);
+        g_browserPendingSvg = svgContent;
+    }
+
+    g_browserDomParsing.store(true);
+    g_browserDomReady.store(false);
+
+    // Join any previous thread before starting new one
+    if (g_browserDomParseThread.joinable()) {
+        g_browserDomParseThread.join();
+    }
+
+    // Start background parsing thread
+    g_browserDomParseThread = std::thread([]() {
+        std::string svgToParse;
+        {
+            std::lock_guard<std::mutex> lock(g_browserPendingSvgMutex);
+            svgToParse = std::move(g_browserPendingSvg);
+        }
+
+        if (!svgToParse.empty()) {
+            // CRITICAL: Preprocess SVG FIRST to inject synthetic IDs into <use> elements
+            // without id attributes. This must happen BEFORE DOM parsing so both the DOM
+            // and animation controller see the same content with synthetic IDs.
+            svgplayer::SVGAnimationController localController;
+            std::string preprocessedSvg = localController.getPreprocessedContent(svgToParse);
+
+            // Debug: Check if any <animate> tags exist in the browser SVG
+            size_t animateCount = 0;
+            size_t pos = 0;
+            while ((pos = preprocessedSvg.find("<animate", pos)) != std::string::npos) {
+                animateCount++;
+                pos++;
+            }
+            if (animateCount > 0) {
+                std::cout << "DEBUG: Found " << animateCount << " <animate> tags in browser SVG" << std::endl;
+            }
+
+            // Parse SVG DOM from PREPROCESSED content (includes synthetic IDs)
+            sk_sp<SkData> browserData = SkData::MakeWithCopy(preprocessedSvg.data(), preprocessedSvg.size());
+            std::unique_ptr<SkMemoryStream> browserStream = SkMemoryStream::Make(browserData);
+            sk_sp<SkSVGDOM> newDom = makeSVGDOMWithFontSupport(*browserStream);
+
+            // Extract SMIL animations from same preprocessed content
+            // loadFromContent will see the already-preprocessed content is a no-op for preprocessing
+            localController.loadFromContent(preprocessedSvg);
+            std::vector<svgplayer::SMILAnimation> parsedAnimations = localController.getAnimations();
+
+            // Store DOM result for main thread
+            {
+                std::lock_guard<std::mutex> lock(g_browserDomMutex);
+                g_browserPendingDom = std::move(newDom);
+            }
+
+            // Store animations for main thread (separate mutex for atomicity)
+            {
+                std::lock_guard<std::mutex> lock(g_browserPendingAnimMutex);
+                g_browserPendingAnimations = std::move(parsedAnimations);
+            }
+
+            g_browserDomReady.store(true);
+        }
+
+        g_browserDomParsing.store(false);
+    });
+}
+
+// Check if async parse completed and swap DOM (called from main thread)
+// Both DOM and animations were parsed in background thread - just swap pointers here
+bool trySwapBrowserDom() {
+    if (!g_browserDomReady.load()) {
+        return false;
+    }
+
+    // Swap in the new DOM (fast pointer swap only)
+    {
+        std::lock_guard<std::mutex> lock(g_browserDomMutex);
+        if (g_browserPendingDom) {
+            g_browserSvgDom = std::move(g_browserPendingDom);
+            g_browserPendingDom = nullptr;
+        }
+    }
+
+    // Swap pre-parsed animations (background thread already extracted them)
+    // This is a fast vector swap, no regex parsing on main thread
+    {
+        std::lock_guard<std::mutex> lockPending(g_browserPendingAnimMutex);
+        std::lock_guard<std::mutex> lockActive(g_browserAnimMutex);
+        g_browserAnimations = std::move(g_browserPendingAnimations);
+        g_browserAnimStartTime = std::chrono::steady_clock::now();
+
+        if (!g_browserAnimations.empty()) {
+            std::cout << "Browser: Swapped " << g_browserAnimations.size()
+                      << " pre-parsed animations" << std::endl;
+        }
+    }
+
+    g_browserDomReady.store(false);
+    return true;
+}
+
+// Stop async DOM parsing (cleanup on shutdown or mode change)
+void stopAsyncBrowserDomParse() {
+    if (g_browserDomParseThread.joinable()) {
+        // Wait for current parse to complete (can't cancel mid-parse)
+        g_browserDomParseThread.join();
+    }
+    g_browserDomParsing.store(false);
+    g_browserDomReady.store(false);
+}
+
+// Clear browser animation state (called when exiting browser mode)
+void clearBrowserAnimations() {
+    std::lock_guard<std::mutex> lock(g_browserAnimMutex);
+    g_browserAnimations.clear();
 }
 
 // Install signal handlers for graceful shutdown
@@ -443,12 +622,19 @@ class SkiaParallelRenderer {
     // Render a single pre-buffered frame (called from worker thread)
     // Uses per-thread cached DOM to avoid re-parsing SVG for each frame
     void renderSingleFrame(std::shared_ptr<RenderedFrame> frame) {
+        // Abort early if mode change is in progress (cache may be cleared soon)
+        // This prevents using potentially-invalidated cache pointers during shutdown
+        if (modeChanging.load()) return;
+
         std::thread::id threadId = std::this_thread::get_id();
 
         // Get or create cached DOM and surface for this worker thread
+        // Keep lock held briefly to get reference, then check mode again
         WorkerCache* cache = nullptr;
         {
             std::lock_guard<std::mutex> lock(workerCacheMutex);
+            // Double-check under lock - modeChanging means imminent clear()
+            if (modeChanging.load()) return;
             cache = &workerCaches[threadId];
         }
 
@@ -1447,6 +1633,8 @@ int main(int argc, char* argv[]) {
     std::cout << "      PreBuffer: Pre-render animation frames ahead using thread pool" << std::endl;
     std::cout << "  R - Reset statistics" << std::endl;
     std::cout << "  C - Capture screenshot (PPM format, uncompressed)" << std::endl;
+    std::cout << "  O - Open new SVG file (hot-reload)" << std::endl;
+    std::cout << "  B - Toggle folder browser (click to navigate)" << std::endl;
     std::cout << "  Resize window to change render resolution" << std::endl;
     std::cout << "\nSMIL Sync Guarantee:" << std::endl;
     std::cout << "  Animation timing uses steady_clock (monotonic)" << std::endl;
@@ -1493,8 +1681,26 @@ int main(int argc, char* argv[]) {
                     break;
 
                 case SDL_KEYDOWN:
-                    if (event.key.keysym.sym == SDLK_ESCAPE || event.key.keysym.sym == SDLK_q) {
+                    if (event.key.keysym.sym == SDLK_ESCAPE) {
+                        if (g_browserMode) {
+                            // Exit browser mode instead of quitting
+                            g_browserMode = false;
+                            g_browserSvgDom = nullptr;
+                            clearBrowserAnimations();
+                            std::cout << "Browser closed" << std::endl;
+                        } else {
+                            running = false;
+                        }
+                    } else if (event.key.keysym.sym == SDLK_q) {
                         running = false;
+                    } else if (event.key.keysym.sym == SDLK_LEFT && g_browserMode) {
+                        // Previous page in browser mode (non-blocking)
+                        g_folderBrowser.prevPage();
+                        g_folderBrowser.markDirty();  // Render loop handles async parse
+                    } else if (event.key.keysym.sym == SDLK_RIGHT && g_browserMode) {
+                        // Next page in browser mode (non-blocking)
+                        g_folderBrowser.nextPage();
+                        g_folderBrowser.markDirty();  // Render loop handles async parse
                     } else if (event.key.keysym.sym == SDLK_SPACE) {
                         if (animationPaused) {
                             // Resume: adjust start time to account for paused duration
@@ -1657,8 +1863,27 @@ int main(int argc, char* argv[]) {
                         // Capture screenshot - exact rendered frame at current resolution
                         std::vector<uint32_t> screenshotPixels;
                         int screenshotWidth, screenshotHeight;
-                        if (threadedRenderer.getFrameForScreenshot(screenshotPixels, screenshotWidth,
-                                                                   screenshotHeight)) {
+                        bool screenshotSuccess = false;
+
+                        if (g_browserMode) {
+                            // Browser mode: capture directly from the Skia surface
+                            // The browser renders to 'surface' via canvas, not through threadedRenderer
+                            SkPixmap pixmap;
+                            if (surface && surface->peekPixels(&pixmap)) {
+                                screenshotWidth = pixmap.width();
+                                screenshotHeight = pixmap.height();
+                                screenshotPixels.resize(screenshotWidth * screenshotHeight);
+                                memcpy(screenshotPixels.data(), pixmap.addr(),
+                                       screenshotWidth * screenshotHeight * sizeof(uint32_t));
+                                screenshotSuccess = true;
+                            }
+                        } else {
+                            // Animation mode: capture from threaded renderer
+                            screenshotSuccess = threadedRenderer.getFrameForScreenshot(
+                                screenshotPixels, screenshotWidth, screenshotHeight);
+                        }
+
+                        if (screenshotSuccess) {
                             std::string filename = generateScreenshotFilename(screenshotWidth, screenshotHeight);
                             if (saveScreenshotPPM(screenshotPixels, screenshotWidth, screenshotHeight, filename)) {
                                 std::cout << "Screenshot saved: " << filename << std::endl;
@@ -1667,6 +1892,610 @@ int main(int argc, char* argv[]) {
                             std::cerr << "Screenshot failed: no frame available" << std::endl;
                         }
                         skipStatsThisFrame = true;  // File I/O can be slow, don't pollute stats
+                    } else if (event.key.keysym.sym == SDLK_o) {
+                        // Open file dialog to load a new SVG file (hot-reload)
+                        // Static storage for the path string (inputPath is const char*)
+                        static std::string currentFilePath;
+                        std::string newPath = openSVGFileDialog("Open SVG File", "");
+                        if (!newPath.empty() && fileExists(newPath.c_str())) {
+                            std::cout << "\n=== Loading new SVG: " << newPath << " ===" << std::endl;
+
+                            // Step 1: Stop renderers to safely release SVG resources
+                            threadedRenderer.stop();
+                            parallelRenderer.stop();
+
+                            // Step 2: Load and validate new SVG file
+                            size_t newFileSize = getFileSize(newPath.c_str());
+                            if (newFileSize == 0 || newFileSize > MAX_SVG_FILE_SIZE) {
+                                std::cerr << "Error: Invalid file size for: " << newPath << std::endl;
+                                // Restart with old content
+                                parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                threadedRenderer.start();
+                            } else {
+                                std::ifstream newFile(newPath, std::ios::binary);
+                                if (!newFile) {
+                                    std::cerr << "Error: Cannot open file: " << newPath << std::endl;
+                                    parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                    threadedRenderer.start();
+                                } else {
+                                    std::stringstream newBuffer;
+                                    newBuffer << newFile.rdbuf();
+                                    std::string newOriginalContent = newBuffer.str();
+                                    newFile.close();
+
+                                    if (!validateSVGContent(newOriginalContent)) {
+                                        std::cerr << "Error: Invalid SVG file: " << newPath << std::endl;
+                                        return 1;
+                                    }
+
+                                    // Step 3: Preprocess and extract animations
+                                    std::map<size_t, std::string> newSyntheticIds;
+                                    std::string newProcessedContent = preprocessSVGForAnimation(newOriginalContent, newSyntheticIds);
+                                    std::vector<SMILAnimation> newAnimations = extractAnimationsFromContent(newProcessedContent);
+
+                                    // Step 4: Parse with Skia
+                                    sk_sp<SkData> newSvgData = SkData::MakeWithCopy(newProcessedContent.data(), newProcessedContent.size());
+                                    std::unique_ptr<SkMemoryStream> newSvgStream = SkMemoryStream::Make(newSvgData);
+                                    sk_sp<SkSVGDOM> newSvgDom = makeSVGDOMWithFontSupport(*newSvgStream);
+
+                                    if (!newSvgDom) {
+                                        std::cerr << "Error: Failed to parse SVG with Skia: " << newPath << std::endl;
+                                        return 1;
+                                    }
+
+                                    // Step 5: Update all state variables with new content
+                                    currentFilePath = newPath;
+                                    inputPath = currentFilePath.c_str();
+                                    rawSvgContent = newProcessedContent;
+                                    animations = std::move(newAnimations);
+                                    svgDom = newSvgDom;
+
+                                    // Get new SVG dimensions
+                                    SkSVGSVG* newRoot = svgDom->getRoot();
+                                    if (newRoot) {
+                                        const auto& newViewBox = newRoot->getViewBox();
+                                        if (newViewBox.isValid()) {
+                                            svgWidth = static_cast<int>(newViewBox->width());
+                                            svgHeight = static_cast<int>(newViewBox->height());
+                                        } else {
+                                            SkSize defaultSize = SkSize::Make(800, 600);
+                                            SkSize newSvgSize = newRoot->intrinsicSize(SkSVGLengthContext(defaultSize));
+                                            svgWidth = (newSvgSize.width() > 0) ? static_cast<int>(newSvgSize.width()) : 800;
+                                            svgHeight = (newSvgSize.height() > 0) ? static_cast<int>(newSvgSize.height()) : 600;
+                                        }
+                                        aspectRatio = static_cast<float>(svgWidth) / svgHeight;
+                                    }
+
+                                    // Step 6: Recalculate animation timing
+                                    double newMaxDuration = 1.0;
+                                    size_t newMaxFrames = 1;
+                                    for (const auto& anim : animations) {
+                                        if (anim.duration > newMaxDuration) newMaxDuration = anim.duration;
+                                        if (anim.getFrameCount() > newMaxFrames) newMaxFrames = anim.getFrameCount();
+                                    }
+                                    double newAnimFps = (newMaxDuration > 0 && newMaxFrames > 1) ? (newMaxFrames / newMaxDuration) : 24.0;
+                                    preBufferTotalDuration = newMaxDuration;
+                                    preBufferTotalFrames = newMaxFrames;
+
+                                    // Step 7: Reset animation controller stats
+                                    g_animController.resetStats();
+
+                                    // Step 8: Reconfigure and restart renderers with new content
+                                    parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                                                              animations, newMaxDuration, newMaxFrames);
+                                    parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+
+                                    threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                    threadedRenderer.setTotalAnimationFrames(newMaxFrames);
+                                    threadedRenderer.start();
+
+                                    // Step 9: Reset animation timing state
+                                    animationStartTime = Clock::now();
+                                    animationStartTimeSteady = SteadyClock::now();
+                                    pausedTime = 0;
+                                    lastRenderedAnimFrame = 0;
+                                    displayCycles = 0;
+                                    framesDelivered = 0;
+                                    framesSkipped = 0;
+                                    framesRendered = 0;
+                                    animationPaused = false;
+
+                                    // Update window title - extract filename from newPath
+                                    size_t lastSlash = newPath.find_last_of("/\\");
+                                    std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
+                                    std::string windowTitle = "SVG Player - " + filename;
+                                    SDL_SetWindowTitle(window, windowTitle.c_str());
+
+                                    std::cout << "Loaded: " << newPath << std::endl;
+                                    std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
+                                    std::cout << "  Animations: " << animations.size() << std::endl;
+                                    std::cout << "  Duration: " << preBufferTotalDuration << "s, Frames: " << preBufferTotalFrames << std::endl;
+                                }
+                            }
+                            skipStatsThisFrame = true;
+                        } else if (!newPath.empty()) {
+                            std::cerr << "File not found: " << newPath << std::endl;
+                        }
+                        // else: user cancelled dialog, do nothing
+                    } else if (event.key.keysym.sym == SDLK_b) {
+                        // Toggle folder browser mode
+                        g_browserMode = !g_browserMode;
+                        if (g_browserMode) {
+                            // Configure browser with viewport dimensions
+                            float vh = static_cast<float>(renderHeight) / 100.0f;
+                            svgplayer::BrowserConfig config;
+                            config.containerWidth = renderWidth;
+                            config.containerHeight = renderHeight;
+                            config.cellMargin = 2.0f * vh;
+                            config.labelHeight = 6.0f * vh;
+                            config.headerHeight = 5.0f * vh;
+                            config.navBarHeight = 4.0f * vh;
+                            config.buttonBarHeight = 6.0f * vh;
+                            g_folderBrowser.setConfig(config);
+
+                            // Start thumbnail loader thread (background loading)
+                            g_folderBrowser.startThumbnailLoader();
+
+                            // Start async directory scan (non-blocking)
+                            char cwd[PATH_MAX];
+                            if (getcwd(cwd, sizeof(cwd)) != NULL) {
+                                g_browserAsyncScanning = true;
+                                g_browserScanProgress.store(0.0f);
+
+                                // Progress callback runs in background thread
+                                g_folderBrowser.setDirectoryAsync(cwd,
+                                    [](float progress, const std::string& message) -> bool {
+                                        g_browserScanProgress.store(progress);
+                                        {
+                                            std::lock_guard<std::mutex> lock(g_browserScanMessageMutex);
+                                            g_browserScanMessage = message;
+                                        }
+                                        // Update FolderBrowser's internal progress for overlay
+                                        g_folderBrowser.setProgress(progress);
+                                        return true;  // Continue scanning
+                                    });
+
+                                std::cout << "Browser loading (async)..." << std::endl;
+                            }
+                        } else {
+                            // Close browser - stop thumbnail loader and cancel any pending scan
+                            g_folderBrowser.stopThumbnailLoader();
+                            stopAsyncBrowserDomParse();  // Stop any pending DOM parse
+                            g_folderBrowser.cancelScan();
+                            g_browserAsyncScanning = false;
+                            g_browserSvgDom = nullptr;
+                            clearBrowserAnimations();
+                            std::cout << "Browser closed" << std::endl;
+                        }
+                        skipStatsThisFrame = true;
+                    }
+                    break;
+
+                case SDL_MOUSEMOTION:
+                    // Debug: trace mouse motion events even when browser is not ready
+                    {
+                        static int motionDebugCounter = 0;
+                        if (++motionDebugCounter % 120 == 0) {  // Every 2 seconds at 60fps
+                            std::cout << "MOTION: browserMode=" << g_browserMode
+                                      << ", svgDom=" << (g_browserSvgDom ? "OK" : "NULL") << std::endl;
+                        }
+                    }
+                    if (g_browserMode && g_browserSvgDom) {
+                        // Update hover state on mouse movement
+                        // Get actual window size (not stale initial values)
+                        int actualWinW, actualWinH;
+                        SDL_GetWindowSize(window, &actualWinW, &actualWinH);
+                        float scaleX = static_cast<float>(renderWidth) / actualWinW;
+                        float scaleY = static_cast<float>(renderHeight) / actualWinH;
+                        float hoverX = event.motion.x * scaleX;
+                        float hoverY = event.motion.y * scaleY;
+
+                        // Debug: trace hover coordinates (every 30 events to catch issues)
+                        static int hoverDebugCounter = 0;
+                        if (++hoverDebugCounter % 30 == 0) {
+                            std::cout << "Hover: win(" << event.motion.x << "," << event.motion.y
+                                      << ") -> render(" << hoverX << "," << hoverY
+                                      << ") scale=" << scaleX << "x" << scaleY
+                                      << " hoveredIdx=" << g_folderBrowser.getHoveredIndex() << std::endl;
+                        }
+
+                        // Hit test to find what's under the cursor
+                        const svgplayer::BrowserEntry* hoveredEntry = nullptr;
+                        svgplayer::HitTestResult hitResult = g_folderBrowser.hitTest(hoverX, hoverY, &hoveredEntry, nullptr);
+
+                        // Update hover index based on hit test result
+                        int newHoveredIndex = -1;
+                        if (hitResult == svgplayer::HitTestResult::Entry && hoveredEntry) {
+                            newHoveredIndex = hoveredEntry->gridIndex;
+                        }
+
+                        // Only regenerate SVG if hover state changed
+                        if (newHoveredIndex != g_folderBrowser.getHoveredIndex()) {
+                            g_folderBrowser.setHoveredEntry(newHoveredIndex);
+                            std::string browserSvg = g_folderBrowser.generateBrowserSVG();
+                            sk_sp<SkData> browserData = SkData::MakeWithCopy(browserSvg.data(), browserSvg.size());
+                            std::unique_ptr<SkMemoryStream> browserStream = SkMemoryStream::Make(browserData);
+                            sk_sp<SkSVGDOM> newDom = makeSVGDOMWithFontSupport(*browserStream);
+                            // Only update if parse succeeded (protect against null DOM)
+                            if (newDom) {
+                                g_browserSvgDom = std::move(newDom);
+                            } else {
+                                std::cerr << "ERROR: Failed to parse hover SVG!" << std::endl;
+                            }
+                        }
+                    }
+                    break;
+
+                case SDL_MOUSEBUTTONDOWN:
+                    if (g_browserMode && event.button.button == SDL_BUTTON_LEFT) {
+                        // Handle click in browser mode
+                        // Convert screen coordinates (considering HiDPI scaling)
+                        int mouseX, mouseY;
+                        SDL_GetMouseState(&mouseX, &mouseY);
+                        // Get actual window size (not stale initial values)
+                        int actualWinW, actualWinH;
+                        SDL_GetWindowSize(window, &actualWinW, &actualWinH);
+                        float scaleX = static_cast<float>(renderWidth) / actualWinW;
+                        float scaleY = static_cast<float>(renderHeight) / actualWinH;
+                        float clickX = mouseX * scaleX;
+                        float clickY = mouseY * scaleY;
+
+                        // Use new hitTest API with HitTestResult enum
+                        const svgplayer::BrowserEntry* clickedEntry = nullptr;
+                        std::string clickedBreadcrumbPath;
+                        svgplayer::HitTestResult hitResult = g_folderBrowser.hitTest(clickX, clickY, &clickedEntry, &clickedBreadcrumbPath);
+
+                        // Detect double-click (for folder navigation)
+                        Uint32 currentTime = SDL_GetTicks();
+                        bool isDoubleClick = false;
+                        int currentClickIndex = clickedEntry ? clickedEntry->gridIndex : -1;
+                        if (hitResult == svgplayer::HitTestResult::Entry && currentClickIndex >= 0) {
+                            if (currentClickIndex == g_lastClickIndex &&
+                                (currentTime - g_lastClickTime) <= DOUBLE_CLICK_THRESHOLD_MS) {
+                                isDoubleClick = true;
+                            }
+                            g_lastClickIndex = currentClickIndex;
+                            g_lastClickTime = currentTime;
+                        }
+
+                        // Lambda to mark browser dirty after any state change (non-blocking)
+                        // Render loop handles async SVG regeneration and DOM parsing
+                        auto refreshBrowserSVG = [&]() {
+                            if (g_browserMode) {
+                                g_folderBrowser.markDirty();
+                            }
+                        };
+
+                        // Shared progress callback for all async navigation
+                        auto progressCallback = [](float progress, const std::string& message) -> bool {
+                            g_browserScanProgress.store(progress);
+                            {
+                                std::lock_guard<std::mutex> lock(g_browserScanMessageMutex);
+                                g_browserScanMessage = message;
+                            }
+                            g_folderBrowser.setProgress(progress);
+                            return true;
+                        };
+
+                        // Setup async state before any navigation
+                        auto startAsyncNavigation = []() {
+                            g_browserAsyncScanning = true;
+                            g_browserScanProgress.store(0.0f);
+                        };
+
+                        // Lambda for async navigation to a specific path
+                        auto navigateAsync = [&](const std::string& path) {
+                            startAsyncNavigation();
+                            g_folderBrowser.setDirectoryAsync(path, progressCallback);
+                        };
+
+                        // Lambda for async back navigation
+                        auto goBackAsync = [&]() {
+                            if (!g_folderBrowser.canGoBack()) return;
+                            startAsyncNavigation();
+                            g_folderBrowser.goBackAsync(progressCallback);
+                        };
+
+                        // Lambda for async forward navigation
+                        auto goForwardAsync = [&]() {
+                            if (!g_folderBrowser.canGoForward()) return;
+                            startAsyncNavigation();
+                            g_folderBrowser.goForwardAsync(progressCallback);
+                        };
+
+                        // Lambda for async parent navigation
+                        auto goToParentAsync = [&]() {
+                            startAsyncNavigation();
+                            g_folderBrowser.goToParentAsync(progressCallback);
+                        };
+
+                        // Lambda for async folder entry
+                        auto enterFolderAsync = [&](const std::string& folderName) {
+                            startAsyncNavigation();
+                            g_folderBrowser.enterFolderAsync(folderName, progressCallback);
+                        };
+
+                        switch (hitResult) {
+                            case svgplayer::HitTestResult::CancelButton:
+                                // Cancel button closes browser without loading
+                                g_browserMode = false;
+                                g_browserSvgDom = nullptr;
+                                clearBrowserAnimations();
+                                g_folderBrowser.clearSelection();
+                                std::cout << "Browser cancelled" << std::endl;
+                                break;
+
+                            case svgplayer::HitTestResult::LoadButton:
+                                // Load button loads selected SVG (if one is selected)
+                                if (g_folderBrowser.canLoad()) {
+                                    const svgplayer::BrowserEntry* selected = g_folderBrowser.getSelectedEntry();
+                                    if (selected && selected->type == svgplayer::BrowserEntryType::SVGFile) {
+                                        std::cout << "\n=== Loading from browser (Load button): " << selected->fullPath << " ===" << std::endl;
+                                        g_browserMode = false;
+                                        g_browserSvgDom = nullptr;
+                                        clearBrowserAnimations();
+                                        static std::string currentFilePathLoad;
+                                        std::string newPath = selected->fullPath;
+                                        if (!newPath.empty() && fileExists(newPath.c_str())) {
+                                            threadedRenderer.stop();
+                                            parallelRenderer.stop();
+                                            size_t newFileSize = getFileSize(newPath.c_str());
+                                            if (newFileSize > 0 && newFileSize <= MAX_SVG_FILE_SIZE) {
+                                                std::ifstream newFile(newPath, std::ios::binary);
+                                                if (newFile) {
+                                                    std::stringstream newBuffer;
+                                                    newBuffer << newFile.rdbuf();
+                                                    std::string newOriginalContent = newBuffer.str();
+                                                    newFile.close();
+                                                    if (validateSVGContent(newOriginalContent)) {
+                                                        std::map<size_t, std::string> newSyntheticIds;
+                                                        std::string newProcessedContent = preprocessSVGForAnimation(newOriginalContent, newSyntheticIds);
+                                                        std::vector<SMILAnimation> newAnimations = extractAnimationsFromContent(newProcessedContent);
+                                                        sk_sp<SkData> newSvgData = SkData::MakeWithCopy(newProcessedContent.data(), newProcessedContent.size());
+                                                        std::unique_ptr<SkMemoryStream> newSvgStream = SkMemoryStream::Make(newSvgData);
+                                                        sk_sp<SkSVGDOM> newSvgDom = makeSVGDOMWithFontSupport(*newSvgStream);
+                                                        if (newSvgDom) {
+                                                            currentFilePathLoad = newPath;
+                                                            inputPath = currentFilePathLoad.c_str();
+                                                            rawSvgContent = newProcessedContent;
+                                                            animations = std::move(newAnimations);
+                                                            svgDom = newSvgDom;
+                                                            SkSVGSVG* newRoot = svgDom->getRoot();
+                                                            if (newRoot) {
+                                                                const auto& newViewBox = newRoot->getViewBox();
+                                                                if (newViewBox.isValid()) {
+                                                                    svgWidth = static_cast<int>(newViewBox->width());
+                                                                    svgHeight = static_cast<int>(newViewBox->height());
+                                                                } else {
+                                                                    SkSize defaultSize = SkSize::Make(800, 600);
+                                                                    SkSize newSvgSize = newRoot->intrinsicSize(SkSVGLengthContext(defaultSize));
+                                                                    svgWidth = (newSvgSize.width() > 0) ? static_cast<int>(newSvgSize.width()) : 800;
+                                                                    svgHeight = (newSvgSize.height() > 0) ? static_cast<int>(newSvgSize.height()) : 600;
+                                                                }
+                                                                aspectRatio = static_cast<float>(svgWidth) / svgHeight;
+                                                            }
+                                                            double newMaxDuration = 1.0;
+                                                            size_t newMaxFrames = 1;
+                                                            for (const auto& anim : animations) {
+                                                                if (anim.duration > newMaxDuration) newMaxDuration = anim.duration;
+                                                                if (anim.getFrameCount() > newMaxFrames) newMaxFrames = anim.getFrameCount();
+                                                            }
+                                                            preBufferTotalDuration = newMaxDuration;
+                                                            preBufferTotalFrames = newMaxFrames;
+                                                            g_animController.resetStats();
+                                                            parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                                                                                      animations, newMaxDuration, newMaxFrames);
+                                                            parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                                            threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                                            threadedRenderer.setTotalAnimationFrames(newMaxFrames);
+                                                            threadedRenderer.start();
+                                                            animationStartTime = Clock::now();
+                                                            animationStartTimeSteady = SteadyClock::now();
+                                                            pausedTime = 0;
+                                                            lastRenderedAnimFrame = 0;
+                                                            displayCycles = 0;
+                                                            framesDelivered = 0;
+                                                            framesSkipped = 0;
+                                                            framesRendered = 0;
+                                                            animationPaused = false;
+                                                            size_t lastSlash = newPath.find_last_of("/\\");
+                                                            std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
+                                                            std::string windowTitle = "SVG Player - " + filename;
+                                                            SDL_SetWindowTitle(window, windowTitle.c_str());
+                                                            std::cout << "Loaded: " << newPath << std::endl;
+                                                            std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
+                                                            std::cout << "  Animations: " << animations.size() << std::endl;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            if (!svgDom) {
+                                                parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                                threadedRenderer.start();
+                                            }
+                                        }
+                                    }
+                                }
+                                break;
+
+                            case svgplayer::HitTestResult::BackButton:
+                                // Navigate back in history (async)
+                                goBackAsync();
+                                break;
+
+                            case svgplayer::HitTestResult::ForwardButton:
+                                // Navigate forward in history (async)
+                                goForwardAsync();
+                                break;
+
+                            case svgplayer::HitTestResult::SortButton:
+                                // Toggle sort mode
+                                g_folderBrowser.toggleSortMode();
+                                refreshBrowserSVG();
+                                std::cout << "Browser: sort mode = "
+                                          << (g_folderBrowser.getSortMode() == svgplayer::BrowserSortMode::Alphabetical ? "A-Z" : "Date")
+                                          << std::endl;
+                                break;
+
+                            case svgplayer::HitTestResult::PrevPage:
+                                // Previous page
+                                std::cout << "Browser: prev page clicked (page " << g_folderBrowser.getCurrentPage() << " -> " << (g_folderBrowser.getCurrentPage() - 1) << ")" << std::endl;
+                                g_folderBrowser.prevPage();
+                                refreshBrowserSVG();
+                                break;
+
+                            case svgplayer::HitTestResult::NextPage:
+                                // Next page
+                                std::cout << "Browser: next page clicked (page " << g_folderBrowser.getCurrentPage() << " -> " << (g_folderBrowser.getCurrentPage() + 1) << ")" << std::endl;
+                                g_folderBrowser.nextPage();
+                                refreshBrowserSVG();
+                                break;
+
+                            case svgplayer::HitTestResult::Breadcrumb:
+                                // Navigate to clicked breadcrumb path segment (async)
+                                if (!clickedBreadcrumbPath.empty()) {
+                                    navigateAsync(clickedBreadcrumbPath);
+                                }
+                                break;
+
+                            case svgplayer::HitTestResult::Entry:
+                                // Handle entry click (with selection and double-click logic)
+                                if (clickedEntry) {
+                                    // Trigger click feedback flash animation
+                                    g_folderBrowser.triggerClickFeedback(clickedEntry->gridIndex);
+                                    refreshBrowserSVG();
+
+                                    switch (clickedEntry->type) {
+                                        case svgplayer::BrowserEntryType::ParentDir:
+                                            // Single click on ".." always navigates up (async)
+                                            goToParentAsync();
+                                            break;
+
+                                        case svgplayer::BrowserEntryType::Volume:
+                                            // Single click on volume navigates to it (async)
+                                            navigateAsync(clickedEntry->fullPath);
+                                            break;
+
+                                        case svgplayer::BrowserEntryType::Folder:
+                                            if (isDoubleClick) {
+                                                // Double-click enters folder (async)
+                                                enterFolderAsync(clickedEntry->name);
+                                            } else {
+                                                // Single click selects folder (for viewing path, etc.)
+                                                g_folderBrowser.selectEntry(clickedEntry->gridIndex);
+                                                refreshBrowserSVG();
+                                            }
+                                            break;
+
+                                        case svgplayer::BrowserEntryType::SVGFile:
+                                            if (isDoubleClick) {
+                                                // Double-click loads the SVG file directly
+                                                std::cout << "\n=== Loading from browser: " << clickedEntry->fullPath << " ===" << std::endl;
+                                                // Fall through to load code below
+                                            } else {
+                                                // Single click selects the SVG file
+                                                g_folderBrowser.selectEntry(clickedEntry->gridIndex);
+                                                refreshBrowserSVG();
+                                                break;
+                                            }
+                                            // Load the selected SVG file (reached via double-click fall-through)
+                                            {
+                                                g_browserMode = false;
+                                                g_browserSvgDom = nullptr;
+                                                clearBrowserAnimations();
+                                                static std::string currentFilePath;
+                                                std::string newPath = clickedEntry->fullPath;
+                                                if (!newPath.empty() && fileExists(newPath.c_str())) {
+                                                    threadedRenderer.stop();
+                                                    parallelRenderer.stop();
+                                                    size_t newFileSize = getFileSize(newPath.c_str());
+                                                    if (newFileSize > 0 && newFileSize <= MAX_SVG_FILE_SIZE) {
+                                                        std::ifstream newFile(newPath, std::ios::binary);
+                                                        if (newFile) {
+                                                            std::stringstream newBuffer;
+                                                            newBuffer << newFile.rdbuf();
+                                                            std::string newOriginalContent = newBuffer.str();
+                                                            newFile.close();
+                                                            if (validateSVGContent(newOriginalContent)) {
+                                                                std::map<size_t, std::string> newSyntheticIds;
+                                                                std::string newProcessedContent = preprocessSVGForAnimation(newOriginalContent, newSyntheticIds);
+                                                                std::vector<SMILAnimation> newAnimations = extractAnimationsFromContent(newProcessedContent);
+                                                                sk_sp<SkData> newSvgData = SkData::MakeWithCopy(newProcessedContent.data(), newProcessedContent.size());
+                                                                std::unique_ptr<SkMemoryStream> newSvgStream = SkMemoryStream::Make(newSvgData);
+                                                                sk_sp<SkSVGDOM> newSvgDom = makeSVGDOMWithFontSupport(*newSvgStream);
+                                                                if (newSvgDom) {
+                                                                    currentFilePath = newPath;
+                                                                    inputPath = currentFilePath.c_str();
+                                                                    rawSvgContent = newProcessedContent;
+                                                                    animations = std::move(newAnimations);
+                                                                    svgDom = newSvgDom;
+                                                                    SkSVGSVG* newRoot = svgDom->getRoot();
+                                                                    if (newRoot) {
+                                                                        const auto& newViewBox = newRoot->getViewBox();
+                                                                        if (newViewBox.isValid()) {
+                                                                            svgWidth = static_cast<int>(newViewBox->width());
+                                                                            svgHeight = static_cast<int>(newViewBox->height());
+                                                                        } else {
+                                                                            SkSize defaultSize = SkSize::Make(800, 600);
+                                                                            SkSize newSvgSize = newRoot->intrinsicSize(SkSVGLengthContext(defaultSize));
+                                                                            svgWidth = (newSvgSize.width() > 0) ? static_cast<int>(newSvgSize.width()) : 800;
+                                                                            svgHeight = (newSvgSize.height() > 0) ? static_cast<int>(newSvgSize.height()) : 600;
+                                                                        }
+                                                                        aspectRatio = static_cast<float>(svgWidth) / svgHeight;
+                                                                    }
+                                                                    double newMaxDuration = 1.0;
+                                                                    size_t newMaxFrames = 1;
+                                                                    for (const auto& anim : animations) {
+                                                                        if (anim.duration > newMaxDuration) newMaxDuration = anim.duration;
+                                                                        if (anim.getFrameCount() > newMaxFrames) newMaxFrames = anim.getFrameCount();
+                                                                    }
+                                                                    preBufferTotalDuration = newMaxDuration;
+                                                                    preBufferTotalFrames = newMaxFrames;
+                                                                    g_animController.resetStats();
+                                                                    parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                                                                                              animations, newMaxDuration, newMaxFrames);
+                                                                    parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                                                    threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                                                    threadedRenderer.setTotalAnimationFrames(newMaxFrames);
+                                                                    threadedRenderer.start();
+                                                                    animationStartTime = Clock::now();
+                                                                    animationStartTimeSteady = SteadyClock::now();
+                                                                    pausedTime = 0;
+                                                                    lastRenderedAnimFrame = 0;
+                                                                    displayCycles = 0;
+                                                                    framesDelivered = 0;
+                                                                    framesSkipped = 0;
+                                                                    framesRendered = 0;
+                                                                    animationPaused = false;
+                                                                    size_t lastSlash = newPath.find_last_of("/\\");
+                                                                    std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
+                                                                    std::string windowTitle = "SVG Player - " + filename;
+                                                                    SDL_SetWindowTitle(window, windowTitle.c_str());
+                                                                    std::cout << "Loaded: " << newPath << std::endl;
+                                                                    std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
+                                                                    std::cout << "  Animations: " << animations.size() << std::endl;
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    if (!svgDom) {
+                                                        parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                                        threadedRenderer.start();
+                                                    }
+                                                }
+                                            }
+                                            break;
+                                    }  // end inner switch
+                                }  // end if clickedEntry
+                                break;
+
+                            case svgplayer::HitTestResult::None:
+                                // Clicked on empty space - clear selection
+                                g_folderBrowser.clearSelection();
+                                refreshBrowserSVG();
+                                break;
+                        }  // end switch hitResult
+                        skipStatsThisFrame = true;
                     }
                     break;
 
@@ -1693,6 +2522,26 @@ int main(int argc, char* argv[]) {
 
                         // Resize parallel renderer - clears pre-buffered frames at old size
                         parallelRenderer.resize(renderWidth, renderHeight);
+
+                        // Update browser if in browser mode (real-time resize)
+                        if (g_browserMode) {
+                            // Use viewport-height-based sizing (vh units)
+                            // Each dimension is a fixed percentage of viewport height
+                            // This ensures consistent proportions at any resolution
+                            float vh = static_cast<float>(renderHeight) / 100.0f;
+
+                            svgplayer::BrowserConfig config = g_folderBrowser.getConfig();
+                            config.containerWidth = renderWidth;
+                            config.containerHeight = renderHeight;
+                            config.cellMargin = 2.0f * vh;        // 2vh
+                            config.labelHeight = 6.0f * vh;       // 6vh - label area
+                            config.headerHeight = 5.0f * vh;      // 5vh - breadcrumbs
+                            config.navBarHeight = 4.0f * vh;      // 4vh - nav bar
+                            config.buttonBarHeight = 6.0f * vh;   // 6vh - buttons
+                            g_folderBrowser.setConfig(config);
+                            // Mark dirty - render loop will regenerate and async parse
+                            g_folderBrowser.markDirty();
+                        }
                     }
                     break;
             }
@@ -1767,25 +2616,177 @@ int main(int argc, char* argv[]) {
         // Main thread NEVER blocks on rendering - always responsive to input
         auto fetchStart = Clock::now();
 
-        // Request new frame (render thread will process asynchronously)
-        // Main thread NEVER touches parallelRenderer directly - all through ThreadedRenderer
-        threadedRenderer.requestFrame(currentFrameIndex);
-
-        // Try to get rendered frame from ThreadedRenderer (non-blocking!)
         SkCanvas* canvas = surface->getCanvas();
         bool gotNewFrame = false;
 
-        const uint32_t* renderedPixels = threadedRenderer.getFrontBufferIfReady();
-        if (renderedPixels) {
-            // Got new frame from render thread - copy to surface
-            SkPixmap pixmap;
-            if (surface->peekPixels(&pixmap)) {
-                memcpy(const_cast<void*>(pixmap.addr()), renderedPixels, renderWidth * renderHeight * sizeof(uint32_t));
-                gotNewFrame = true;
-                framesDelivered++;  // Count frames actually received from render thread
+        // === BROWSER MODE: Render folder browser instead of animation ===
+        if (g_browserMode) {
+            // Check if async scan completed - finalize results on main thread
+            if (g_browserAsyncScanning && g_folderBrowser.pollScanComplete()) {
+                g_folderBrowser.finalizeScan();
+                g_browserAsyncScanning = false;
+                g_folderBrowser.markDirty();  // Trigger SVG regeneration
+
+                std::cout << "Browser opened: " << g_folderBrowser.getCurrentDirectory() << std::endl;
+                std::cout << "Browser entries: " << g_folderBrowser.getCurrentPageEntries().size() << std::endl;
             }
+
+            // Note: hasNewReadyThumbnails() check is handled internally by
+            // regenerateBrowserSVGIfNeeded() - don't duplicate it here to avoid
+            // consuming the atomic flag twice
+
+            // Update click feedback animation (decays each frame)
+            if (g_folderBrowser.hasClickFeedback()) {
+                g_folderBrowser.updateClickFeedback();
+                g_folderBrowser.markDirty();  // Click feedback changed
+            }
+
+            // Check if async DOM parse completed - swap in new DOM (NON-BLOCKING!)
+            if (trySwapBrowserDom()) {
+                // Read animation count under lock
+                size_t animCount = 0;
+                {
+                    std::lock_guard<std::mutex> lock(g_browserAnimMutex);
+                    animCount = g_browserAnimations.size();
+                }
+                std::cout << "Browser SVG parsed (async), entries="
+                          << g_folderBrowser.getCurrentPageEntries().size()
+                          << ", animations=" << animCount << std::endl;
+            }
+
+            // Regenerate browser SVG only when dirty (avoids 60fps regeneration)
+            if (g_folderBrowser.regenerateBrowserSVGIfNeeded()) {
+                // Start async DOM parse (NON-BLOCKING! main thread stays responsive)
+                const std::string& browserSvg = g_folderBrowser.getCachedBrowserSVG();
+                std::cout << "Browser SVG regenerated, size=" << browserSvg.size()
+                          << ", starting async parse..." << std::endl;
+                startAsyncBrowserDomParse(browserSvg);
+            }
+
+            // Render current DOM (may be stale if new one is parsing - that's OK!)
+            if (g_browserSvgDom) {
+                canvas->clear(SK_ColorBLACK);
+                SkSize browserSize = SkSize::Make(renderWidth, renderHeight);
+                g_browserSvgDom->setContainerSize(browserSize);
+
+                // Apply animation states to DOM before rendering (LIVE ANIMATED GRID)
+                // Each cell's SMIL animations are applied based on elapsed time
+                // Copy animation data under short lock, then apply without holding mutex
+                std::vector<svgplayer::SMILAnimation> animSnapshot;
+                std::chrono::steady_clock::time_point animStartSnapshot;
+                {
+                    std::lock_guard<std::mutex> lock(g_browserAnimMutex);
+                    if (!g_browserAnimations.empty()) {
+                        animSnapshot = g_browserAnimations;  // Fast copy of vector metadata
+                        animStartSnapshot = g_browserAnimStartTime;
+                    }
+                }
+
+                // Apply animations without holding mutex (DOM ops can be slow)
+                if (!animSnapshot.empty()) {
+                    auto now = std::chrono::steady_clock::now();
+                    double elapsedSeconds = std::chrono::duration<double>(now - animStartSnapshot).count();
+
+                    for (const auto& anim : animSnapshot) {
+                        if (!anim.targetId.empty() && !anim.attributeName.empty() && !anim.values.empty()) {
+                            std::string value = anim.getCurrentValue(elapsedSeconds);
+                            sk_sp<SkSVGNode>* nodePtr = g_browserSvgDom->findNodeById(anim.targetId.c_str());
+                            if (nodePtr && *nodePtr) {
+                                (*nodePtr)->setAttribute(anim.attributeName.c_str(), value.c_str());
+                            }
+                        }
+                    }
+                }
+
+                g_browserSvgDom->render(canvas);
+                gotNewFrame = true;
+            } else if (g_browserAsyncScanning || g_browserDomParsing.load()) {
+                // No DOM yet but parsing - show loading placeholder with progress bar
+                canvas->clear(SkColorSetARGB(255, 26, 26, 46));  // Dark browser bg
+
+                // Get current progress (atomic read from scan thread)
+                float progress = g_browserScanProgress.load();
+                std::string progressMsg;
+                {
+                    std::lock_guard<std::mutex> lock(g_browserScanMessageMutex);
+                    progressMsg = g_browserScanMessage;
+                }
+
+                // Draw centered progress bar
+                float barWidth = renderWidth * 0.6f;
+                float barHeight = 20.0f;
+                float barX = (renderWidth - barWidth) / 2.0f;
+                float barY = renderHeight / 2.0f;
+
+                // Progress bar background (dark gray)
+                SkPaint bgPaint;
+                bgPaint.setColor(SkColorSetARGB(255, 60, 60, 80));
+                bgPaint.setStyle(SkPaint::kFill_Style);
+                canvas->drawRect(SkRect::MakeXYWH(barX, barY, barWidth, barHeight), bgPaint);
+
+                // Progress bar fill (cyan gradient feel)
+                SkPaint fillPaint;
+                fillPaint.setColor(SkColorSetARGB(255, 0, 200, 220));
+                fillPaint.setStyle(SkPaint::kFill_Style);
+                float fillWidth = barWidth * (progress / 100.0f);
+                if (fillWidth > 0) {
+                    canvas->drawRect(SkRect::MakeXYWH(barX, barY, fillWidth, barHeight), fillPaint);
+                }
+
+                // Progress bar border
+                SkPaint borderPaint;
+                borderPaint.setColor(SkColorSetARGB(255, 100, 100, 120));
+                borderPaint.setStyle(SkPaint::kStroke_Style);
+                borderPaint.setStrokeWidth(2.0f);
+                canvas->drawRect(SkRect::MakeXYWH(barX, barY, barWidth, barHeight), borderPaint);
+
+                // "Loading..." text above progress bar
+                SkPaint textPaint;
+                textPaint.setColor(SK_ColorWHITE);
+                textPaint.setAntiAlias(true);
+                SkFont font(nullptr, 24.0f);
+                std::string loadingText = "Loading folder...";
+                canvas->drawString(loadingText.c_str(), barX, barY - 30.0f, font, textPaint);
+
+                // Percentage text below progress bar
+                char percentText[32];
+                snprintf(percentText, sizeof(percentText), "%.0f%%", progress);
+                canvas->drawString(percentText, barX + barWidth / 2.0f - 20.0f, barY + barHeight + 30.0f, font, textPaint);
+
+                // Status message below percentage
+                if (!progressMsg.empty()) {
+                    SkFont smallFont(nullptr, 16.0f);
+                    canvas->drawString(progressMsg.c_str(), barX, barY + barHeight + 60.0f, smallFont, textPaint);
+                }
+
+                // Print progress to console (throttled)
+                static int lastPrintedProgress = -1;
+                int currentProgress = static_cast<int>(progress);
+                if (currentProgress != lastPrintedProgress && currentProgress % 10 == 0) {
+                    std::cout << "Progress: " << currentProgress << "%" << std::endl;
+                    lastPrintedProgress = currentProgress;
+                }
+
+                gotNewFrame = true;
+            }
+        } else {
+            // Request new frame (render thread will process asynchronously)
+            // Main thread NEVER touches parallelRenderer directly - all through ThreadedRenderer
+            threadedRenderer.requestFrame(currentFrameIndex);
+
+            // Try to get rendered frame from ThreadedRenderer (non-blocking!)
+            const uint32_t* renderedPixels = threadedRenderer.getFrontBufferIfReady();
+            if (renderedPixels) {
+                // Got new frame from render thread - copy to surface
+                SkPixmap pixmap;
+                if (surface->peekPixels(&pixmap)) {
+                    memcpy(const_cast<void*>(pixmap.addr()), renderedPixels, renderWidth * renderHeight * sizeof(uint32_t));
+                    gotNewFrame = true;
+                    framesDelivered++;  // Count frames actually received from render thread
+                }
+            }
+            // If no new frame ready, surface keeps last frame (no blocking!)
         }
-        // If no new frame ready, surface keeps last frame (no blocking!)
 
         auto fetchEnd = Clock::now();
         DurationMs fetchTime = fetchEnd - fetchStart;
@@ -2263,8 +3264,26 @@ int main(int argc, char* argv[]) {
     std::cout << "Active:     " << std::setprecision(2) << sumPhases << "ms (" << std::setprecision(1)
               << pctFinal(sumPhases) << "%)" << std::endl;
 
+    // Stop all background threads BEFORE static objects are destroyed
+    // Order matters: DOM parse -> scan -> thumbnail loader -> renderers
+
+    // 1. Stop async DOM parsing thread (may be accessing g_folderBrowser)
+    std::cout << "\nStopping browser DOM parse thread..." << std::endl;
+    stopAsyncBrowserDomParse();
+    std::cout << "DOM parse thread stopped." << std::endl;
+
+    // 2. Cancel folder browser scan thread
+    std::cout << "Cancelling browser scan..." << std::endl;
+    g_folderBrowser.cancelScan();
+    std::cout << "Browser scan cancelled." << std::endl;
+
+    // 3. Stop thumbnail loader thread
+    std::cout << "Stopping thumbnail loader..." << std::endl;
+    g_folderBrowser.stopThumbnailLoader();
+    std::cout << "Thumbnail loader stopped." << std::endl;
+
     // Stop threaded renderer first (must stop before parallel renderer)
-    std::cout << "\nStopping render thread..." << std::endl;
+    std::cout << "Stopping render thread..." << std::endl;
     threadedRenderer.stop();
     std::cout << "Render thread stopped." << std::endl;
 
