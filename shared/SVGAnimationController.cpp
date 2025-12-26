@@ -219,6 +219,13 @@ const std::string& SVGAnimationController::getOriginalContent() const {
     return originalContent_;
 }
 
+std::string SVGAnimationController::getPreprocessedContent(const std::string& svgContent) {
+    // Preprocess the SVG content to inject synthetic IDs into <use> elements
+    // without id attributes that contain <animate> children.
+    // This allows both DOM parsing and animation extraction to work correctly.
+    return preprocessSVG(svgContent);
+}
+
 // === Animation Info ===
 
 double SVGAnimationController::getDuration() const {
@@ -836,8 +843,10 @@ std::vector<SMILAnimation> SVGAnimationController::parseAnimations(const std::st
     // Find all <animate> tags
     std::string animateStart = "<animate";
     size_t pos = 0;
+    int animateTagsFound = 0;
 
     while ((pos = content.find(animateStart, pos)) != std::string::npos) {
+        animateTagsFound++;
         // Find the end of this <animate> tag
         size_t tagEnd = content.find(">", pos);
         if (tagEnd == std::string::npos) break;
@@ -895,39 +904,52 @@ std::vector<SMILAnimation> SVGAnimationController::parseAnimations(const std::st
             anim.calcMode = "discrete";  // Default for frame-by-frame animation
         }
 
-        // Find the parent element that this <animate> targets
-        // Look backwards from animate position to find the closest opening tag with an id
-        std::string before = content.substr(0, pos);
+        // Find the target element for this <animate>
+        // First check for xlink:href="#target" or href="#target" on the animate element itself
+        // This handles standalone animations like: <animate xlink:href="#loadRing" .../>
+        std::string animXlinkHref = extractAttribute(animateTag, "xlink:href");
+        std::string animHref = extractAttribute(animateTag, "href");
+        std::string hrefTarget = animXlinkHref.empty() ? animHref : animXlinkHref;
 
-        // Find the closest <use> element containing this <animate>
-        size_t lastUsePos = findLastOf(before, "<use", before.length());
+        // If href points to an element ID (starts with #), extract the ID
+        if (!hrefTarget.empty() && hrefTarget[0] == '#') {
+            anim.targetId = hrefTarget.substr(1);  // Strip the leading #
+        }
 
-        // Make sure the <use> wasn't closed before our <animate>
-        if (lastUsePos != std::string::npos) {
-            size_t useCloseAfterUse = before.find("</use>", lastUsePos);
-            if (useCloseAfterUse != std::string::npos) {
-                // The <use> was closed before our <animate>, so it's not our parent
-                lastUsePos = std::string::npos;
+        // If no href target, look backwards for parent element with an id
+        if (anim.targetId.empty()) {
+            std::string before = content.substr(0, pos);
+
+            // Find the closest <use> element containing this <animate>
+            size_t lastUsePos = findLastOf(before, "<use", before.length());
+
+            // Make sure the <use> wasn't closed before our <animate>
+            if (lastUsePos != std::string::npos) {
+                size_t useCloseAfterUse = before.find("</use>", lastUsePos);
+                if (useCloseAfterUse != std::string::npos) {
+                    // The <use> was closed before our <animate>, so it's not our parent
+                    lastUsePos = std::string::npos;
+                }
             }
-        }
 
-        size_t parentPos = std::string::npos;
+            size_t parentPos = std::string::npos;
 
-        if (lastUsePos != std::string::npos) {
-            // Prefer <use> as the direct parent for xlink:href animations
-            parentPos = lastUsePos;
-        } else {
-            // Fall back to <g> if no <use> found
-            size_t lastGPos = findLastOf(before, "<g ", before.length());
-            parentPos = lastGPos;
-        }
+            if (lastUsePos != std::string::npos) {
+                // Prefer <use> as the direct parent for xlink:href animations
+                parentPos = lastUsePos;
+            } else {
+                // Fall back to <g> if no <use> found
+                size_t lastGPos = findLastOf(before, "<g ", before.length());
+                parentPos = lastGPos;
+            }
 
-        // Extract the id from the parent element
-        if (parentPos != std::string::npos) {
-            size_t parentTagEnd = before.find(">", parentPos);
-            if (parentTagEnd != std::string::npos) {
-                std::string parentTag = before.substr(parentPos, parentTagEnd - parentPos);
-                anim.targetId = extractAttribute(parentTag, "id");
+            // Extract the id from the parent element
+            if (parentPos != std::string::npos) {
+                size_t parentTagEnd = before.find(">", parentPos);
+                if (parentTagEnd != std::string::npos) {
+                    std::string parentTag = before.substr(parentPos, parentTagEnd - parentPos);
+                    anim.targetId = extractAttribute(parentTag, "id");
+                }
             }
         }
 
@@ -939,9 +961,19 @@ std::vector<SMILAnimation> SVGAnimationController::parseAnimations(const std::st
                       << "', frames=" << anim.values.size()
                       << ", duration=" << std::fixed << std::setprecision(4) << anim.duration << "s"
                       << ", mode='" << anim.calcMode << "'" << std::endl;
+        } else if (animateTagsFound <= 20) {
+            // Debug: show why animation was rejected (limit to first 20 to avoid spam)
+            std::cout << "DEBUG: Rejected animate tag #" << animateTagsFound
+                      << " - values empty=" << anim.values.empty()
+                      << ", targetId empty=" << anim.targetId.empty()
+                      << ", attr='" << anim.attributeName << "'" << std::endl;
         }
 
         pos = tagEnd + 1;
+    }
+
+    if (animateTagsFound > 0 && animations.empty()) {
+        std::cout << "DEBUG: Parsed " << animateTagsFound << " <animate> tags but none had valid target+values" << std::endl;
     }
 
     return animations;

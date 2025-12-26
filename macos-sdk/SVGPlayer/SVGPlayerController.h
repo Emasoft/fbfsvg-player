@@ -79,23 +79,23 @@ typedef NS_ENUM(NSInteger, SVGControllerRepeatMode) {
 };
 
 /// Layer blend mode for compositing
-typedef NS_ENUM(NSInteger, SVGLayerBlendMode) {
+typedef NS_ENUM(NSInteger, SVGPlayerLayerBlendMode) {
     /// Normal alpha blending (default)
-    SVGLayerBlendModeNormal = 0,
+    SVGPlayerLayerBlendModeNormal = 0,
     /// Multiply blend mode
-    SVGLayerBlendModeMultiply,
+    SVGPlayerLayerBlendModeMultiply,
     /// Screen blend mode
-    SVGLayerBlendModeScreen,
+    SVGPlayerLayerBlendModeScreen,
     /// Overlay blend mode
-    SVGLayerBlendModeOverlay,
+    SVGPlayerLayerBlendModeOverlay,
     /// Darken blend mode
-    SVGLayerBlendModeDarken,
+    SVGPlayerLayerBlendModeDarken,
     /// Lighten blend mode
-    SVGLayerBlendModeLighten
+    SVGPlayerLayerBlendModeLighten
 };
 
 // Forward declaration
-@class SVGLayer;
+@class SVGPlayerLayer;
 
 #pragma mark - SVGPlayerController
 
@@ -544,17 +544,17 @@ typedef NS_ENUM(NSInteger, SVGLayerBlendMode) {
 /// @param filepath Path to the SVG file
 /// @param error Output error if loading fails (optional)
 /// @return New layer instance, or nil on failure
-- (nullable SVGLayer *)createLayerFromPath:(NSString *)filepath error:(NSError * _Nullable * _Nullable)error;
+- (nullable SVGPlayerLayer *)createLayerFromPath:(NSString *)filepath error:(NSError * _Nullable * _Nullable)error;
 
 /// Create a new layer from SVG data
 /// @param data The SVG file data
 /// @param error Output error if loading fails (optional)
 /// @return New layer instance, or nil on failure
-- (nullable SVGLayer *)createLayerFromData:(NSData *)data error:(NSError * _Nullable * _Nullable)error;
+- (nullable SVGPlayerLayer *)createLayerFromData:(NSData *)data error:(NSError * _Nullable * _Nullable)error;
 
 /// Destroy a layer and free its resources
 /// @param layer The layer to destroy
-- (void)destroyLayer:(SVGLayer *)layer;
+- (void)destroyLayer:(SVGPlayerLayer *)layer;
 
 /// Number of layers (including primary SVG as layer 0)
 @property (nonatomic, readonly) NSInteger layerCount;
@@ -562,7 +562,7 @@ typedef NS_ENUM(NSInteger, SVGLayerBlendMode) {
 /// Get a layer by index (0 = primary SVG)
 /// @param index Layer index (0-based)
 /// @return Layer at index, or nil if out of range
-- (nullable SVGLayer *)layerAtIndex:(NSInteger)index;
+- (nullable SVGPlayerLayer *)layerAtIndex:(NSInteger)index;
 
 /// Render all visible layers composited together
 /// @param buffer Pointer to RGBA pixel buffer
@@ -604,10 +604,10 @@ typedef NS_ENUM(NSInteger, SVGLayerBlendMode) {
 
 @end
 
-#pragma mark - SVGLayer
+#pragma mark - SVGPlayerLayer
 
 /// Represents a single SVG layer in a composite scene
-@interface SVGLayer : NSObject
+@interface SVGPlayerLayer : NSObject
 
 /// Layer position offset from origin
 @property (nonatomic, assign) NSPoint position;
@@ -628,7 +628,7 @@ typedef NS_ENUM(NSInteger, SVGLayerBlendMode) {
 @property (nonatomic, assign) CGFloat rotation;
 
 /// Layer blend mode for compositing
-@property (nonatomic, assign) SVGLayerBlendMode blendMode;
+@property (nonatomic, assign) SVGPlayerLayerBlendMode blendMode;
 
 /// Intrinsic size of the layer's SVG (read-only)
 @property (nonatomic, readonly) NSSize size;
@@ -638,6 +638,9 @@ typedef NS_ENUM(NSInteger, SVGLayerBlendMode) {
 
 /// Current animation time in seconds (read-only)
 @property (nonatomic, readonly) NSTimeInterval currentTime;
+
+/// Whether the layer has animations (read-only)
+@property (nonatomic, readonly) BOOL hasAnimations;
 
 /// Start or resume layer animation
 - (void)play;

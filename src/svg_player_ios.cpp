@@ -200,7 +200,11 @@ static bool updateSVGForAnimation(SVGPlayer* player, double time) {
 SVGPlayerRef SVGPlayer_Create(void) {
     try {
         return new SVGPlayer();
+    } catch (const std::exception& e) {
+        fprintf(stderr, "SVGPlayer iOS: Player creation failed: %s\n", e.what());
+        return nullptr;
     } catch (...) {
+        fprintf(stderr, "SVGPlayer iOS: Player creation failed with unknown error\n");
         return nullptr;
     }
 }

@@ -149,21 +149,26 @@ inline CPUStats getProcessCPUStats() {
         if (iss >> utime >> stime) {
             // Convert jiffies to percentage
             // This is a simplified calculation
+            // Use static mutex to protect static state variables (thread-safe)
+            static std::mutex cpuStatsMutex;
             static long lastUtime = 0, lastStime = 0;
             static auto lastTime = std::chrono::steady_clock::now();
+            static double lastCpuPercent = 0.0;
 
+            std::lock_guard<std::mutex> lock(cpuStatsMutex);
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration<double>(now - lastTime).count();
 
             if (elapsed > 0.1) {  // Update every 100ms
                 long ticksPerSec = sysconf(_SC_CLK_TCK);
                 double cpuTime = static_cast<double>((utime - lastUtime) + (stime - lastStime)) / ticksPerSec;
-                stats.cpuUsagePercent = (cpuTime / elapsed) * 100.0;
+                lastCpuPercent = (cpuTime / elapsed) * 100.0;
 
                 lastUtime = utime;
                 lastStime = stime;
                 lastTime = now;
             }
+            stats.cpuUsagePercent = lastCpuPercent;
         }
         statFile.close();
     }
@@ -203,6 +208,7 @@ inline CPUStats getProcessCPUStats() {
 #include <windows.h>
 #include <psapi.h>
 #include <tlhelp32.h>
+#include <mutex>
 
 inline CPUStats getProcessCPUStats() {
     CPUStats stats = {0, 0, 0.0};
@@ -225,9 +231,13 @@ inline CPUStats getProcessCPUStats() {
     }
 
     // Get CPU usage
+    // Use static mutex to protect static state variables (thread-safe)
+    static std::mutex cpuStatsMutex;
     static ULARGE_INTEGER lastCPU, lastSysCPU, lastUserCPU;
     static int numProcessors = 0;
     static HANDLE self = GetCurrentProcess();
+
+    std::lock_guard<std::mutex> lock(cpuStatsMutex);
 
     if (numProcessors == 0) {
         SYSTEM_INFO sysInfo;

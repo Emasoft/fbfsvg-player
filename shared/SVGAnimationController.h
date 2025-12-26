@@ -115,6 +115,10 @@ public:
     // Get original (unmodified) SVG content
     const std::string& getOriginalContent() const;
 
+    // Preprocess SVG content without loading it (for DOM parsing before animation loading)
+    // Returns the preprocessed content with synthetic IDs injected
+    std::string getPreprocessedContent(const std::string& svgContent);
+
     // === Animation Info ===
 
     // Get total animation duration in seconds

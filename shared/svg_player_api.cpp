@@ -229,10 +229,19 @@ namespace {
 /// Set error message and optionally invoke callback
 void setError(SVGPlayer* player, int code, const std::string& message) {
     if (!player) return;
-    player->lastError = message;
 
-    if (player->errorCallback) {
-        player->errorCallback(player->errorUserData, code, message.c_str());
+    // Copy callback data under lock, invoke outside lock to prevent deadlock
+    SVGErrorCallback callback = nullptr;
+    void* userData = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(player->mutex);
+        player->lastError = message;
+        callback = player->errorCallback;
+        userData = player->errorUserData;
+    }
+
+    if (callback) {
+        callback(userData, code, message.c_str());
     }
 }
 
@@ -314,7 +323,8 @@ bool parseSVG(SVGPlayer* player, const char* data, size_t length) {
     }
 
     // Initialize animation controller with SVG content
-    bool hasAnimations = player->controller->loadFromContent(player->originalSvgData);
+    // Duration is automatically parsed from SVG animation elements during loadFromContent()
+    player->controller->loadFromContent(player->originalSvgData);
 
     // Reset playback state
     player->completedLoops = 0;
@@ -731,6 +741,9 @@ bool SVGPlayer_Update(SVGPlayerRef player, double deltaTime) {
 
     auto updateStart = std::chrono::high_resolution_clock::now();
     bool stateChanged = false;
+    SVGLoopCallback loopCallback = nullptr;
+    void* loopUserData = nullptr;
+    int completedLoops = 0;
 
     {
         std::lock_guard<std::mutex> lock(player->mutex);
@@ -778,11 +791,16 @@ bool SVGPlayer_Update(SVGPlayerRef player, double deltaTime) {
         player->stats.currentFrame = player->controller->getCurrentFrame();
         player->stats.totalFrames = player->controller->getTotalFrames();
         player->stats.animationTimeMs = player->controller->getCurrentTime() * 1000.0;
+
+        // Copy callback data under lock for safe invocation outside lock
+        loopCallback = player->loopCallback;
+        loopUserData = player->loopUserData;
+        completedLoops = player->completedLoops;
     }
 
-    // Invoke loop callback if needed
-    if (stateChanged && player->loopCallback) {
-        player->loopCallback(player->loopUserData, player->completedLoops);
+    // Invoke loop callback outside lock to prevent deadlock
+    if (stateChanged && loopCallback) {
+        loopCallback(loopUserData, completedLoops);
     }
 
     return stateChanged;
@@ -1091,11 +1109,11 @@ bool SVGPlayer_RenderFrame(SVGPlayerRef player, void* pixelBuffer, int width, in
 // Section 12: Coordinate Conversion Functions
 // =============================================================================
 
-bool SVGPlayer_ViewToSVG(SVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight, float* svgX,
-                         float* svgY) {
-    if (!player || !svgX || !svgY) return false;
-
-    std::lock_guard<std::mutex> lock(player->mutex);
+// Internal helper - MUST be called while holding player->mutex
+// Prevents deadlock when called from functions that already hold the lock
+static bool viewToSVGInternal(SVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight,
+                               float* svgX, float* svgY) {
+    // Caller must ensure: player != nullptr, svgX != nullptr, svgY != nullptr, mutex held
 
     if (!player->svgDom || player->svgWidth <= 0 || player->svgHeight <= 0) {
         return false;
@@ -1131,6 +1149,14 @@ bool SVGPlayer_ViewToSVG(SVGPlayerRef player, float viewX, float viewY, int view
     *svgY = localY + activeViewBox.y();
 
     return true;
+}
+
+bool SVGPlayer_ViewToSVG(SVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight, float* svgX,
+                         float* svgY) {
+    if (!player || !svgX || !svgY) return false;
+
+    std::lock_guard<std::mutex> lock(player->mutex);
+    return viewToSVGInternal(player, viewX, viewY, viewWidth, viewHeight, svgX, svgY);
 }
 
 bool SVGPlayer_SVGToView(SVGPlayerRef player, float svgX, float svgY, int viewWidth, int viewHeight, float* viewX,
@@ -1204,9 +1230,10 @@ const char* SVGPlayer_HitTest(SVGPlayerRef player, float viewX, float viewY, int
 
     std::lock_guard<std::mutex> lock(player->mutex);
 
-    // Convert view coordinates to SVG coordinates
+    // Convert view coordinates to SVG coordinates using internal helper
+    // (avoids deadlock - we already hold the mutex)
     float svgX, svgY;
-    if (!SVGPlayer_ViewToSVG(player, viewX, viewY, viewWidth, viewHeight, &svgX, &svgY)) {
+    if (!viewToSVGInternal(player, viewX, viewY, viewWidth, viewHeight, &svgX, &svgY)) {
         return nullptr;
     }
 
@@ -1251,9 +1278,10 @@ int SVGPlayer_GetElementsAtPoint(SVGPlayerRef player, float viewX, float viewY, 
 
     std::lock_guard<std::mutex> lock(player->mutex);
 
-    // Convert view coordinates to SVG coordinates
+    // Convert view coordinates to SVG coordinates using internal helper
+    // (avoids deadlock - we already hold the mutex)
     float svgX, svgY;
-    if (!SVGPlayer_ViewToSVG(player, viewX, viewY, viewWidth, viewHeight, &svgX, &svgY)) {
+    if (!viewToSVGInternal(player, viewX, viewY, viewWidth, viewHeight, &svgX, &svgY)) {
         return 0;
     }
 
@@ -1317,10 +1345,20 @@ void SVGPlayer_SetStateChangeCallback(SVGPlayerRef player, SVGStateChangeCallbac
     player->stateChangeUserData = userData;
 
     // Also set up controller callback
+    // Lambda captures player pointer and accesses callback fields under mutex lock
+    // to prevent race conditions when callback is invoked on a different thread
     if (player->controller && callback) {
         player->controller->setStateChangeCallback([player](svgplayer::PlaybackState state) {
-            if (player->stateChangeCallback) {
-                player->stateChangeCallback(player->stateChangeUserData, fromControllerState(state));
+            // Copy callback/userData under lock, then invoke outside lock (avoids deadlock)
+            SVGStateChangeCallback cb = nullptr;
+            void* userData = nullptr;
+            {
+                std::lock_guard<std::mutex> lock(player->mutex);
+                cb = player->stateChangeCallback;
+                userData = player->stateChangeUserData;
+            }
+            if (cb) {
+                cb(userData, fromControllerState(state));
             }
         });
     }
@@ -1334,11 +1372,21 @@ void SVGPlayer_SetLoopCallback(SVGPlayerRef player, SVGLoopCallback callback, vo
     player->loopUserData = userData;
 
     // Set up controller callback
+    // Lambda captures player pointer and accesses callback fields under mutex lock
+    // to prevent race conditions when callback is invoked on a different thread
     if (player->controller && callback) {
         player->controller->setLoopCallback([player](int loopCount) {
-            player->completedLoops = loopCount;
-            if (player->loopCallback) {
-                player->loopCallback(player->loopUserData, loopCount);
+            // Copy callback/userData under lock, then invoke outside lock (avoids deadlock)
+            SVGLoopCallback cb = nullptr;
+            void* userData = nullptr;
+            {
+                std::lock_guard<std::mutex> lock(player->mutex);
+                player->completedLoops = loopCount;
+                cb = player->loopCallback;
+                userData = player->loopUserData;
+            }
+            if (cb) {
+                cb(userData, loopCount);
             }
         });
     }
@@ -1352,10 +1400,20 @@ void SVGPlayer_SetEndCallback(SVGPlayerRef player, SVGEndCallback callback, void
     player->endUserData = userData;
 
     // Set up controller callback
+    // Lambda captures player pointer and accesses callback fields under mutex lock
+    // to prevent race conditions when callback is invoked on a different thread
     if (player->controller && callback) {
         player->controller->setEndCallback([player]() {
-            if (player->endCallback) {
-                player->endCallback(player->endUserData);
+            // Copy callback/userData under lock, then invoke outside lock (avoids deadlock)
+            SVGEndCallback cb = nullptr;
+            void* userData = nullptr;
+            {
+                std::lock_guard<std::mutex> lock(player->mutex);
+                cb = player->endCallback;
+                userData = player->endUserData;
+            }
+            if (cb) {
+                cb(userData);
             }
         });
     }
@@ -1525,7 +1583,9 @@ double SVGPlayer_FrameToTime(SVGPlayerRef player, int frame) {
     double duration = player->controller->getDuration();
     int totalFrames = player->controller->getTotalFrames();
 
+    // Handle edge cases: no frames or single frame (avoids division by zero)
     if (totalFrames <= 0) return 0.0;
+    if (totalFrames == 1) return 0.0;  // Single frame is always at time 0
 
     frame = clamp(frame, 0, totalFrames - 1);
     return (static_cast<double>(frame) / (totalFrames - 1)) * duration;
@@ -1839,16 +1899,8 @@ bool parseLayerSVG(SVGLayer* layer, SVGPlayer* player) {
     // Store viewBox
     layer->viewBox = SkRect::MakeWH(intrinsicSize.width(), intrinsicSize.height());
 
-    // Initialize animation controller with duration
-    double duration = 0.0;
-    // SVG animations typically have duration defined - use 5 seconds as default for animated SVGs
-    if (layer->svgData.find("<animate") != std::string::npos ||
-        layer->svgData.find("<set") != std::string::npos ||
-        layer->svgData.find("<animateTransform") != std::string::npos ||
-        layer->svgData.find("<animateMotion") != std::string::npos) {
-        duration = 5.0;  // Default animation duration
-    }
-    layer->controller->setDuration(duration);
+    // Duration is automatically parsed from SVG animation elements during loadFromContent()
+    // No manual setDuration needed - the controller extracts duration from animations
 
     return true;
 }
@@ -1858,26 +1910,33 @@ bool parseLayerSVG(SVGLayer* layer, SVGPlayer* player) {
 SVGLayerRef SVGPlayer_CreateLayer(SVGPlayerRef player, const char* filepath) {
     if (!player || !filepath) return nullptr;
 
-    // Read file
-    FILE* file = fopen(filepath, "rb");
+    // Read file with RAII - unique_ptr automatically closes on exception or return
+    auto fileCloser = [](FILE* f) { if (f) fclose(f); };
+    std::unique_ptr<FILE, decltype(fileCloser)> file(fopen(filepath, "rb"), fileCloser);
+
     if (!file) {
         setError(player, 100, std::string("Failed to open file: ") + filepath);
         return nullptr;
     }
 
-    fseek(file, 0, SEEK_END);
-    long size = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    fseek(file.get(), 0, SEEK_END);
+    long size = ftell(file.get());
+    fseek(file.get(), 0, SEEK_SET);
+
+    if (size <= 0) {
+        setError(player, 100, std::string("Invalid file size: ") + filepath);
+        return nullptr;
+    }
 
     std::vector<char> buffer(size);
-    size_t read = fread(buffer.data(), 1, size, file);
-    fclose(file);
+    size_t read = fread(buffer.data(), 1, size, file.get());
 
     if (read != static_cast<size_t>(size)) {
         setError(player, 100, std::string("Failed to read file: ") + filepath);
         return nullptr;
     }
 
+    // file is automatically closed when unique_ptr goes out of scope
     return SVGPlayer_CreateLayerFromData(player, buffer.data(), buffer.size());
 }
 

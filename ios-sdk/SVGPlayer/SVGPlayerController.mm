@@ -41,6 +41,170 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 @property (nonatomic, assign) SVGControllerPlaybackState stateBeforeScrubbing;
 @end
 
+#pragma mark - SVGPlayerLayer Implementation
+
+@interface SVGPlayerLayer ()
+@property (nonatomic, assign) SVGLayerRef layerRef;
+@end
+
+@implementation SVGPlayerLayer
+
+- (instancetype)initWithLayerRef:(SVGLayerRef)layerRef {
+    if (self = [super init]) {
+        _layerRef = layerRef;
+    }
+    return self;
+}
+
+#pragma mark - Position
+
+- (void)setPosition:(CGPoint)position {
+    if (!self.layerRef) return;
+    SVGLayer_SetPosition(self.layerRef, position.x, position.y);
+}
+
+- (CGPoint)position {
+    if (!self.layerRef) return CGPointZero;
+    float x = 0, y = 0;
+    SVGLayer_GetPosition(self.layerRef, &x, &y);
+    return CGPointMake(x, y);
+}
+
+#pragma mark - Opacity
+
+- (void)setOpacity:(CGFloat)opacity {
+    if (!self.layerRef) return;
+    SVGLayer_SetOpacity(self.layerRef, (float)opacity);
+}
+
+- (CGFloat)opacity {
+    if (!self.layerRef) return 1.0;
+    return SVGLayer_GetOpacity(self.layerRef);
+}
+
+#pragma mark - Z-Order
+
+- (void)setZOrder:(NSInteger)zOrder {
+    if (!self.layerRef) return;
+    SVGLayer_SetZOrder(self.layerRef, (int)zOrder);
+}
+
+- (NSInteger)zOrder {
+    if (!self.layerRef) return 0;
+    return SVGLayer_GetZOrder(self.layerRef);
+}
+
+#pragma mark - Visibility
+
+- (void)setVisible:(BOOL)visible {
+    if (!self.layerRef) return;
+    SVGLayer_SetVisible(self.layerRef, visible);
+}
+
+- (BOOL)isVisible {
+    if (!self.layerRef) return NO;
+    return SVGLayer_IsVisible(self.layerRef);
+}
+
+#pragma mark - Scale
+
+- (void)setScale:(CGPoint)scale {
+    if (!self.layerRef) return;
+    SVGLayer_SetScale(self.layerRef, scale.x, scale.y);
+}
+
+- (CGPoint)scale {
+    if (!self.layerRef) return CGPointMake(1.0, 1.0);
+    float scaleX = 1.0, scaleY = 1.0;
+    SVGLayer_GetScale(self.layerRef, &scaleX, &scaleY);
+    return CGPointMake(scaleX, scaleY);
+}
+
+#pragma mark - Rotation
+
+- (void)setRotation:(CGFloat)rotation {
+    if (!self.layerRef) return;
+    SVGLayer_SetRotation(self.layerRef, (float)rotation);
+}
+
+- (CGFloat)rotation {
+    if (!self.layerRef) return 0.0;
+    return SVGLayer_GetRotation(self.layerRef);
+}
+
+#pragma mark - Blend Mode
+
+- (void)setBlendMode:(SVGPlayerLayerBlendMode)blendMode {
+    if (!self.layerRef) return;
+    // Convert from Obj-C enum to C enum (same underlying values)
+    SVGLayer_SetBlendMode(self.layerRef, (SVGLayerBlendMode)blendMode);
+}
+
+- (SVGPlayerLayerBlendMode)blendMode {
+    if (!self.layerRef) return SVGPlayerLayerBlendModeNormal;
+    // Convert from C enum to Obj-C enum (same underlying values)
+    return (SVGPlayerLayerBlendMode)SVGLayer_GetBlendMode(self.layerRef);
+}
+
+#pragma mark - Size
+
+- (CGSize)size {
+    if (!self.layerRef) return CGSizeZero;
+    int width = 0, height = 0;
+    if (SVGLayer_GetSize(self.layerRef, &width, &height)) {
+        return CGSizeMake(width, height);
+    }
+    return CGSizeZero;
+}
+
+#pragma mark - Animation Properties
+
+- (NSTimeInterval)duration {
+    if (!self.layerRef) return 0;
+    return SVGLayer_GetDuration(self.layerRef);
+}
+
+- (NSTimeInterval)currentTime {
+    if (!self.layerRef) return 0;
+    // Note: currentTime getter is not in C API, would need to track it
+    // For now, return 0 (this is a readonly property used for display)
+    return 0;
+}
+
+- (BOOL)hasAnimations {
+    if (!self.layerRef) return NO;
+    return SVGLayer_HasAnimations(self.layerRef);
+}
+
+#pragma mark - Playback Control
+
+- (void)play {
+    if (!self.layerRef) return;
+    SVGLayer_Play(self.layerRef);
+}
+
+- (void)pause {
+    if (!self.layerRef) return;
+    SVGLayer_Pause(self.layerRef);
+}
+
+- (void)stop {
+    if (!self.layerRef) return;
+    SVGLayer_Stop(self.layerRef);
+}
+
+- (void)seekToTime:(NSTimeInterval)time {
+    if (!self.layerRef) return;
+    SVGLayer_SeekTo(self.layerRef, time);
+}
+
+- (BOOL)update:(NSTimeInterval)deltaTime {
+    if (!self.layerRef) return NO;
+    return SVGLayer_Update(self.layerRef, deltaTime);
+}
+
+@end
+
 @implementation SVGPlayerController
 
 #pragma mark - Initialization
@@ -306,11 +470,13 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 }
 
 - (NSInteger)currentFrame {
+    if (!self.handle) return 0;
     SVGRenderStats stats = SVGPlayer_GetStats(self.handle);
     return stats.currentFrame;
 }
 
 - (NSInteger)totalFrames {
+    if (!self.handle) return 0;
     SVGRenderStats stats = SVGPlayer_GetStats(self.handle);
     return stats.totalFrames;
 }
@@ -922,7 +1088,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 #pragma mark - Multi-SVG Compositing
 
-- (SVGLayer *)createLayerFromPath:(NSString *)path error:(NSError * _Nullable *)error {
+- (SVGPlayerLayer *)createLayerFromPath:(NSString *)path error:(NSError * _Nullable *)error {
     if (!self.handle) {
         [self setError:error code:SVGPlayerControllerErrorNotInitialized message:@"Player not initialized"];
         return nil;
@@ -936,10 +1102,10 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
         return nil;
     }
 
-    return [[SVGLayer alloc] initWithLayerRef:layerRef];
+    return [[SVGPlayerLayer alloc] initWithLayerRef:layerRef];
 }
 
-- (SVGLayer *)createLayerFromData:(NSData *)data error:(NSError * _Nullable *)error {
+- (SVGPlayerLayer *)createLayerFromData:(NSData *)data error:(NSError * _Nullable *)error {
     if (!self.handle) {
         [self setError:error code:SVGPlayerControllerErrorNotInitialized message:@"Player not initialized"];
         return nil;
@@ -958,10 +1124,10 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
         return nil;
     }
 
-    return [[SVGLayer alloc] initWithLayerRef:layerRef];
+    return [[SVGPlayerLayer alloc] initWithLayerRef:layerRef];
 }
 
-- (void)destroyLayer:(SVGLayer *)layer {
+- (void)destroyLayer:(SVGPlayerLayer *)layer {
     if (!self.handle || !layer) return;
     SVGPlayer_DestroyLayer(self.handle, layer.layerRef);
 }
@@ -971,13 +1137,13 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     return SVGPlayer_GetLayerCount(self.handle);
 }
 
-- (SVGLayer *)layerAtIndex:(NSInteger)index {
+- (SVGPlayerLayer *)layerAtIndex:(NSInteger)index {
     if (!self.handle) return nil;
 
     SVGLayerRef layerRef = SVGPlayer_GetLayerAtIndex(self.handle, (int)index);
     if (!layerRef) return nil;
 
-    return [[SVGLayer alloc] initWithLayerRef:layerRef];
+    return [[SVGPlayerLayer alloc] initWithLayerRef:layerRef];
 }
 
 - (BOOL)renderCompositeToBuffer:(void *)buffer
@@ -1022,7 +1188,8 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 + (NSString *)version {
     // Use unified API version function which uses version.h
     const char* ver = SVGPlayer_GetVersion();
-    return [NSString stringWithUTF8String:ver];
+    // Check for NULL to prevent crash in stringWithUTF8String:
+    return ver ? [NSString stringWithUTF8String:ver] : @"unknown";
 }
 
 + (void)getVersionMajor:(NSInteger *)major minor:(NSInteger *)minor patch:(NSInteger *)patch {
@@ -1035,169 +1202,13 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 + (NSString *)buildInfo {
     // Return build info from version.h
-    return [NSString stringWithUTF8String:SVG_PLAYER_BUILD_INFO];
-}
-
-@end
-
-#pragma mark - SVGLayer Implementation
-
-@interface SVGLayer ()
-@property (nonatomic, assign) SVGLayerRef layerRef;
-@end
-
-@implementation SVGLayer
-
-- (instancetype)initWithLayerRef:(SVGLayerRef)layerRef {
-    if (self = [super init]) {
-        _layerRef = layerRef;
-    }
-    return self;
-}
-
-#pragma mark - Position
-
-- (void)setPosition:(CGPoint)position {
-    if (!self.layerRef) return;
-    SVGLayer_SetPosition(self.layerRef, position.x, position.y);
-}
-
-- (CGPoint)position {
-    if (!self.layerRef) return CGPointZero;
-    float x = 0, y = 0;
-    SVGLayer_GetPosition(self.layerRef, &x, &y);
-    return CGPointMake(x, y);
-}
-
-#pragma mark - Opacity
-
-- (void)setOpacity:(CGFloat)opacity {
-    if (!self.layerRef) return;
-    SVGLayer_SetOpacity(self.layerRef, (float)opacity);
-}
-
-- (CGFloat)opacity {
-    if (!self.layerRef) return 1.0;
-    return SVGLayer_GetOpacity(self.layerRef);
-}
-
-#pragma mark - Z-Order
-
-- (void)setZOrder:(NSInteger)zOrder {
-    if (!self.layerRef) return;
-    SVGLayer_SetZOrder(self.layerRef, (int)zOrder);
-}
-
-- (NSInteger)zOrder {
-    if (!self.layerRef) return 0;
-    return SVGLayer_GetZOrder(self.layerRef);
-}
-
-#pragma mark - Visibility
-
-- (void)setVisible:(BOOL)visible {
-    if (!self.layerRef) return;
-    SVGLayer_SetVisible(self.layerRef, visible);
-}
-
-- (BOOL)isVisible {
-    if (!self.layerRef) return NO;
-    return SVGLayer_IsVisible(self.layerRef);
-}
-
-#pragma mark - Scale
-
-- (void)setScale:(CGPoint)scale {
-    if (!self.layerRef) return;
-    SVGLayer_SetScale(self.layerRef, scale.x, scale.y);
-}
-
-- (CGPoint)scale {
-    if (!self.layerRef) return CGPointMake(1.0, 1.0);
-    float scaleX = 1.0, scaleY = 1.0;
-    SVGLayer_GetScale(self.layerRef, &scaleX, &scaleY);
-    return CGPointMake(scaleX, scaleY);
-}
-
-#pragma mark - Rotation
-
-- (void)setRotation:(CGFloat)rotation {
-    if (!self.layerRef) return;
-    SVGLayer_SetRotation(self.layerRef, (float)rotation);
-}
-
-- (CGFloat)rotation {
-    if (!self.layerRef) return 0.0;
-    return SVGLayer_GetRotation(self.layerRef);
-}
-
-#pragma mark - Blend Mode
-
-- (void)setBlendMode:(SVGLayerBlendMode)blendMode {
-    if (!self.layerRef) return;
-    SVGLayer_SetBlendMode(self.layerRef, (SVGLayerBlendMode)blendMode);
-}
-
-- (SVGLayerBlendMode)blendMode {
-    if (!self.layerRef) return SVGLayerBlendModeNormal;
-    return (SVGLayerBlendMode)SVGLayer_GetBlendMode(self.layerRef);
-}
-
-#pragma mark - Size
-
-- (CGSize)size {
-    if (!self.layerRef) return CGSizeZero;
-    int width = 0, height = 0;
-    if (SVGLayer_GetSize(self.layerRef, &width, &height)) {
-        return CGSizeMake(width, height);
-    }
-    return CGSizeZero;
-}
-
-#pragma mark - Animation Properties
-
-- (NSTimeInterval)duration {
-    if (!self.layerRef) return 0;
-    return SVGLayer_GetDuration(self.layerRef);
-}
-
-- (NSTimeInterval)currentTime {
-    if (!self.layerRef) return 0;
-    // Note: currentTime getter is not in C API, would need to track it
-    // For now, return 0 (this is a readonly property used for display)
-    return 0;
-}
-
-- (BOOL)hasAnimations {
-    if (!self.layerRef) return NO;
-    return SVGLayer_HasAnimations(self.layerRef);
-}
-
-#pragma mark - Playback Control
-
-- (void)play {
-    if (!self.layerRef) return;
-    SVGLayer_Play(self.layerRef);
-}
-
-- (void)pause {
-    if (!self.layerRef) return;
-    SVGLayer_Pause(self.layerRef);
-}
-
-- (void)stop {
-    if (!self.layerRef) return;
-    SVGLayer_Stop(self.layerRef);
-}
-
-- (void)seekToTime:(NSTimeInterval)time {
-    if (!self.layerRef) return;
-    SVGLayer_SeekTo(self.layerRef, time);
-}
-
-- (BOOL)update:(NSTimeInterval)deltaTime {
-    if (!self.layerRef) return NO;
-    return SVGLayer_Update(self.layerRef, deltaTime);
+    // Check for NULL to prevent crash in stringWithUTF8String:
+#ifdef SVG_PLAYER_BUILD_INFO
+    const char* info = SVG_PLAYER_BUILD_INFO;
+    return info ? [NSString stringWithUTF8String:info] : @"unknown";
+#else
+    return @"unknown";
+#endif
 }
 
 @end

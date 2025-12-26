@@ -17,13 +17,13 @@ static const CGFloat kDefaultFrameRate = 60.0;
 // Default seek interval for rewind/fastforward
 static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
-#pragma mark - SVGLayer Implementation
+#pragma mark - SVGPlayerLayer Implementation
 
-@interface SVGLayer ()
+@interface SVGPlayerLayer ()
 @property (nonatomic, assign) SVGLayerRef layerRef;
 @end
 
-@implementation SVGLayer
+@implementation SVGPlayerLayer
 
 - (instancetype)initWithLayerRef:(SVGLayerRef)layerRef {
     if (self = [super init]) {
@@ -123,17 +123,19 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 }
 
 // Blend mode
-- (void)setBlendMode:(SVGLayerBlendMode)blendMode {
+- (void)setBlendMode:(SVGPlayerLayerBlendMode)blendMode {
     if (self.layerRef) {
+        // Convert from Obj-C enum to C enum (same underlying values)
         SVGLayer_SetBlendMode(self.layerRef, (SVGLayerBlendMode)blendMode);
     }
 }
 
-- (SVGLayerBlendMode)blendMode {
+- (SVGPlayerLayerBlendMode)blendMode {
     if (self.layerRef) {
-        return (SVGLayerBlendMode)SVGLayer_GetBlendMode(self.layerRef);
+        // Convert from C enum to Obj-C enum (same underlying values)
+        return (SVGPlayerLayerBlendMode)SVGLayer_GetBlendMode(self.layerRef);
     }
-    return SVGLayerBlendModeNormal;
+    return SVGPlayerLayerBlendModeNormal;
 }
 
 // Size (read-only)
@@ -159,6 +161,14 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 - (NSTimeInterval)currentTime {
     // Not directly available from C API, would need to be tracked in layer state
     return 0.0;
+}
+
+// Has animations (read-only)
+- (BOOL)hasAnimations {
+    if (self.layerRef) {
+        return SVGLayer_HasAnimations(self.layerRef);
+    }
+    return NO;
 }
 
 // Playback control
@@ -1084,7 +1094,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 #pragma mark - Multi-SVG Compositing
 
-- (SVGLayer *)createLayerFromPath:(NSString *)filepath error:(NSError * _Nullable *)error {
+- (SVGPlayerLayer *)createLayerFromPath:(NSString *)filepath error:(NSError * _Nullable *)error {
     if (!self.handle) {
         [self setError:error code:SVGPlayerControllerErrorNotInitialized message:@"Player not initialized"];
         return nil;
@@ -1105,10 +1115,10 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
         return nil;
     }
 
-    return [[SVGLayer alloc] initWithLayerRef:layerRef];
+    return [[SVGPlayerLayer alloc] initWithLayerRef:layerRef];
 }
 
-- (SVGLayer *)createLayerFromData:(NSData *)data error:(NSError * _Nullable *)error {
+- (SVGPlayerLayer *)createLayerFromData:(NSData *)data error:(NSError * _Nullable *)error {
     if (!self.handle) {
         [self setError:error code:SVGPlayerControllerErrorNotInitialized message:@"Player not initialized"];
         return nil;
@@ -1127,10 +1137,10 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
         return nil;
     }
 
-    return [[SVGLayer alloc] initWithLayerRef:layerRef];
+    return [[SVGPlayerLayer alloc] initWithLayerRef:layerRef];
 }
 
-- (void)destroyLayer:(SVGLayer *)layer {
+- (void)destroyLayer:(SVGPlayerLayer *)layer {
     if (!self.handle || !layer) return;
 
     SVGLayerRef layerRef = layer.layerRef;
@@ -1145,13 +1155,13 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     return SVGPlayer_GetLayerCount(self.handle);
 }
 
-- (SVGLayer *)layerAtIndex:(NSInteger)index {
+- (SVGPlayerLayer *)layerAtIndex:(NSInteger)index {
     if (!self.handle) return nil;
 
     SVGLayerRef layerRef = SVGPlayer_GetLayerAtIndex(self.handle, (int)index);
     if (!layerRef) return nil;
 
-    return [[SVGLayer alloc] initWithLayerRef:layerRef];
+    return [[SVGPlayerLayer alloc] initWithLayerRef:layerRef];
 }
 
 - (BOOL)renderCompositeToBuffer:(void *)buffer
