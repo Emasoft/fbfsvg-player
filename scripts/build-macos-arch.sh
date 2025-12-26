@@ -197,17 +197,26 @@ FRAMEWORKS="-framework CoreGraphics \
             -framework IOKit \
             -framework IOSurface \
             -framework OpenGL \
-            -framework QuartzCore"
+            -framework QuartzCore \
+            -framework UniformTypeIdentifiers"
 
 log_info "Compiling SVG player with shared animation controller..."
 log_info "Sources: $SRC_DIR/svg_player_animated.cpp"
 log_info "         $SHARED_DIR/SVGAnimationController.cpp"
+log_info "         $SHARED_DIR/SVGGridCompositor.cpp"
+log_info "         $SRC_DIR/file_dialog_macos.mm"
+log_info "         $SRC_DIR/folder_browser.cpp"
+log_info "         $SRC_DIR/thumbnail_cache.cpp"
 log_info "Target: $TARGET"
 
-# Build command - includes shared animation controller
+# Build command - includes shared animation controller, grid compositor, Obj-C++ file dialog, folder browser, and thumbnail cache
 $CXX $CXXFLAGS $ARCH_FLAG $INCLUDES \
     "$SRC_DIR/svg_player_animated.cpp" \
     "$SHARED_DIR/SVGAnimationController.cpp" \
+    "$SHARED_DIR/SVGGridCompositor.cpp" \
+    "$SRC_DIR/file_dialog_macos.mm" \
+    "$SRC_DIR/folder_browser.cpp" \
+    "$SRC_DIR/thumbnail_cache.cpp" \
     -o "$TARGET" \
     $SKIA_LIBS \
     $LDFLAGS \

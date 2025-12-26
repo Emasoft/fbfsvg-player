@@ -340,14 +340,16 @@ LINUX_LIBS="-lGL -lEGL -lX11 -lXext -lpthread -ldl -lm -lfontconfig -lfreetype"
 log_info "Compiling SVG player with shared animation controller..."
 log_info "Sources: $SRC_DIR/svg_player_animated_linux.cpp"
 log_info "         $SHARED_DIR/SVGAnimationController.cpp"
+log_info "         $SHARED_DIR/SVGGridCompositor.cpp"
 log_info "Compiler: $CXX"
 log_info "Target: $TARGET"
 
-# Build command - use Linux-specific source file with shared animation controller
+# Build command - use Linux-specific source file with shared animation controller and grid compositor
 # Link order: source -> Skia modules -> Skia core -> Skia deps -> ICU -> system libs
 $CXX $CXXFLAGS $INCLUDES \
     "$SRC_DIR/svg_player_animated_linux.cpp" \
     "$SHARED_DIR/SVGAnimationController.cpp" \
+    "$SHARED_DIR/SVGGridCompositor.cpp" \
     -o "$TARGET" \
     $SKIA_LIBS \
     $ICU_LINK_FLAGS \

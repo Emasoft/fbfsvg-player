@@ -345,6 +345,7 @@ echo "Compiler: $CXX"
 echo "Flags:    $CXXFLAGS"
 echo "Sources:  $SDK_DIR/svg_player.cpp"
 echo "          $SHARED_DIR/SVGAnimationController.cpp"
+echo "          $SHARED_DIR/SVGGridCompositor.cpp"
 echo ""
 
 # Compile SDK source file to object
@@ -365,10 +366,19 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Compile shared grid compositor to object
+echo "Compiling SVGGridCompositor.cpp..."
+$CXX $CXXFLAGS $INCLUDES -c "$SHARED_DIR/SVGGridCompositor.cpp" -o "$BUILD_DIR/SVGGridCompositor.o"
+
+if [ $? -ne 0 ]; then
+    echo "Compilation of SVGGridCompositor.cpp failed!"
+    exit 1
+fi
+
 echo "Linking shared library..."
 
-# Link shared library with both object files
-$CXX $LDFLAGS -o "$BUILD_DIR/libsvgplayer.so.1.0.0" "$BUILD_DIR/svg_player.o" "$BUILD_DIR/SVGAnimationController.o" $LIBS
+# Link shared library with all object files
+$CXX $LDFLAGS -o "$BUILD_DIR/libsvgplayer.so.1.0.0" "$BUILD_DIR/svg_player.o" "$BUILD_DIR/SVGAnimationController.o" "$BUILD_DIR/SVGGridCompositor.o" $LIBS
 
 if [ $? -ne 0 ]; then
     echo "Linking failed!"
