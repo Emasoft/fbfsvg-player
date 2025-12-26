@@ -4,6 +4,55 @@
 
 Multi-platform animated SVG player with SMIL animation support built using Skia.
 
+---
+
+## CRITICAL: Animated Folder Browser Architecture
+
+**The folder browser is NOT a static thumbnail viewer. It is a LIVE ANIMATED GRID.**
+
+### Core Concept
+
+The folder browser displays SVG files as a **composite animated SVG** where ALL cells play their animations simultaneously in real-time. This is the same approach used by the grid compositor for combining multiple animated SVGs into one document.
+
+### Why This Design?
+
+1. **Live Preview**: Users see animations playing before opening files
+2. **Consistent Architecture**: Uses the same SVGAnimationController that powers the main player
+3. **No Native Alternative**: OS file dialogs only show static icons - this is unique functionality
+4. **Performance Validated**: The test grid SVGs prove multiple animations can play together
+
+### Architecture Requirements
+
+1. **Base UI SVG**: A template containing header, buttons, and cell placeholder groups
+2. **Lazy Loading**: As each SVG file loads, it gets ID-prefixed and appended to the appropriate cell placeholder in the DOM tree
+3. **Single Composite SVG**: The entire browser page is ONE SVG document rendered via SVGAnimationController
+4. **Pagination (No Scroll)**: Pages limit concurrent animations for performance (e.g., 9 cells per page)
+5. **Animation Continuity**: All visible cells animate continuously at 60fps
+
+### Implementation Flow
+
+```
+1. Generate base browser SVG (UI elements + empty cell placeholders)
+2. For each visible cell position:
+   a. Background thread loads SVG file content
+   b. Prefix all IDs with unique cell prefix (c0_, c1_, etc.)
+   c. Append prefixed content as child of cell placeholder group
+   d. Mark browser dirty to trigger re-parse
+3. SVGAnimationController renders the composite SVG with all animations playing
+4. User interaction (hover, click) updates the composite and re-renders
+```
+
+### Key Files
+
+- `src/folder_browser.cpp` - Browser logic and SVG generation
+- `src/thumbnail_cache.cpp` - Background SVG loading with prefixing
+- `shared/SVGGridCompositor.cpp` - ID prefixing utilities
+- `shared/SVGAnimationController.cpp` - Animation rendering
+
+**NEVER treat the browser as a static thumbnail viewer. All cells must animate.**
+
+---
+
 | Platform | Architecture | GPU Backend | SDK Type |
 |----------|--------------|-------------|----------|
 | macOS | x64, arm64, universal | Metal | Desktop app |
