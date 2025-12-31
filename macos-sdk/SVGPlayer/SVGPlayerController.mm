@@ -17,6 +17,14 @@ static const CGFloat kDefaultFrameRate = 60.0;
 // Default seek interval for rewind/fastforward
 static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
+// Safe string conversion helper (Issue 12)
+static NSString *safeStringFromCString(const char *cString) {
+    if (!cString) return nil;
+    NSString *str = [NSString stringWithUTF8String:cString];
+    if (str) return str;
+    return [NSString stringWithCString:cString encoding:NSISOLatin1StringEncoding];
+}
+
 #pragma mark - SVGPlayerLayer Implementation
 
 @interface SVGPlayerLayer ()
@@ -66,6 +74,8 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 // Z-Order
 - (void)setZOrder:(NSInteger)zOrder {
     if (self.layerRef) {
+        if (zOrder < INT_MIN) zOrder = INT_MIN;
+        if (zOrder > INT_MAX) zOrder = INT_MAX;
         SVGLayer_SetZOrder(self.layerRef, (int)zOrder);
     }
 }
@@ -222,6 +232,8 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 @property (nonatomic, assign) NSInteger internalRepeatCount;
 // Scrubbing state
 @property (nonatomic, assign) BOOL internalScrubbing;
+// Thread safety queue (Issue 1)
+@property (nonatomic, strong) dispatch_queue_t apiQueue;
 @end
 
 @implementation SVGPlayerController
@@ -234,6 +246,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 - (instancetype)init {
     if (self = [super init]) {
+        _apiQueue = dispatch_queue_create("com.svgplayer.controller.api", DISPATCH_QUEUE_SERIAL);
         _handle = SVGPlayer_Create();
         _internalPlaybackState = SVGControllerPlaybackStateStopped;
         _looping = YES;
@@ -276,7 +289,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
     if (!success) {
         const char *errorMsg = SVGPlayer_GetLastError(self.handle);
-        NSString *message = errorMsg ? @(errorMsg) : @"Failed to load SVG";
+        NSString *message = safeStringFromCString(errorMsg) ?: @"Failed to load SVG";
         self.internalErrorMessage = message;
         [self setError:error code:SVGPlayerControllerErrorParseFailed message:message];
         return NO;
@@ -306,7 +319,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
     if (!success) {
         const char *errorMsg = SVGPlayer_GetLastError(self.handle);
-        NSString *message = errorMsg ? @(errorMsg) : @"Failed to parse SVG data";
+        NSString *message = safeStringFromCString(errorMsg) ?: @"Failed to parse SVG data";
         self.internalErrorMessage = message;
         [self setError:error code:SVGPlayerControllerErrorParseFailed message:message];
         return NO;
@@ -497,17 +510,19 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 #pragma mark - Basic Playback Control
 
 - (void)play {
-    if (!self.handle || !self.isLoaded) return;
-
-    SVGPlayer_Play(self.handle);
-    self.internalPlaybackState = SVGControllerPlaybackStatePlaying;
+    dispatch_sync(self.apiQueue, ^{
+        if (!self.handle || !self.isLoaded) return;
+        SVGPlayer_Play(self.handle);
+        self.internalPlaybackState = SVGControllerPlaybackStatePlaying;
+    });
 }
 
 - (void)pause {
-    if (!self.handle) return;
-
-    SVGPlayer_Pause(self.handle);
-    self.internalPlaybackState = SVGControllerPlaybackStatePaused;
+    dispatch_sync(self.apiQueue, ^{
+        if (!self.handle) return;
+        SVGPlayer_Pause(self.handle);
+        self.internalPlaybackState = SVGControllerPlaybackStatePaused;
+    });
 }
 
 - (void)resume {
@@ -517,10 +532,11 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 }
 
 - (void)stop {
-    if (!self.handle) return;
-
-    SVGPlayer_Stop(self.handle);
-    self.internalPlaybackState = SVGControllerPlaybackStateStopped;
+    dispatch_sync(self.apiQueue, ^{
+        if (!self.handle) return;
+        SVGPlayer_Stop(self.handle);
+        self.internalPlaybackState = SVGControllerPlaybackStateStopped;
+    });
 }
 
 - (void)togglePlayback {
@@ -580,9 +596,11 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 }
 
 - (void)seekToFrame:(NSInteger)frame {
-    if (self.handle) {
-        SVGPlayer_SeekToFrame(self.handle, (int)frame);
-    }
+    if (!self.handle) return;
+    NSInteger total = self.totalFrames;
+    if (frame < 0) frame = 0;
+    if (total > 0 && frame >= total) frame = total - 1;
+    SVGPlayer_SeekToFrame(self.handle, (int)frame);
 }
 
 - (void)seekToProgress:(CGFloat)progress {
@@ -716,7 +734,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     if (!success) {
         const char *errorMsg = SVGPlayer_GetLastError(self.handle);
         if (errorMsg) {
-            self.internalErrorMessage = @(errorMsg);
+            self.internalErrorMessage = safeStringFromCString(errorMsg);
         }
     }
 
@@ -739,7 +757,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     if (!success) {
         const char *errorMsg = SVGPlayer_GetLastError(self.handle);
         if (errorMsg) {
-            self.internalErrorMessage = @(errorMsg);
+            self.internalErrorMessage = safeStringFromCString(errorMsg);
         }
     }
 
@@ -826,7 +844,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
                                                (float)point.x, (float)point.y,
                                                (int)viewSize.width, (int)viewSize.height);
     if (elementID && strlen(elementID) > 0) {
-        return @(elementID);
+        return safeStringFromCString(elementID);
     }
     return nil;
 }
@@ -848,7 +866,10 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     NSMutableArray<NSString *> *result = [NSMutableArray arrayWithCapacity:foundCount];
     for (int i = 0; i < foundCount; i++) {
         if (elementIDs[i] && strlen(elementIDs[i]) > 0) {
-            [result addObject:@(elementIDs[i])];
+            NSString *elementIDStr = safeStringFromCString(elementIDs[i]);
+            if (elementIDStr) {
+                [result addObject:elementIDStr];
+            }
         }
     }
 
@@ -875,13 +896,15 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 - (nullable NSString *)propertyValue:(NSString *)propertyName forElementID:(NSString *)objectID {
     if (!self.handle || !propertyName || !objectID) return nil;
 
-    char valueBuffer[1024];
+    char valueBuffer[4096];
+    memset(valueBuffer, 0, sizeof(valueBuffer));
     if (SVGPlayer_GetElementProperty(self.handle,
                                       [objectID UTF8String],
                                       [propertyName UTF8String],
-                                      valueBuffer, sizeof(valueBuffer))) {
+                                      valueBuffer, sizeof(valueBuffer) - 1)) {
+        valueBuffer[sizeof(valueBuffer) - 1] = '\0';
         if (strlen(valueBuffer) > 0) {
-            return @(valueBuffer);
+            return safeStringFromCString(valueBuffer);
         }
     }
     return nil;
@@ -1071,10 +1094,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 + (NSString *)version {
     const char *versionStr = SVGPlayer_GetVersion();
-    if (versionStr) {
-        return @(versionStr);
-    }
-    return @"unknown";
+    return safeStringFromCString(versionStr) ?: @"unknown";
 }
 
 + (void)getVersionMajor:(NSInteger *)major minor:(NSInteger *)minor patch:(NSInteger *)patch {
@@ -1110,7 +1130,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     SVGLayerRef layerRef = SVGPlayer_CreateLayer(self.handle, [filepath UTF8String]);
     if (!layerRef) {
         const char *errorMsg = SVGPlayer_GetLastError(self.handle);
-        NSString *message = errorMsg ? @(errorMsg) : @"Failed to create layer from file";
+        NSString *message = safeStringFromCString(errorMsg) ?: @"Failed to create layer from file";
         [self setError:error code:SVGPlayerControllerErrorParseFailed message:message];
         return nil;
     }
@@ -1132,7 +1152,7 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
     SVGLayerRef layerRef = SVGPlayer_CreateLayerFromData(self.handle, data.bytes, data.length);
     if (!layerRef) {
         const char *errorMsg = SVGPlayer_GetLastError(self.handle);
-        NSString *message = errorMsg ? @(errorMsg) : @"Failed to create layer from data";
+        NSString *message = safeStringFromCString(errorMsg) ?: @"Failed to create layer from data";
         [self setError:error code:SVGPlayerControllerErrorParseFailed message:message];
         return nil;
     }

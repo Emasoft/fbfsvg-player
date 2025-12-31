@@ -66,9 +66,15 @@ GridResult SVGGridCompositor::compose(const std::vector<CompositorCell>& cells, 
         // Extract inner content from SVG
         std::string innerContent = extractSVGContent(prefixedSvg);
 
-        // Get SVG dimensions for scaling
+        // Get SVG dimensions and viewBox for scaling
         float svgWidth = cell.originalWidth > 0 ? cell.originalWidth : 100.0f;
         float svgHeight = cell.originalHeight > 0 ? cell.originalHeight : 100.0f;
+
+        // Use stored viewBox if available, otherwise default to (0, 0, width, height)
+        float vbMinX = (cell.viewBoxWidth > 0) ? cell.viewBoxMinX : 0.0f;
+        float vbMinY = (cell.viewBoxHeight > 0) ? cell.viewBoxMinY : 0.0f;
+        float vbWidth = (cell.viewBoxWidth > 0) ? cell.viewBoxWidth : svgWidth;
+        float vbHeight = (cell.viewBoxHeight > 0) ? cell.viewBoxHeight : svgHeight;
 
         // Generate transform for this cell
         std::string transform = generateCellTransform(
@@ -80,8 +86,8 @@ GridResult SVGGridCompositor::compose(const std::vector<CompositorCell>& cells, 
         ss << R"(<g transform=")" << transform << R"(">)";
 
         // Create a nested SVG to contain the cell content with its original viewBox
-        ss << R"(<svg width=")" << svgWidth << R"(" height=")" << svgHeight
-           << R"(" viewBox="0 0 )" << svgWidth << " " << svgHeight << R"(">)";
+        ss << R"(<svg width=")" << vbWidth << R"(" height=")" << vbHeight
+           << R"(" viewBox=")" << vbMinX << " " << vbMinY << " " << vbWidth << " " << vbHeight << R"(">)";
         ss << innerContent;
         ss << R"(</svg>)";
 
@@ -154,14 +160,20 @@ GridResult SVGGridCompositor::composeWithBackground(
         float svgWidth = cell.originalWidth > 0 ? cell.originalWidth : 100.0f;
         float svgHeight = cell.originalHeight > 0 ? cell.originalHeight : 100.0f;
 
+        // Use stored viewBox if available, otherwise default to (0, 0, width, height)
+        float vbMinX = (cell.viewBoxWidth > 0) ? cell.viewBoxMinX : 0.0f;
+        float vbMinY = (cell.viewBoxHeight > 0) ? cell.viewBoxMinY : 0.0f;
+        float vbWidth = (cell.viewBoxWidth > 0) ? cell.viewBoxWidth : svgWidth;
+        float vbHeight = (cell.viewBoxHeight > 0) ? cell.viewBoxHeight : svgHeight;
+
         std::string transform = generateCellTransform(
             cellX, cellY, cellWidth, cellHeight,
             svgWidth, svgHeight, config.preserveAspectRatio
         );
 
         ss << R"(<g transform=")" << transform << R"(">)";
-        ss << R"(<svg width=")" << svgWidth << R"(" height=")" << svgHeight
-           << R"(" viewBox="0 0 )" << svgWidth << " " << svgHeight << R"(">)";
+        ss << R"(<svg width=")" << vbWidth << R"(" height=")" << vbHeight
+           << R"(" viewBox=")" << vbMinX << " " << vbMinY << " " << vbWidth << " " << vbHeight << R"(">)";
         ss << innerContent;
         ss << R"(</svg>)";
         ss << R"(</g>)";
@@ -269,6 +281,7 @@ std::string SVGGridCompositor::prefixSVGIds(const std::string& svg, const std::s
     static const std::regex hrefRegex(R"((xlink:)?href\s*=\s*["']#([^"']+)["'])");
     static const std::regex urlRegex(R"(url\s*\(\s*#([^)]+)\s*\))");
     static const std::regex beginRegex(R"(begin\s*=\s*["']([^"'.]+)\.([^"']+)["'])");
+    static const std::regex endRegex(R"(end\s*=\s*["']([^"'.]+)\.([^"']+)["'])");
     static const std::regex valuesRegex(R"(values\s*=\s*["']([^"']+)["'])");
     static const std::regex idRefRegex(R"(#([^;#]+))");
 
@@ -286,7 +299,10 @@ std::string SVGGridCompositor::prefixSVGIds(const std::string& svg, const std::s
     // Pattern 4: begin="id.event" -> begin="prefix_id.event" (for SMIL animations)
     result = std::regex_replace(result, beginRegex, "begin=\"" + prefix + "$1.$2\"");
 
-    // Pattern 5: values="#frame1;#frame2" -> values="#prefix_frame1;#prefix_frame2"
+    // Pattern 5: end="id.event" -> end="prefix_id.event" (for SMIL animations)
+    result = std::regex_replace(result, endRegex, "end=\"" + prefix + "$1.$2\"");
+
+    // Pattern 6: values="#frame1;#frame2" -> values="#prefix_frame1;#prefix_frame2"
     // Handle semicolon-separated ID references in animate values
     std::smatch match;
     std::string::const_iterator searchStart = result.cbegin();
@@ -310,23 +326,74 @@ std::string SVGGridCompositor::prefixSVGIds(const std::string& svg, const std::s
     processedResult += result.substr(lastEnd);
     result = processedResult;
 
+    // Pattern 7: CSS style blocks - prefix #id selectors in <style>...</style>
+    // Find all <style>...</style> blocks and prefix #id selectors within them
+    // Note: [\s\S] matches any character including newlines (dotall equivalent)
+    static const std::regex styleBlockRegex(R"(<style[^>]*>([\s\S]*?)</style>)");
+    static const std::regex cssIdSelectorRegex(R"(#([a-zA-Z][\w-]*))");  // CSS ID selector pattern
+
+    searchStart = result.cbegin();
+    processedResult.clear();
+    lastEnd = 0;
+
+    while (std::regex_search(searchStart, result.cend(), match, styleBlockRegex)) {
+        size_t matchStart = match.position(0) + (searchStart - result.cbegin());
+        processedResult += result.substr(lastEnd, matchStart - lastEnd);
+
+        std::string styleContent = match[1].str();
+        // Prefix all #id selectors in CSS
+        styleContent = std::regex_replace(styleContent, cssIdSelectorRegex, "#" + prefix + "$1");
+
+        // Reconstruct <style> block
+        std::string styleTag = match[0].str();
+        size_t contentStart = styleTag.find('>') + 1;
+        size_t contentEnd = styleTag.rfind("</style>");
+        processedResult += styleTag.substr(0, contentStart) + styleContent + "</style>";
+
+        lastEnd = matchStart + match[0].length();
+        searchStart = result.cbegin() + lastEnd;
+    }
+    processedResult += result.substr(lastEnd);
+    result = processedResult;
+
     return result;
 }
 
 std::string SVGGridCompositor::extractSVGContent(const std::string& svg) {
-    // Find opening <svg ...> tag end
-    size_t svgStart = svg.find("<svg");
-    if (svgStart == std::string::npos) return svg;
+    // Find opening <svg ...> tag
+    size_t openTag = svg.find("<svg");
+    if (openTag == std::string::npos) return "";
 
-    size_t tagEnd = svg.find('>', svgStart);
-    if (tagEnd == std::string::npos) return svg;
+    size_t tagEnd = svg.find(">", openTag);
+    if (tagEnd == std::string::npos) return "";
 
-    // Find closing </svg> tag
-    size_t svgEnd = svg.rfind("</svg>");
-    if (svgEnd == std::string::npos || svgEnd <= tagEnd) return svg;
+    // Count depth to find matching closing tag (handles nested <svg> elements)
+    int depth = 1;
+    size_t pos = tagEnd + 1;
 
-    // Extract content between tags
-    return svg.substr(tagEnd + 1, svgEnd - tagEnd - 1);
+    while (depth > 0 && pos < svg.size()) {
+        size_t nextOpen = svg.find("<svg", pos);
+        size_t nextClose = svg.find("</svg>", pos);
+
+        if (nextClose == std::string::npos) break;
+
+        if (nextOpen != std::string::npos && nextOpen < nextClose) {
+            // Found nested opening tag before closing tag
+            depth++;
+            pos = nextOpen + 4;  // Skip past "<svg"
+        } else {
+            // Found closing tag
+            depth--;
+            if (depth == 0) {
+                // This is the matching closing tag for the root <svg>
+                return svg.substr(tagEnd + 1, nextClose - tagEnd - 1);
+            }
+            pos = nextClose + 6;  // Skip past "</svg>"
+        }
+    }
+
+    // If we didn't find matching closing tag, return empty
+    return "";
 }
 
 std::string SVGGridCompositor::escapeXml(const std::string& text) {

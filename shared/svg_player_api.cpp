@@ -443,6 +443,12 @@ SVGPlayerRef SVGPlayer_Create(void) {
 
 void SVGPlayer_Destroy(SVGPlayerRef player) {
     if (player) {
+        // Clear all controller callbacks to prevent use-after-free
+        if (player->controller) {
+            player->controller->setStateChangeCallback(nullptr);
+            player->controller->setLoopCallback(nullptr);
+            player->controller->setEndCallback(nullptr);
+        }
         delete player;
     }
 }
@@ -573,16 +579,20 @@ void SVGPlayer_Play(SVGPlayerRef player) {
     if (!player || !player->controller) return;
 
     SVGPlaybackState oldState;
+    SVGStateChangeCallback callback = nullptr;
+    void* userData = nullptr;
     {
         std::lock_guard<std::mutex> lock(player->mutex);
         oldState = fromControllerState(player->controller->getPlaybackState());
         player->controller->play();
+        callback = player->stateChangeCallback;
+        userData = player->stateChangeUserData;
     }
 
     // Invoke callback outside lock to avoid deadlock
     SVGPlaybackState newState = SVGPlaybackState_Playing;
-    if (player->stateChangeCallback && oldState != newState) {
-        player->stateChangeCallback(player->stateChangeUserData, newState);
+    if (callback && oldState != newState) {
+        callback(userData, newState);
     }
 }
 
@@ -590,15 +600,19 @@ void SVGPlayer_Pause(SVGPlayerRef player) {
     if (!player || !player->controller) return;
 
     SVGPlaybackState oldState;
+    SVGStateChangeCallback callback = nullptr;
+    void* userData = nullptr;
     {
         std::lock_guard<std::mutex> lock(player->mutex);
         oldState = fromControllerState(player->controller->getPlaybackState());
         player->controller->pause();
+        callback = player->stateChangeCallback;
+        userData = player->stateChangeUserData;
     }
 
     SVGPlaybackState newState = SVGPlaybackState_Paused;
-    if (player->stateChangeCallback && oldState != newState) {
-        player->stateChangeCallback(player->stateChangeUserData, newState);
+    if (callback && oldState != newState) {
+        callback(userData, newState);
     }
 }
 
@@ -606,17 +620,21 @@ void SVGPlayer_Stop(SVGPlayerRef player) {
     if (!player || !player->controller) return;
 
     SVGPlaybackState oldState;
+    SVGStateChangeCallback callback = nullptr;
+    void* userData = nullptr;
     {
         std::lock_guard<std::mutex> lock(player->mutex);
         oldState = fromControllerState(player->controller->getPlaybackState());
         player->controller->stop();
         player->completedLoops = 0;
         player->playingForward = true;
+        callback = player->stateChangeCallback;
+        userData = player->stateChangeUserData;
     }
 
     SVGPlaybackState newState = SVGPlaybackState_Stopped;
-    if (player->stateChangeCallback && oldState != newState) {
-        player->stateChangeCallback(player->stateChangeUserData, newState);
+    if (callback && oldState != newState) {
+        callback(userData, newState);
     }
 }
 
@@ -1091,16 +1109,25 @@ bool SVGPlayer_RenderFrame(SVGPlayerRef player, void* pixelBuffer, int width, in
     if (!player || !player->controller) return false;
 
     // Convert frame to time
-    int totalFrames = player->controller->getTotalFrames();
-    double duration = player->controller->getDuration();
+    double timeSeconds;
+    {
+        std::lock_guard<std::mutex> lock(player->mutex);
+        int totalFrames = player->controller->getTotalFrames();
+        double duration = player->controller->getDuration();
 
-    if (totalFrames <= 0) {
-        frame = 0;
-    } else {
-        frame = clamp(frame, 0, totalFrames - 1);
+        if (totalFrames <= 0) {
+            frame = 0;
+        } else {
+            frame = clamp(frame, 0, totalFrames - 1);
+        }
+
+        // Fix: Use totalFrames-1 to avoid overflow (frame N-1 should map to duration, not beyond)
+        if (totalFrames <= 1) {
+            timeSeconds = 0.0;
+        } else {
+            timeSeconds = (static_cast<double>(frame) / (totalFrames - 1)) * duration;
+        }
     }
-
-    double timeSeconds = (totalFrames > 0) ? (static_cast<double>(frame) / totalFrames) * duration : 0.0;
 
     return SVGPlayer_RenderAtTime(player, pixelBuffer, width, height, scale, timeSeconds);
 }
@@ -1899,8 +1926,9 @@ bool parseLayerSVG(SVGLayer* layer, SVGPlayer* player) {
     // Store viewBox
     layer->viewBox = SkRect::MakeWH(intrinsicSize.width(), intrinsicSize.height());
 
+    // Initialize animation controller with SVG content
     // Duration is automatically parsed from SVG animation elements during loadFromContent()
-    // No manual setDuration needed - the controller extracts duration from animations
+    layer->controller->loadFromContent(layer->svgData);
 
     return true;
 }

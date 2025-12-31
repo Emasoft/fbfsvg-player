@@ -24,10 +24,13 @@ ThumbnailCache::~ThumbnailCache() {
 }
 
 void ThumbnailCache::startLoader() {
-    if (loaderRunning_.load()) return;  // Already running
+    // Fix Issue 2: Use atomic compare_exchange to prevent race condition
+    bool expected = false;
+    if (!loaderRunning_.compare_exchange_strong(expected, true)) {
+        return;  // Already running
+    }
 
     stopRequested_.store(false);
-    loaderRunning_.store(true);
 
     // Start multiple loader threads for parallel processing
     loaderThreads_.clear();
@@ -154,18 +157,30 @@ void ThumbnailCache::processLoadRequest(const ThumbnailLoadRequest& req) {
         auto it = cache_.find(req.filePath);
         if (it != cache_.end()) {
             if (success && !thumbnailSVG.empty()) {
+                // Fix Issue 3: Subtract old size before adding new size
+                size_t newSize = thumbnailSVG.size();
+                size_t oldSize = it->second.contentSize;
+
                 it->second.svgContent = std::move(thumbnailSVG);
                 it->second.state = ThumbnailState::Ready;
                 it->second.fileModTime = modTime;
-                it->second.contentSize = it->second.svgContent.size();
+                it->second.contentSize = newSize;
                 it->second.lastAccess = std::chrono::steady_clock::now();
-                totalCacheBytes_.fetch_add(it->second.contentSize);
+
+                if (oldSize > 0) {
+                    totalCacheBytes_.fetch_sub(oldSize);
+                }
+                totalCacheBytes_.fetch_add(newSize);
 
                 // Signal new ready thumbnail
                 hasNewReady_.store(true);
                 std::cout << "[ThumbnailCache] " << filename << " -> Ready (flagged)" << std::endl;
 
-                // Update LRU order
+                // Fix Issue 4: Check for duplicates before adding to LRU
+                auto lruIt = std::find(lruOrder_.begin(), lruOrder_.end(), req.filePath);
+                if (lruIt != lruOrder_.end()) {
+                    lruOrder_.erase(lruIt);
+                }
                 lruOrder_.push_back(req.filePath);
             } else {
                 it->second.state = ThumbnailState::Error;
@@ -271,9 +286,9 @@ std::string ThumbnailCache::generateThumbnailSVG(const std::string& svgPath,
         actualContent = content;
     }
 
-    // Generate unique prefix from file path hash
+    // Fix Issue 5: Use full hash for guaranteed uniqueness (no modulo collision risk)
     size_t pathHash = std::hash<std::string>{}(svgPath);
-    std::string prefix = "t" + std::to_string(pathHash % 100000) + "_";
+    std::string prefix = "t" + std::to_string(pathHash) + "_";
 
     // If truncated (over 50MB), just show a placeholder
     if (isTruncated) {
@@ -406,9 +421,9 @@ bool ThumbnailCache::hasEntry(const std::string& filePath) const {
 }
 
 void ThumbnailCache::requestLoad(const std::string& filePath, float width, float height, int priority) {
-    // Check if already ready or pending
+    // Fix Issue 1: Test-and-set pattern under single lock to prevent race condition
     {
-        std::lock_guard<std::mutex> lock(cacheMutex_);
+        std::lock_guard<std::mutex> cacheLock(cacheMutex_);
         auto it = cache_.find(filePath);
         if (it != cache_.end()) {
             if (it->second.state == ThumbnailState::Ready ||
@@ -416,22 +431,23 @@ void ThumbnailCache::requestLoad(const std::string& filePath, float width, float
                 it->second.state == ThumbnailState::Pending) {
                 return;  // Already handled
             }
+            it->second.state = ThumbnailState::Pending;
+            it->second.lastAccess = std::chrono::steady_clock::now();
+        } else {
+            ThumbnailCacheEntry entry;
+            entry.filePath = filePath;
+            entry.width = width;
+            entry.height = height;
+            entry.state = ThumbnailState::Pending;
+            entry.lastAccess = std::chrono::steady_clock::now();
+            cache_[filePath] = std::move(entry);
         }
 
-        // Create pending entry
-        ThumbnailCacheEntry entry;
-        entry.filePath = filePath;
-        entry.width = width;
-        entry.height = height;
-        entry.state = ThumbnailState::Pending;
-        entry.lastAccess = std::chrono::steady_clock::now();
-        cache_[filePath] = std::move(entry);
-    }
-
-    // Add to request queue
-    {
-        std::lock_guard<std::mutex> lock(queueMutex_);
-        requestQueue_.push({filePath, width, height, priority});
+        // Add to queue while still holding cache lock to ensure atomicity
+        {
+            std::lock_guard<std::mutex> queueLock(queueMutex_);
+            requestQueue_.push({filePath, width, height, priority});
+        }
     }
     queueCondition_.notify_one();
 }

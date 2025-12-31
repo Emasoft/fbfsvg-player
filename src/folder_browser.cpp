@@ -261,17 +261,24 @@ void FolderBrowser::setDirectoryAsync(const std::string& path, ProgressCallback 
     scanComplete_.store(false);
     scanCancelRequested_.store(false);
     scanningInProgress_.store(true);
-    pendingDir_ = fs::canonical(fs::path(path)).string();
-    pendingAddToHistory_ = addToHistory;
+
+    // Issue 2 fix: protect pendingDir_ and pendingAddToHistory_ with pendingMutex_
+    std::string pendingDirCopy;
+    {
+        std::lock_guard<std::mutex> lock(pendingMutex_);
+        pendingDir_ = fs::canonical(fs::path(path)).string();
+        pendingAddToHistory_ = addToHistory;
+        pendingDirCopy = pendingDir_;
+    }
 
     // Show loading state in UI
     setLoading(true, "Scanning directory...");
     setProgress(0.0f);
 
     // Launch background scan thread
-    scanThread_ = std::thread([this, callback]() {
+    scanThread_ = std::thread([this, callback, pendingDirCopy]() {
         std::vector<BrowserEntry> entries;
-        fs::path current(pendingDir_);
+        fs::path current(pendingDirCopy);
         bool atRoot = (current == current.root_path());
 
         try {
@@ -453,10 +460,12 @@ void FolderBrowser::finalizeScan() {
         pendingEntries_.clear();
     }
 
-    // Update directory state - protect with stateMutex_
+    // Update directory state - protect with stateMutex_ (Issue 3 fix: copy before using under different lock)
+    std::string dirCopy;
     {
         std::lock_guard<std::mutex> lock(stateMutex_);
         currentDir_ = pendingDir_;
+        dirCopy = currentDir_;
         currentPage_ = 0;
         selectedIndex_ = -1;
     }
@@ -468,7 +477,7 @@ void FolderBrowser::finalizeScan() {
         if (historyIndex_ >= 0 && historyIndex_ < static_cast<int>(history_.size()) - 1) {
             history_.erase(history_.begin() + historyIndex_ + 1, history_.end());
         }
-        history_.push_back(currentDir_);
+        history_.push_back(dirCopy);
         historyIndex_ = static_cast<int>(history_.size()) - 1;
     }
 
@@ -656,21 +665,21 @@ void FolderBrowser::setProgress(float progress) {
     }
 }
 
-const BrowserEntry* FolderBrowser::getSelectedEntry() const {
+std::optional<BrowserEntry> FolderBrowser::getSelectedEntry() const {
     int index;
     {
         std::lock_guard<std::mutex> lock(stateMutex_);
         index = selectedIndex_;
     }
     if (index >= 0 && index < static_cast<int>(currentPageEntries_.size())) {
-        return &currentPageEntries_[index];
+        return currentPageEntries_[index];  // Return copy (Issue 6 fix: return by value)
     }
-    return nullptr;
+    return std::nullopt;
 }
 
 bool FolderBrowser::canLoad() const {
-    const BrowserEntry* selected = getSelectedEntry();
-    return selected != nullptr && selected->type == BrowserEntryType::SVGFile;
+    std::optional<BrowserEntry> selected = getSelectedEntry();
+    return selected.has_value() && selected->type == BrowserEntryType::SVGFile;
 }
 
 void FolderBrowser::scanDirectory() {
@@ -891,12 +900,12 @@ void FolderBrowser::updateCurrentPage() {
         currentPageEntries_.push_back(entry);
     }
 
-    // Update grid cell entry pointers
+    // Update grid cell entry indices (Issue 5 fix: use index instead of pointer)
     for (auto& cell : gridCells_) {
-        cell.entry = nullptr;
-        for (auto& entry : currentPageEntries_) {
-            if (entry.gridIndex == cell.index) {
-                cell.entry = &entry;
+        cell.entryIndex = -1;
+        for (size_t i = 0; i < currentPageEntries_.size(); i++) {
+            if (currentPageEntries_[i].gridIndex == cell.index) {
+                cell.entryIndex = static_cast<int>(i);
                 break;
             }
         }
@@ -926,7 +935,7 @@ void FolderBrowser::calculateGridCells() {
             cell.y = gridTop + config_.cellMargin + row * (cellHeight + config_.cellMargin + config_.labelHeight);
             cell.width = cellWidth;
             cell.height = cellHeight;
-            cell.entry = nullptr;
+            cell.entryIndex = -1;  // Issue 5 fix: use index instead of pointer
             gridCells_.push_back(cell);
         }
     }
@@ -1165,12 +1174,12 @@ HitTestResult FolderBrowser::hitTest(float screenX, float screenY,
 
     // Check grid cells
     for (const auto& cell : gridCells_) {
-        if (cell.entry != nullptr) {
+        if (cell.entryIndex >= 0 && cell.entryIndex < static_cast<int>(currentPageEntries_.size())) {
             // Check if click is within cell bounds (including label area)
             float cellBottom = cell.y + cell.height + config_.labelHeight;
             if (screenX >= cell.x && screenX <= cell.x + cell.width &&
                 screenY >= cell.y && screenY <= cellBottom) {
-                if (outEntry) *outEntry = cell.entry;
+                if (outEntry) *outEntry = &currentPageEntries_[cell.entryIndex];
                 return HitTestResult::Entry;
             }
         }
@@ -1536,7 +1545,9 @@ std::string FolderBrowser::generateNavBar() const {
 std::string FolderBrowser::formatModifiedTime(std::time_t time) const {
     if (time == 0) return "";
 
-    std::tm* tm = std::localtime(&time);
+    // Issue 7 fix: use localtime_r for thread safety
+    std::tm tm_storage;
+    std::tm* tm = localtime_r(&time, &tm_storage);
     if (!tm) return "";
 
     std::ostringstream ss;
@@ -1651,9 +1662,9 @@ std::string FolderBrowser::generateBrowserSVG() {
 
     // Draw grid cells
     for (const auto& cell : gridCells_) {
-        if (cell.entry == nullptr) continue;
+        if (cell.entryIndex < 0 || cell.entryIndex >= static_cast<int>(currentPageEntries_.size())) continue;
 
-        const BrowserEntry& entry = *cell.entry;
+        const BrowserEntry& entry = currentPageEntries_[cell.entryIndex];
 
         // Hover highlight for hovered cell (only if not selected)
         if (cell.index == hoveredIndex_ && cell.index != selectedIndex_) {
@@ -1725,7 +1736,7 @@ std::string FolderBrowser::generateBrowserSVG() {
     // Click feedback flash (rendered on top of all cells for visibility)
     if (hasClickFeedback() && clickFeedbackIndex_ >= 0) {
         for (const auto& cell : gridCells_) {
-            if (cell.index == clickFeedbackIndex_ && cell.entry != nullptr) {
+            if (cell.index == clickFeedbackIndex_ && cell.entryIndex >= 0) {
                 svg << generateClickFeedbackHighlight(cell);
                 break;
             }

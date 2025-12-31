@@ -84,6 +84,7 @@ static sk_sp<SkSVGDOM> g_browserPendingDom;           // DOM being parsed in bac
 static std::mutex g_browserDomMutex;                  // Protects g_browserPendingDom
 static std::string g_browserPendingSvg;               // SVG being parsed
 static std::mutex g_browserPendingSvgMutex;           // Protects g_browserPendingSvg
+static std::mutex g_browserDomParseMutex;             // Protects check-and-start sequence in startAsyncBrowserDomParse
 
 // Browser animation support - composite SVG with all cells animating live
 // Animation extraction happens in background thread, animations swapped atomically with DOM
@@ -102,7 +103,7 @@ static int g_lastClickIndex = -1;                     // Last clicked entry inde
 void signalHandler(int signum) {
     if (signum == SIGINT || signum == SIGTERM) {
         g_shutdownRequested.store(true);
-        std::cerr << "\nShutdown requested (signal " << signum << ")..." << std::endl;
+        // NOTE: std::cerr removed - not signal-safe. Main thread detects flag and prints message.
     }
 }
 
@@ -115,24 +116,28 @@ sk_sp<SkSVGDOM> makeSVGDOMWithFontSupport(SkStream& stream);
 
 // Start async parsing of browser SVG (called from main thread, non-blocking)
 void startAsyncBrowserDomParse(const std::string& svgContent) {
+    // CRITICAL: Protect entire check-and-start sequence to prevent race condition
+    // where two threads both check g_browserDomParsing (both false), then both try to start
+    std::lock_guard<std::mutex> lock(g_browserDomParseMutex);
+
     // If already parsing, skip (current parse will complete)
     if (g_browserDomParsing.load()) {
         return;
     }
 
+    // Join any previous thread before starting new one
+    if (g_browserDomParseThread.joinable()) {
+        g_browserDomParseThread.join();
+    }
+
     // Store SVG content for background thread
     {
-        std::lock_guard<std::mutex> lock(g_browserPendingSvgMutex);
+        std::lock_guard<std::mutex> svgLock(g_browserPendingSvgMutex);
         g_browserPendingSvg = svgContent;
     }
 
     g_browserDomParsing.store(true);
     g_browserDomReady.store(false);
-
-    // Join any previous thread before starting new one
-    if (g_browserDomParseThread.joinable()) {
-        g_browserDomParseThread.join();
-    }
 
     // Start background parsing thread
     g_browserDomParseThread = std::thread([]() {
@@ -207,9 +212,9 @@ bool trySwapBrowserDom() {
 
     // Swap pre-parsed animations (background thread already extracted them)
     // This is a fast vector swap, no regex parsing on main thread
+    // CRITICAL: Use std::scoped_lock to acquire both mutexes atomically (deadlock-free)
     {
-        std::lock_guard<std::mutex> lockPending(g_browserPendingAnimMutex);
-        std::lock_guard<std::mutex> lockActive(g_browserAnimMutex);
+        std::scoped_lock lock(g_browserPendingAnimMutex, g_browserAnimMutex);
         g_browserAnimations = std::move(g_browserPendingAnimations);
         g_browserAnimStartTime = std::chrono::steady_clock::now();
 
@@ -513,13 +518,15 @@ class SkiaParallelRenderer {
             frameBuffer.clear();
         }
 
-        // Clear executor (waits for pending tasks to complete)
+        // Clear executor (CRITICAL: reset() blocks until ALL worker threads have joined)
+        // SkExecutor destructor ensures all threads are stopped before returning.
+        // Only after this completes is it safe to clear workerCaches.
         if (executor) {
             executor.reset();
             SkExecutor::SetDefault(nullptr);
         }
 
-        // Clear worker caches (safe now that executor is stopped)
+        // Clear worker caches (safe now that executor threads have joined)
         {
             std::lock_guard<std::mutex> lock(workerCacheMutex);
             workerCaches.clear();
@@ -628,15 +635,15 @@ class SkiaParallelRenderer {
 
         std::thread::id threadId = std::this_thread::get_id();
 
-        // Get or create cached DOM and surface for this worker thread
-        // Keep lock held briefly to get reference, then check mode again
-        WorkerCache* cache = nullptr;
-        {
-            std::lock_guard<std::mutex> lock(workerCacheMutex);
-            // Double-check under lock - modeChanging means imminent clear()
-            if (modeChanging.load()) return;
-            cache = &workerCaches[threadId];
-        }
+        // CRITICAL: Hold lock for entire cache access to prevent use-after-free
+        // If we release lock early, another thread could call workerCaches.clear()
+        // invalidating our cache pointer while we're still using it.
+        std::lock_guard<std::mutex> lock(workerCacheMutex);
+
+        // Double-check under lock - modeChanging means imminent clear()
+        if (modeChanging.load()) return;
+
+        WorkerCache* cache = &workerCaches[threadId];
 
         // Parse SVG once per worker thread (first call only)
         // Use makeSVGDOMWithFontSupport to ensure SVG text elements render properly
@@ -1194,6 +1201,114 @@ std::string generateScreenshotFilename(int width, int height) {
     return ss.str();
 }
 
+// SVG loading error codes
+enum class SVGLoadError {
+    Success = 0,
+    FileSize,
+    FileOpen,
+    Validation,
+    Parse
+};
+
+// Load SVG file and update all state variables
+// Returns error code indicating success or specific failure type
+// Does NOT stop/restart renderers - caller must handle that
+// Caller uses error code to decide error handling strategy
+SVGLoadError loadSVGFile(const std::string& path,
+                         const char*& inputPath,
+                         std::string& rawSvgContent,
+                         std::vector<SMILAnimation>& animations,
+                         sk_sp<SkSVGDOM>& svgDom,
+                         int& svgWidth,
+                         int& svgHeight,
+                         float& aspectRatio,
+                         double& preBufferTotalDuration,
+                         size_t& preBufferTotalFrames,
+                         std::string& currentFilePath) {
+    // Validate file exists and size
+    size_t fileSize = getFileSize(path.c_str());
+    if (fileSize == 0 || fileSize > MAX_SVG_FILE_SIZE) {
+        std::cerr << "Error: Invalid file size for: " << path << std::endl;
+        return SVGLoadError::FileSize;
+    }
+
+    // Read file content
+    std::ifstream file(path, std::ios::binary);
+    if (!file) {
+        std::cerr << "Error: Cannot open file: " << path << std::endl;
+        return SVGLoadError::FileOpen;
+    }
+
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string originalContent = buffer.str();
+    file.close();
+
+    // Validate SVG content structure
+    if (!validateSVGContent(originalContent)) {
+        std::cerr << "Error: Invalid SVG file: " << path << std::endl;
+        return SVGLoadError::Validation;
+    }
+
+    // Preprocess SVG and extract animations
+    std::map<size_t, std::string> syntheticIds;
+    std::string processedContent = preprocessSVGForAnimation(originalContent, syntheticIds);
+    std::vector<SMILAnimation> newAnimations = extractAnimationsFromContent(processedContent);
+
+    // Parse with Skia
+    sk_sp<SkData> svgData = SkData::MakeWithCopy(processedContent.data(), processedContent.size());
+    std::unique_ptr<SkMemoryStream> svgStream = SkMemoryStream::Make(svgData);
+    sk_sp<SkSVGDOM> newSvgDom = makeSVGDOMWithFontSupport(*svgStream);
+
+    if (!newSvgDom) {
+        std::cerr << "Error: Failed to parse SVG with Skia: " << path << std::endl;
+        return SVGLoadError::Parse;
+    }
+
+    // Get SVG dimensions
+    SkSVGSVG* root = newSvgDom->getRoot();
+    if (!root) {
+        std::cerr << "Error: SVG has no root element: " << path << std::endl;
+        return SVGLoadError::Parse;
+    }
+
+    int newSvgWidth = 800;
+    int newSvgHeight = 600;
+
+    const auto& viewBox = root->getViewBox();
+    if (viewBox.isValid()) {
+        newSvgWidth = static_cast<int>(viewBox->width());
+        newSvgHeight = static_cast<int>(viewBox->height());
+    } else {
+        SkSize defaultSize = SkSize::Make(800, 600);
+        SkSize svgSize = root->intrinsicSize(SkSVGLengthContext(defaultSize));
+        newSvgWidth = (svgSize.width() > 0) ? static_cast<int>(svgSize.width()) : 800;
+        newSvgHeight = (svgSize.height() > 0) ? static_cast<int>(svgSize.height()) : 600;
+    }
+
+    // Calculate animation timing
+    double newMaxDuration = 1.0;
+    size_t newMaxFrames = 1;
+    for (const auto& anim : newAnimations) {
+        if (anim.duration > newMaxDuration) newMaxDuration = anim.duration;
+        if (anim.getFrameCount() > newMaxFrames) newMaxFrames = anim.getFrameCount();
+    }
+
+    // Success - update all state variables
+    currentFilePath = path;
+    inputPath = currentFilePath.c_str();
+    rawSvgContent = processedContent;
+    animations = std::move(newAnimations);
+    svgDom = newSvgDom;
+    svgWidth = newSvgWidth;
+    svgHeight = newSvgHeight;
+    aspectRatio = static_cast<float>(svgWidth) / svgHeight;
+    preBufferTotalDuration = newMaxDuration;
+    preBufferTotalFrames = newMaxFrames;
+
+    return SVGLoadError::Success;
+}
+
 int main(int argc, char* argv[]) {
     // Install signal handlers for graceful shutdown (Ctrl+C, kill)
     installSignalHandlers();
@@ -1460,6 +1575,11 @@ int main(int argc, char* argv[]) {
     }
     if (!typeface) {
         typeface = fontMgr->matchFamilyStyle(nullptr, SkFontStyle::Normal());
+    }
+    // Final fallback to prevent null pointer when creating SkFont
+    if (!typeface) {
+        std::cerr << "Warning: No font available for debug overlay, using default" << std::endl;
+        typeface = fontMgr->legacyMakeTypeface(nullptr, SkFontStyle::Normal());
     }
 
     // Debug font - 10pt base (40% larger than original 7pt), scaled for HiDPI
@@ -1900,117 +2020,58 @@ int main(int argc, char* argv[]) {
                         if (!newPath.empty() && fileExists(newPath.c_str())) {
                             std::cout << "\n=== Loading new SVG: " << newPath << " ===" << std::endl;
 
-                            // Step 1: Stop renderers to safely release SVG resources
+                            // Stop renderers to safely release SVG resources
                             threadedRenderer.stop();
                             parallelRenderer.stop();
 
-                            // Step 2: Load and validate new SVG file
-                            size_t newFileSize = getFileSize(newPath.c_str());
-                            if (newFileSize == 0 || newFileSize > MAX_SVG_FILE_SIZE) {
-                                std::cerr << "Error: Invalid file size for: " << newPath << std::endl;
-                                // Restart with old content
+                            // Load new SVG file using unified loading function
+                            SVGLoadError error = loadSVGFile(newPath, inputPath, rawSvgContent, animations, svgDom,
+                                                            svgWidth, svgHeight, aspectRatio,
+                                                            preBufferTotalDuration, preBufferTotalFrames,
+                                                            currentFilePath);
+
+                            if (error != SVGLoadError::Success) {
+                                // Handle errors based on type
+                                if (error == SVGLoadError::Validation || error == SVGLoadError::Parse) {
+                                    // Fatal errors - exit program (matches original behavior)
+                                    return 1;
+                                }
+                                // I/O errors (FileSize, FileOpen) - restart with old content
                                 parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
                                 threadedRenderer.start();
                             } else {
-                                std::ifstream newFile(newPath, std::ios::binary);
-                                if (!newFile) {
-                                    std::cerr << "Error: Cannot open file: " << newPath << std::endl;
-                                    parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-                                    threadedRenderer.start();
-                                } else {
-                                    std::stringstream newBuffer;
-                                    newBuffer << newFile.rdbuf();
-                                    std::string newOriginalContent = newBuffer.str();
-                                    newFile.close();
+                                // Success - reset stats and configure renderers
+                                g_animController.resetStats();
 
-                                    if (!validateSVGContent(newOriginalContent)) {
-                                        std::cerr << "Error: Invalid SVG file: " << newPath << std::endl;
-                                        return 1;
-                                    }
+                                parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                                                          animations, preBufferTotalDuration, preBufferTotalFrames);
+                                parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
 
-                                    // Step 3: Preprocess and extract animations
-                                    std::map<size_t, std::string> newSyntheticIds;
-                                    std::string newProcessedContent = preprocessSVGForAnimation(newOriginalContent, newSyntheticIds);
-                                    std::vector<SMILAnimation> newAnimations = extractAnimationsFromContent(newProcessedContent);
+                                threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                threadedRenderer.setTotalAnimationFrames(preBufferTotalFrames);
+                                threadedRenderer.start();
 
-                                    // Step 4: Parse with Skia
-                                    sk_sp<SkData> newSvgData = SkData::MakeWithCopy(newProcessedContent.data(), newProcessedContent.size());
-                                    std::unique_ptr<SkMemoryStream> newSvgStream = SkMemoryStream::Make(newSvgData);
-                                    sk_sp<SkSVGDOM> newSvgDom = makeSVGDOMWithFontSupport(*newSvgStream);
+                                // Reset animation timing state
+                                animationStartTime = Clock::now();
+                                animationStartTimeSteady = SteadyClock::now();
+                                pausedTime = 0;
+                                lastRenderedAnimFrame = 0;
+                                displayCycles = 0;
+                                framesDelivered = 0;
+                                framesSkipped = 0;
+                                framesRendered = 0;
+                                animationPaused = false;
 
-                                    if (!newSvgDom) {
-                                        std::cerr << "Error: Failed to parse SVG with Skia: " << newPath << std::endl;
-                                        return 1;
-                                    }
+                                // Update window title
+                                size_t lastSlash = newPath.find_last_of("/\\");
+                                std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
+                                std::string windowTitle = "SVG Player - " + filename;
+                                SDL_SetWindowTitle(window, windowTitle.c_str());
 
-                                    // Step 5: Update all state variables with new content
-                                    currentFilePath = newPath;
-                                    inputPath = currentFilePath.c_str();
-                                    rawSvgContent = newProcessedContent;
-                                    animations = std::move(newAnimations);
-                                    svgDom = newSvgDom;
-
-                                    // Get new SVG dimensions
-                                    SkSVGSVG* newRoot = svgDom->getRoot();
-                                    if (newRoot) {
-                                        const auto& newViewBox = newRoot->getViewBox();
-                                        if (newViewBox.isValid()) {
-                                            svgWidth = static_cast<int>(newViewBox->width());
-                                            svgHeight = static_cast<int>(newViewBox->height());
-                                        } else {
-                                            SkSize defaultSize = SkSize::Make(800, 600);
-                                            SkSize newSvgSize = newRoot->intrinsicSize(SkSVGLengthContext(defaultSize));
-                                            svgWidth = (newSvgSize.width() > 0) ? static_cast<int>(newSvgSize.width()) : 800;
-                                            svgHeight = (newSvgSize.height() > 0) ? static_cast<int>(newSvgSize.height()) : 600;
-                                        }
-                                        aspectRatio = static_cast<float>(svgWidth) / svgHeight;
-                                    }
-
-                                    // Step 6: Recalculate animation timing
-                                    double newMaxDuration = 1.0;
-                                    size_t newMaxFrames = 1;
-                                    for (const auto& anim : animations) {
-                                        if (anim.duration > newMaxDuration) newMaxDuration = anim.duration;
-                                        if (anim.getFrameCount() > newMaxFrames) newMaxFrames = anim.getFrameCount();
-                                    }
-                                    double newAnimFps = (newMaxDuration > 0 && newMaxFrames > 1) ? (newMaxFrames / newMaxDuration) : 24.0;
-                                    preBufferTotalDuration = newMaxDuration;
-                                    preBufferTotalFrames = newMaxFrames;
-
-                                    // Step 7: Reset animation controller stats
-                                    g_animController.resetStats();
-
-                                    // Step 8: Reconfigure and restart renderers with new content
-                                    parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
-                                                              animations, newMaxDuration, newMaxFrames);
-                                    parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-
-                                    threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
-                                    threadedRenderer.setTotalAnimationFrames(newMaxFrames);
-                                    threadedRenderer.start();
-
-                                    // Step 9: Reset animation timing state
-                                    animationStartTime = Clock::now();
-                                    animationStartTimeSteady = SteadyClock::now();
-                                    pausedTime = 0;
-                                    lastRenderedAnimFrame = 0;
-                                    displayCycles = 0;
-                                    framesDelivered = 0;
-                                    framesSkipped = 0;
-                                    framesRendered = 0;
-                                    animationPaused = false;
-
-                                    // Update window title - extract filename from newPath
-                                    size_t lastSlash = newPath.find_last_of("/\\");
-                                    std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
-                                    std::string windowTitle = "SVG Player - " + filename;
-                                    SDL_SetWindowTitle(window, windowTitle.c_str());
-
-                                    std::cout << "Loaded: " << newPath << std::endl;
-                                    std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
-                                    std::cout << "  Animations: " << animations.size() << std::endl;
-                                    std::cout << "  Duration: " << preBufferTotalDuration << "s, Frames: " << preBufferTotalFrames << std::endl;
-                                }
+                                std::cout << "Loaded: " << newPath << std::endl;
+                                std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
+                                std::cout << "  Animations: " << animations.size() << std::endl;
+                                std::cout << "  Duration: " << preBufferTotalDuration << "s, Frames: " << preBufferTotalFrames << std::endl;
                             }
                             skipStatsThisFrame = true;
                         } else if (!newPath.empty()) {
@@ -2228,90 +2289,64 @@ int main(int argc, char* argv[]) {
                             case svgplayer::HitTestResult::LoadButton:
                                 // Load button loads selected SVG (if one is selected)
                                 if (g_folderBrowser.canLoad()) {
-                                    const svgplayer::BrowserEntry* selected = g_folderBrowser.getSelectedEntry();
-                                    if (selected && selected->type == svgplayer::BrowserEntryType::SVGFile) {
+                                    std::optional<svgplayer::BrowserEntry> selected = g_folderBrowser.getSelectedEntry();
+                                    if (selected.has_value() && selected->type == svgplayer::BrowserEntryType::SVGFile) {
                                         std::cout << "\n=== Loading from browser (Load button): " << selected->fullPath << " ===" << std::endl;
                                         g_browserMode = false;
                                         g_browserSvgDom = nullptr;
                                         clearBrowserAnimations();
+
                                         static std::string currentFilePathLoad;
                                         std::string newPath = selected->fullPath;
                                         if (!newPath.empty() && fileExists(newPath.c_str())) {
+                                            // Stop renderers before loading
                                             threadedRenderer.stop();
                                             parallelRenderer.stop();
-                                            size_t newFileSize = getFileSize(newPath.c_str());
-                                            if (newFileSize > 0 && newFileSize <= MAX_SVG_FILE_SIZE) {
-                                                std::ifstream newFile(newPath, std::ios::binary);
-                                                if (newFile) {
-                                                    std::stringstream newBuffer;
-                                                    newBuffer << newFile.rdbuf();
-                                                    std::string newOriginalContent = newBuffer.str();
-                                                    newFile.close();
-                                                    if (validateSVGContent(newOriginalContent)) {
-                                                        std::map<size_t, std::string> newSyntheticIds;
-                                                        std::string newProcessedContent = preprocessSVGForAnimation(newOriginalContent, newSyntheticIds);
-                                                        std::vector<SMILAnimation> newAnimations = extractAnimationsFromContent(newProcessedContent);
-                                                        sk_sp<SkData> newSvgData = SkData::MakeWithCopy(newProcessedContent.data(), newProcessedContent.size());
-                                                        std::unique_ptr<SkMemoryStream> newSvgStream = SkMemoryStream::Make(newSvgData);
-                                                        sk_sp<SkSVGDOM> newSvgDom = makeSVGDOMWithFontSupport(*newSvgStream);
-                                                        if (newSvgDom) {
-                                                            currentFilePathLoad = newPath;
-                                                            inputPath = currentFilePathLoad.c_str();
-                                                            rawSvgContent = newProcessedContent;
-                                                            animations = std::move(newAnimations);
-                                                            svgDom = newSvgDom;
-                                                            SkSVGSVG* newRoot = svgDom->getRoot();
-                                                            if (newRoot) {
-                                                                const auto& newViewBox = newRoot->getViewBox();
-                                                                if (newViewBox.isValid()) {
-                                                                    svgWidth = static_cast<int>(newViewBox->width());
-                                                                    svgHeight = static_cast<int>(newViewBox->height());
-                                                                } else {
-                                                                    SkSize defaultSize = SkSize::Make(800, 600);
-                                                                    SkSize newSvgSize = newRoot->intrinsicSize(SkSVGLengthContext(defaultSize));
-                                                                    svgWidth = (newSvgSize.width() > 0) ? static_cast<int>(newSvgSize.width()) : 800;
-                                                                    svgHeight = (newSvgSize.height() > 0) ? static_cast<int>(newSvgSize.height()) : 600;
-                                                                }
-                                                                aspectRatio = static_cast<float>(svgWidth) / svgHeight;
-                                                            }
-                                                            double newMaxDuration = 1.0;
-                                                            size_t newMaxFrames = 1;
-                                                            for (const auto& anim : animations) {
-                                                                if (anim.duration > newMaxDuration) newMaxDuration = anim.duration;
-                                                                if (anim.getFrameCount() > newMaxFrames) newMaxFrames = anim.getFrameCount();
-                                                            }
-                                                            preBufferTotalDuration = newMaxDuration;
-                                                            preBufferTotalFrames = newMaxFrames;
-                                                            g_animController.resetStats();
-                                                            parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
-                                                                                      animations, newMaxDuration, newMaxFrames);
-                                                            parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-                                                            threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
-                                                            threadedRenderer.setTotalAnimationFrames(newMaxFrames);
-                                                            threadedRenderer.start();
-                                                            animationStartTime = Clock::now();
-                                                            animationStartTimeSteady = SteadyClock::now();
-                                                            pausedTime = 0;
-                                                            lastRenderedAnimFrame = 0;
-                                                            displayCycles = 0;
-                                                            framesDelivered = 0;
-                                                            framesSkipped = 0;
-                                                            framesRendered = 0;
-                                                            animationPaused = false;
-                                                            size_t lastSlash = newPath.find_last_of("/\\");
-                                                            std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
-                                                            std::string windowTitle = "SVG Player - " + filename;
-                                                            SDL_SetWindowTitle(window, windowTitle.c_str());
-                                                            std::cout << "Loaded: " << newPath << std::endl;
-                                                            std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
-                                                            std::cout << "  Animations: " << animations.size() << std::endl;
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            if (!svgDom) {
+
+                                            // Load SVG file using unified loading function
+                                            SVGLoadError error = loadSVGFile(newPath, inputPath, rawSvgContent, animations, svgDom,
+                                                                            svgWidth, svgHeight, aspectRatio,
+                                                                            preBufferTotalDuration, preBufferTotalFrames,
+                                                                            currentFilePathLoad);
+
+                                            if (error == SVGLoadError::Success) {
+                                                // Success - reset stats and configure renderers
+                                                g_animController.resetStats();
+
+                                                parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                                                                          animations, preBufferTotalDuration, preBufferTotalFrames);
                                                 parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+
+                                                threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                                threadedRenderer.setTotalAnimationFrames(preBufferTotalFrames);
                                                 threadedRenderer.start();
+
+                                                // Reset animation timing state
+                                                animationStartTime = Clock::now();
+                                                animationStartTimeSteady = SteadyClock::now();
+                                                pausedTime = 0;
+                                                lastRenderedAnimFrame = 0;
+                                                displayCycles = 0;
+                                                framesDelivered = 0;
+                                                framesSkipped = 0;
+                                                framesRendered = 0;
+                                                animationPaused = false;
+
+                                                // Update window title
+                                                size_t lastSlash = newPath.find_last_of("/\\");
+                                                std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
+                                                std::string windowTitle = "SVG Player - " + filename;
+                                                SDL_SetWindowTitle(window, windowTitle.c_str());
+
+                                                std::cout << "Loaded: " << newPath << std::endl;
+                                                std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
+                                                std::cout << "  Animations: " << animations.size() << std::endl;
+                                            } else {
+                                                // Loading failed - restart with old content if available
+                                                if (svgDom) {
+                                                    parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                                    threadedRenderer.start();
+                                                }
                                             }
                                         }
                                     }
@@ -2403,84 +2438,58 @@ int main(int argc, char* argv[]) {
                                                 g_browserMode = false;
                                                 g_browserSvgDom = nullptr;
                                                 clearBrowserAnimations();
+
                                                 static std::string currentFilePath;
                                                 std::string newPath = clickedEntry->fullPath;
                                                 if (!newPath.empty() && fileExists(newPath.c_str())) {
+                                                    // Stop renderers before loading
                                                     threadedRenderer.stop();
                                                     parallelRenderer.stop();
-                                                    size_t newFileSize = getFileSize(newPath.c_str());
-                                                    if (newFileSize > 0 && newFileSize <= MAX_SVG_FILE_SIZE) {
-                                                        std::ifstream newFile(newPath, std::ios::binary);
-                                                        if (newFile) {
-                                                            std::stringstream newBuffer;
-                                                            newBuffer << newFile.rdbuf();
-                                                            std::string newOriginalContent = newBuffer.str();
-                                                            newFile.close();
-                                                            if (validateSVGContent(newOriginalContent)) {
-                                                                std::map<size_t, std::string> newSyntheticIds;
-                                                                std::string newProcessedContent = preprocessSVGForAnimation(newOriginalContent, newSyntheticIds);
-                                                                std::vector<SMILAnimation> newAnimations = extractAnimationsFromContent(newProcessedContent);
-                                                                sk_sp<SkData> newSvgData = SkData::MakeWithCopy(newProcessedContent.data(), newProcessedContent.size());
-                                                                std::unique_ptr<SkMemoryStream> newSvgStream = SkMemoryStream::Make(newSvgData);
-                                                                sk_sp<SkSVGDOM> newSvgDom = makeSVGDOMWithFontSupport(*newSvgStream);
-                                                                if (newSvgDom) {
-                                                                    currentFilePath = newPath;
-                                                                    inputPath = currentFilePath.c_str();
-                                                                    rawSvgContent = newProcessedContent;
-                                                                    animations = std::move(newAnimations);
-                                                                    svgDom = newSvgDom;
-                                                                    SkSVGSVG* newRoot = svgDom->getRoot();
-                                                                    if (newRoot) {
-                                                                        const auto& newViewBox = newRoot->getViewBox();
-                                                                        if (newViewBox.isValid()) {
-                                                                            svgWidth = static_cast<int>(newViewBox->width());
-                                                                            svgHeight = static_cast<int>(newViewBox->height());
-                                                                        } else {
-                                                                            SkSize defaultSize = SkSize::Make(800, 600);
-                                                                            SkSize newSvgSize = newRoot->intrinsicSize(SkSVGLengthContext(defaultSize));
-                                                                            svgWidth = (newSvgSize.width() > 0) ? static_cast<int>(newSvgSize.width()) : 800;
-                                                                            svgHeight = (newSvgSize.height() > 0) ? static_cast<int>(newSvgSize.height()) : 600;
-                                                                        }
-                                                                        aspectRatio = static_cast<float>(svgWidth) / svgHeight;
-                                                                    }
-                                                                    double newMaxDuration = 1.0;
-                                                                    size_t newMaxFrames = 1;
-                                                                    for (const auto& anim : animations) {
-                                                                        if (anim.duration > newMaxDuration) newMaxDuration = anim.duration;
-                                                                        if (anim.getFrameCount() > newMaxFrames) newMaxFrames = anim.getFrameCount();
-                                                                    }
-                                                                    preBufferTotalDuration = newMaxDuration;
-                                                                    preBufferTotalFrames = newMaxFrames;
-                                                                    g_animController.resetStats();
-                                                                    parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
-                                                                                              animations, newMaxDuration, newMaxFrames);
-                                                                    parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-                                                                    threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
-                                                                    threadedRenderer.setTotalAnimationFrames(newMaxFrames);
-                                                                    threadedRenderer.start();
-                                                                    animationStartTime = Clock::now();
-                                                                    animationStartTimeSteady = SteadyClock::now();
-                                                                    pausedTime = 0;
-                                                                    lastRenderedAnimFrame = 0;
-                                                                    displayCycles = 0;
-                                                                    framesDelivered = 0;
-                                                                    framesSkipped = 0;
-                                                                    framesRendered = 0;
-                                                                    animationPaused = false;
-                                                                    size_t lastSlash = newPath.find_last_of("/\\");
-                                                                    std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
-                                                                    std::string windowTitle = "SVG Player - " + filename;
-                                                                    SDL_SetWindowTitle(window, windowTitle.c_str());
-                                                                    std::cout << "Loaded: " << newPath << std::endl;
-                                                                    std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
-                                                                    std::cout << "  Animations: " << animations.size() << std::endl;
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    if (!svgDom) {
+
+                                                    // Load SVG file using unified loading function
+                                                    SVGLoadError error = loadSVGFile(newPath, inputPath, rawSvgContent, animations, svgDom,
+                                                                                    svgWidth, svgHeight, aspectRatio,
+                                                                                    preBufferTotalDuration, preBufferTotalFrames,
+                                                                                    currentFilePath);
+
+                                                    if (error == SVGLoadError::Success) {
+                                                        // Success - reset stats and configure renderers
+                                                        g_animController.resetStats();
+
+                                                        parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                                                                                  animations, preBufferTotalDuration, preBufferTotalFrames);
                                                         parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+
+                                                        threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                                        threadedRenderer.setTotalAnimationFrames(preBufferTotalFrames);
                                                         threadedRenderer.start();
+
+                                                        // Reset animation timing state
+                                                        animationStartTime = Clock::now();
+                                                        animationStartTimeSteady = SteadyClock::now();
+                                                        pausedTime = 0;
+                                                        lastRenderedAnimFrame = 0;
+                                                        displayCycles = 0;
+                                                        framesDelivered = 0;
+                                                        framesSkipped = 0;
+                                                        framesRendered = 0;
+                                                        animationPaused = false;
+
+                                                        // Update window title
+                                                        size_t lastSlash = newPath.find_last_of("/\\");
+                                                        std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
+                                                        std::string windowTitle = "SVG Player - " + filename;
+                                                        SDL_SetWindowTitle(window, windowTitle.c_str());
+
+                                                        std::cout << "Loaded: " << newPath << std::endl;
+                                                        std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
+                                                        std::cout << "  Animations: " << animations.size() << std::endl;
+                                                    } else {
+                                                        // Loading failed - restart with old content if available
+                                                        if (svgDom) {
+                                                            parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                                            threadedRenderer.start();
+                                                        }
                                                     }
                                                 }
                                             }

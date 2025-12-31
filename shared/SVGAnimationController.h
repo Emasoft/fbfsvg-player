@@ -78,7 +78,9 @@ struct AnimationStats {
 };
 
 // SVGAnimationController - Main class for SVG animation playback
-// Thread-safe for single-writer/multi-reader access
+// Thread-safety: This class is NOT thread-safe. All method calls must be
+// serialized by the caller. Typically, all methods should be called from
+// the main/UI thread, or protected by an external mutex.
 class SVGAnimationController {
 public:
     // === Initialization ===
@@ -89,9 +91,9 @@ public:
     SVGAnimationController(const SVGAnimationController&) = delete;
     SVGAnimationController& operator=(const SVGAnimationController&) = delete;
 
-    // Enable move
-    SVGAnimationController(SVGAnimationController&&) noexcept = default;
-    SVGAnimationController& operator=(SVGAnimationController&&) noexcept = default;
+    // Disable move (contains std::mutex which cannot be moved)
+    SVGAnimationController(SVGAnimationController&&) = delete;
+    SVGAnimationController& operator=(SVGAnimationController&&) = delete;
 
     // === SVG Content & Parsing ===
 
@@ -352,6 +354,9 @@ private:
     StateChangeCallback stateChangeCallback_;
     LoopCallback loopCallback_;
     EndCallback endCallback_;
+
+    // Thread safety
+    mutable std::mutex mutex_;
 
     // Internal helpers
     void clampCurrentTime();

@@ -156,8 +156,21 @@ bool SVGAnimationController::loadFromContent(const std::string& svgContent) {
     totalFrames_ = maxFrames > 0 ? maxFrames : 1;
     if (duration_ > 0 && totalFrames_ > 0) {
         frameRate_ = static_cast<float>(totalFrames_) / static_cast<float>(duration_);
+        frameRate_ = std::clamp(frameRate_, 1.0f, 240.0f);  // Reasonable bounds
     } else {
         frameRate_ = 30.0f;  // Fallback default
+    }
+
+    // Validate frame rate consistency across animations
+    for (const auto& anim : animations_) {
+        if (anim.values.size() > 0 && anim.duration > 0) {
+            float animFps = static_cast<float>(anim.values.size()) / static_cast<float>(anim.duration);
+            if (std::abs(animFps - frameRate_) > 0.1f) {
+                std::cerr << "Warning: Animation for " << anim.targetId
+                          << " has different frame rate (" << animFps
+                          << " vs " << frameRate_ << ")" << std::endl;
+            }
+        }
     }
 
     loaded_ = true;
@@ -608,16 +621,20 @@ void SVGAnimationController::handleLoopBehavior() {
             break;
 
         case RepeatMode::Loop:
-            // Loop back to start when reaching end
+            // Loop back to start when reaching end (using subtraction for better precision)
             if (currentTime_ >= duration_) {
-                currentTime_ = fmod(currentTime_, duration_);
-                completedLoops_++;
+                while (currentTime_ >= duration_) {
+                    currentTime_ -= duration_;
+                    completedLoops_++;
+                }
                 if (loopCallback_) {
                     loopCallback_(completedLoops_);
                 }
             } else if (currentTime_ < 0) {
-                currentTime_ = duration_ + fmod(currentTime_, duration_);
-                completedLoops_++;
+                while (currentTime_ < 0) {
+                    currentTime_ += duration_;
+                    completedLoops_++;
+                }
                 if (loopCallback_) {
                     loopCallback_(completedLoops_);
                 }
@@ -687,7 +704,8 @@ double SVGAnimationController::parseDuration(const std::string& durStr) {
     // Parse the numeric value
     try {
         value = std::stod(durStr.substr(0, i));
-    } catch (...) {
+    } catch (const std::exception& e) {
+        std::cerr << "Warning: Failed to parse duration '" << durStr << "': " << e.what() << std::endl;
         return 0;
     }
 
@@ -894,7 +912,9 @@ std::vector<SMILAnimation> SVGAnimationController::parseAnimations(const std::st
             if (!anim.repeat && !repeatStr.empty()) {
                 try {
                     anim.repeat = (std::stod(repeatStr) > 1);
-                } catch (...) {}
+                } catch (const std::exception& e) {
+                    std::cerr << "Warning: Failed to parse repeatCount '" << repeatStr << "': " << e.what() << std::endl;
+                }
             }
         }
 

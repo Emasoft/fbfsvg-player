@@ -16,6 +16,10 @@ struct CompositorCell {
     std::string label;          // Optional label below cell
     float originalWidth;        // Original SVG width
     float originalHeight;       // Original SVG height
+    float viewBoxMinX = 0.0f;   // ViewBox minX coordinate
+    float viewBoxMinY = 0.0f;   // ViewBox minY coordinate
+    float viewBoxWidth = 0.0f;  // ViewBox width
+    float viewBoxHeight = 0.0f; // ViewBox height
 };
 
 // Grid composition configuration

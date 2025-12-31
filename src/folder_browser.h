@@ -11,6 +11,7 @@
 #include <atomic>
 #include <mutex>
 #include <memory>
+#include <optional>
 
 namespace svgplayer {
 
@@ -51,7 +52,7 @@ struct GridCell {
     int index;                  // Cell index
     float x, y;                 // Top-left position
     float width, height;        // Cell dimensions
-    BrowserEntry* entry;        // Pointer to entry (nullptr if empty)
+    int entryIndex = -1;        // Index into currentPageEntries_ (-1 if empty)
 };
 
 // UI button regions for hit testing
@@ -173,7 +174,7 @@ public:
         std::lock_guard<std::mutex> lock(stateMutex_);
         return selectedIndex_;
     }
-    const BrowserEntry* getSelectedEntry() const;
+    std::optional<BrowserEntry> getSelectedEntry() const;
     bool hasSelection() const {
         std::lock_guard<std::mutex> lock(stateMutex_);
         return selectedIndex_ >= 0;
@@ -309,6 +310,7 @@ private:
     std::atomic<bool> scanComplete_{false};        // True when scan finished (main thread polls)
     std::thread scanThread_;                       // Background scanning thread
     std::mutex scanMutex_;                         // Protects pendingEntries_
+    std::mutex pendingMutex_;                      // Protects pendingDir_ and pendingAddToHistory_
     std::vector<BrowserEntry> pendingEntries_;     // Results from background scan
     std::string pendingDir_;                       // Directory being scanned
     bool pendingAddToHistory_ = false;             // Whether to add to history when complete
