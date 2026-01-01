@@ -38,7 +38,7 @@
 #include "modules/svg/include/SkSVGNode.h"
 #include "modules/svg/include/SkSVGRenderContext.h"
 #include "modules/svg/include/SkSVGSVG.h"
-#include "src/core/SkTaskGroup.h"  // Skia's high-level task management
+#include "src/core/SkTaskGroup.h"  // Required for parallel tile rendering (see line 384)
 
 // Shared animation controller for cross-platform SMIL parsing and playback
 #include "../shared/SVGAnimationController.h"
@@ -64,7 +64,38 @@
 static std::atomic<bool> g_shutdownRequested{false};
 
 // =============================================================================
-// Folder browser state
+// Folder Browser State Globals
+//
+// The folder browser runs with asynchronous operations to keep the UI responsive:
+//
+// Thread Safety Model:
+// - g_browserDomParseMutex: Protects DOM parsing state (check-and-start atomicity)
+// - g_browserPendingAnimMutex: Protects pending animations being parsed in background
+// - g_browserAnimMutex: Protects active animations being read by render loop
+// - g_browserDomMutex: Protects pending DOM being parsed in background
+// - g_browserScanMessageMutex: Protects scan progress messages
+//
+// Async Operations:
+// 1. Directory Scanning: Background thread scans folder for SVG files
+//    - g_browserAsyncScanning: Indicates scan in progress
+//    - g_browserScanProgress: Atomic progress counter (0.0 to 1.0)
+//    - g_browserScanMessage: Status message (mutex-protected)
+//
+// 2. DOM Parsing: Background thread parses browser SVG (see startAsyncBrowserDomParse)
+//    - g_browserDomParsing: Atomic flag indicating parse in progress
+//    - g_browserDomReady: Atomic flag indicating new DOM ready to swap
+//    - g_browserPendingDom: DOM being parsed (mutex-protected)
+//    - g_browserPendingSvg: SVG content being parsed (mutex-protected)
+//
+// 3. Animation Extraction: Background thread extracts SMIL animations
+//    - g_browserPendingAnimations: Parsed animations (mutex-protected)
+//    - g_browserAnimations: Active animations for render loop (mutex-protected)
+//    - g_browserAnimStartTime: Time origin for animation playback
+//
+// Main Thread Responsibilities:
+// - Never blocks on parsing or scanning (all done in background threads)
+// - Atomically swaps DOM/animations when ready (see main loop)
+// - Handles user input and rendering
 // =============================================================================
 static bool g_browserMode = false;
 static bool g_browserAsyncScanning = false;  // True when async scan in progress
@@ -96,8 +127,8 @@ static std::mutex g_browserPendingAnimMutex;                         // Protects
 
 // Double-click detection for folder browser
 static const Uint32 DOUBLE_CLICK_THRESHOLD_MS = 400;  // Max time between clicks for double-click
-static Uint32 g_lastClickTime = 0;                    // SDL_GetTicks() at last click
-static int g_lastClickIndex = -1;                     // Last clicked entry index
+static Uint64 g_browserLastClickTime = 0;             // SDL_GetTicks64() at last click (no 49-day wraparound)
+static int g_browserLastClickIndex = -1;              // Last clicked entry index
 
 // Signal handler for graceful shutdown (SIGINT, SIGTERM)
 void signalHandler(int signum) {
@@ -151,6 +182,15 @@ void startAsyncBrowserDomParse(const std::string& svgContent) {
             // CRITICAL: Preprocess SVG FIRST to inject synthetic IDs into <use> elements
             // without id attributes. This must happen BEFORE DOM parsing so both the DOM
             // and animation controller see the same content with synthetic IDs.
+            //
+            // WHY PREPROCESSING HAPPENS TWICE (intentional):
+            // 1. HERE: getPreprocessedContent() adds synthetic IDs to DOM structure
+            // 2. BELOW (loadFromContent): Preprocessing is skipped (content already preprocessed)
+            //    but SMIL animation extraction requires loadFromContent() call
+            //
+            // This is NOT redundant - the first preprocessing modifies the DOM, the second
+            // extracts animations from that modified DOM. Both operations need the same
+            // preprocessed content to maintain ID consistency.
             svgplayer::SVGAnimationController localController;
             std::string preprocessedSvg = localController.getPreprocessedContent(svgToParse);
 
@@ -171,7 +211,7 @@ void startAsyncBrowserDomParse(const std::string& svgContent) {
             sk_sp<SkSVGDOM> newDom = makeSVGDOMWithFontSupport(*browserStream);
 
             // Extract SMIL animations from same preprocessed content
-            // loadFromContent will see the already-preprocessed content is a no-op for preprocessing
+            // Note: loadFromContent() detects content is already preprocessed and skips re-preprocessing
             localController.loadFromContent(preprocessedSvg);
             std::vector<svgplayer::SMILAnimation> parsedAnimations = localController.getAnimations();
 
@@ -271,6 +311,9 @@ size_t getFileSize(const char* path) {
 
 // Maximum SVG file size (100 MB - reasonable limit to prevent memory issues)
 static constexpr size_t MAX_SVG_FILE_SIZE = 100 * 1024 * 1024;
+
+// Debug overlay scaling factor (40% larger than original to match font size)
+static constexpr float DEBUG_OVERLAY_SCALE = 1.4f;
 
 // Validate SVG content (basic check for SVG structure)
 bool validateSVGContent(const std::string& content) {
@@ -405,8 +448,8 @@ class SkiaParallelRenderer {
     };
     std::mutex bufferMutex;
     std::map<size_t, std::shared_ptr<RenderedFrame>> frameBuffer;
-    static constexpr size_t MAX_BUFFER_SIZE = 30;
-    static constexpr size_t LOOKAHEAD_FRAMES = 10;  // How many frames to pre-render ahead
+    static constexpr size_t MAX_BUFFER_SIZE = 30;    // 30 frames @ 1920x1080 RGBA = ~240MB peak memory
+    static constexpr size_t LOOKAHEAD_FRAMES = 10;   // Pre-render up to 10 frames ahead (~80MB @ 1080p)
 
     // Shared rendering resources
     std::string svgData;
@@ -1184,8 +1227,15 @@ bool saveScreenshotPPM(const std::vector<uint32_t>& pixels, int width, int heigh
     }
 
     file.write(reinterpret_cast<const char*>(rgb.data()), rgb.size());
-    file.close();
 
+    // Verify write succeeded before closing
+    if (!file.good()) {
+        std::cerr << "Failed to write screenshot data to: " << filename << std::endl;
+        file.close();
+        return false;
+    }
+
+    file.close();
     return true;
 }
 
@@ -1195,8 +1245,12 @@ std::string generateScreenshotFilename(int width, int height) {
     auto time = std::chrono::system_clock::to_time_t(now);
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
+    // Use localtime_r for thread safety (POSIX standard)
+    struct tm timeinfo;
+    localtime_r(&time, &timeinfo);
+
     std::ostringstream ss;
-    ss << "screenshot_" << std::put_time(std::localtime(&time), "%Y%m%d_%H%M%S") << "_" << std::setfill('0')
+    ss << "screenshot_" << std::put_time(&timeinfo, "%Y%m%d_%H%M%S") << "_" << std::setfill('0')
        << std::setw(3) << ms.count() << "_" << width << "x" << height << ".ppm";
     return ss.str();
 }
@@ -1241,6 +1295,10 @@ SVGLoadError loadSVGFile(const std::string& path,
 
     std::stringstream buffer;
     buffer << file.rdbuf();
+    if (!buffer || buffer.fail()) {
+        std::cerr << "Error: Failed to read file content: " << path << std::endl;
+        return SVGLoadError::FileOpen;
+    }
     std::string originalContent = buffer.str();
     file.close();
 
@@ -1555,6 +1613,8 @@ int main(int argc, char* argv[]) {
     SDL_GetRendererOutputSize(renderer, &rendererW, &rendererH);
     // HiDPI scale = renderer pixels / window logical pixels
     // For fullscreen: use createWidth/Height (native display), for windowed: use windowWidth/Height
+    // Prevent division by zero (should never happen, but defensive programming)
+    if (createWidth == 0) createWidth = 1;
     float hiDpiScale = static_cast<float>(rendererW) / createWidth;
     std::cout << "HiDPI scale factor: " << std::fixed << std::setprecision(4) << hiDpiScale << std::endl;
 
@@ -2033,12 +2093,15 @@ int main(int argc, char* argv[]) {
                             if (error != SVGLoadError::Success) {
                                 // Handle errors based on type
                                 if (error == SVGLoadError::Validation || error == SVGLoadError::Parse) {
-                                    // Fatal errors - exit program (matches original behavior)
-                                    return 1;
+                                    // Non-fatal validation/parse errors - restart with old content
+                                    std::cerr << "SVG validation/parse error, reverting to previous content" << std::endl;
+                                    parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                    threadedRenderer.start();
+                                } else {
+                                    // I/O errors (FileSize, FileOpen) - restart with old content
+                                    parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                    threadedRenderer.start();
                                 }
-                                // I/O errors (FileSize, FileOpen) - restart with old content
-                                parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-                                threadedRenderer.start();
                             } else {
                                 // Success - reset stats and configure renderers
                                 g_animController.resetStats();
@@ -2136,7 +2199,8 @@ int main(int argc, char* argv[]) {
                     // Debug: trace mouse motion events even when browser is not ready
                     {
                         static int motionDebugCounter = 0;
-                        if (++motionDebugCounter % 120 == 0) {  // Every 2 seconds at 60fps
+                        motionDebugCounter = (motionDebugCounter + 1) % 1000000;  // Prevent overflow
+                        if (motionDebugCounter % 120 == 0) {  // Every 2 seconds at 60fps
                             std::cout << "MOTION: browserMode=" << g_browserMode
                                       << ", svgDom=" << (g_browserSvgDom ? "OK" : "NULL") << std::endl;
                         }
@@ -2153,7 +2217,8 @@ int main(int argc, char* argv[]) {
 
                         // Debug: trace hover coordinates (every 30 events to catch issues)
                         static int hoverDebugCounter = 0;
-                        if (++hoverDebugCounter % 30 == 0) {
+                        hoverDebugCounter = (hoverDebugCounter + 1) % 1000000;  // Prevent overflow
+                        if (hoverDebugCounter % 30 == 0) {
                             std::cout << "Hover: win(" << event.motion.x << "," << event.motion.y
                                       << ") -> render(" << hoverX << "," << hoverY
                                       << ") scale=" << scaleX << "x" << scaleY
@@ -2207,16 +2272,16 @@ int main(int argc, char* argv[]) {
                         svgplayer::HitTestResult hitResult = g_folderBrowser.hitTest(clickX, clickY, &clickedEntry, &clickedBreadcrumbPath);
 
                         // Detect double-click (for folder navigation)
-                        Uint32 currentTime = SDL_GetTicks();
+                        Uint64 currentTime = SDL_GetTicks64();  // No 49-day wraparound with Uint64
                         bool isDoubleClick = false;
                         int currentClickIndex = clickedEntry ? clickedEntry->gridIndex : -1;
                         if (hitResult == svgplayer::HitTestResult::Entry && currentClickIndex >= 0) {
-                            if (currentClickIndex == g_lastClickIndex &&
-                                (currentTime - g_lastClickTime) <= DOUBLE_CLICK_THRESHOLD_MS) {
+                            if (currentClickIndex == g_browserLastClickIndex &&
+                                (currentTime - g_browserLastClickTime) <= DOUBLE_CLICK_THRESHOLD_MS) {
                                 isDoubleClick = true;
                             }
-                            g_lastClickIndex = currentClickIndex;
-                            g_lastClickTime = currentTime;
+                            g_browserLastClickIndex = currentClickIndex;
+                            g_browserLastClickTime = currentTime;
                         }
 
                         // Lambda to mark browser dirty after any state change (non-blocking)
@@ -2567,24 +2632,24 @@ int main(int argc, char* argv[]) {
         for (const auto& anim : animations) {
             std::string newValue = anim.getCurrentValue(animTime);
 
-            // CRITICAL FIX: Frame index calculation must match PreBuffer's calculation
-            // PreBuffer pre-renders frames using GLOBAL frame index based on time ratio
-            // Direct mode uses per-animation frame index
+            // SMIL-compliant time-based frame calculation (consistent across modes)
+            // Both PreBuffer and Direct modes use the same time-based formula
             if (threadedRenderer.isPreBufferMode() && preBufferTotalDuration > 0) {
                 // PreBuffer mode: calculate GLOBAL frame index from time ratio
                 // This MUST match parallelRenderer's frame calculation:
                 // framePtr->elapsedTimeSeconds = (frameIndex / totalFrameCount) * totalDuration
                 // Inverting: frameIndex = floor((elapsedTime / totalDuration) * totalFrameCount)
                 double timeRatio = animTime / preBufferTotalDuration;
-                // Wrap around for looping animations
-                timeRatio = timeRatio - std::floor(timeRatio);
+                // Wrap around for looping animations (use fmod for better precision)
+                timeRatio = std::fmod(timeRatio, 1.0);
                 currentFrameIndex = static_cast<size_t>(std::floor(timeRatio * preBufferTotalFrames));
                 // Clamp to valid range
                 if (currentFrameIndex >= preBufferTotalFrames) {
                     currentFrameIndex = preBufferTotalFrames - 1;
                 }
             } else {
-                // Direct mode: per-animation frame index
+                // Direct mode: use same time-based calculation as PreBuffer
+                // getCurrentFrameIndex() internally uses time-based calculation consistent with above
                 currentFrameIndex = anim.getCurrentFrameIndex(animTime);
             }
             lastFrameValue = newValue;
@@ -2592,7 +2657,8 @@ int main(int argc, char* argv[]) {
             // Track frame skips (for sync verification)
             if (currentFrameIndex != lastRenderedAnimFrame) {
                 size_t expectedNext = (lastRenderedAnimFrame + 1) % anim.values.size();
-                if (currentFrameIndex != expectedNext && lastRenderedAnimFrame != 0) {
+                // Only check for skips after we've rendered at least one frame (avoids false positives on first frame)
+                if (currentFrameIndex != expectedNext && framesRendered > 0) {
                     // We skipped one or more animation frames
                     size_t skipped = 0;
                     if (currentFrameIndex > lastRenderedAnimFrame) {
@@ -2640,8 +2706,9 @@ int main(int argc, char* argv[]) {
                 std::cout << "Browser entries: " << g_folderBrowser.getCurrentPageEntries().size() << std::endl;
             }
 
-            // Note: hasNewReadyThumbnails() check is handled internally by
-            // regenerateBrowserSVGIfNeeded() - don't duplicate it here to avoid
+            // Note: hasNewReadyThumbnails() is consumed inside regenerateBrowserSVGIfNeeded()
+            // which returns true if browser SVG was regenerated. The atomic flag is checked
+            // and cleared atomically within that function - don't duplicate it here to avoid
             // consuming the atomic flag twice
 
             // Update click feedback animation (decays each frame)
@@ -2693,15 +2760,18 @@ int main(int argc, char* argv[]) {
 
                 // Apply animations without holding mutex (DOM ops can be slow)
                 if (!animSnapshot.empty()) {
-                    auto now = std::chrono::steady_clock::now();
-                    double elapsedSeconds = std::chrono::duration<double>(now - animStartSnapshot).count();
+                    // Skip animation updates when paused - values haven't changed
+                    if (!animationPaused) {
+                        auto now = std::chrono::steady_clock::now();
+                        double elapsedSeconds = std::chrono::duration<double>(now - animStartSnapshot).count();
 
-                    for (const auto& anim : animSnapshot) {
-                        if (!anim.targetId.empty() && !anim.attributeName.empty() && !anim.values.empty()) {
-                            std::string value = anim.getCurrentValue(elapsedSeconds);
-                            sk_sp<SkSVGNode>* nodePtr = g_browserSvgDom->findNodeById(anim.targetId.c_str());
-                            if (nodePtr && *nodePtr) {
-                                (*nodePtr)->setAttribute(anim.attributeName.c_str(), value.c_str());
+                        for (const auto& anim : animSnapshot) {
+                            if (!anim.targetId.empty() && !anim.attributeName.empty() && !anim.values.empty()) {
+                                std::string value = anim.getCurrentValue(elapsedSeconds);
+                                sk_sp<SkSVGNode>* nodePtr = g_browserSvgDom->findNodeById(anim.targetId.c_str());
+                                if (nodePtr && *nodePtr) {
+                                    (*nodePtr)->setAttribute(anim.attributeName.c_str(), value.c_str());
+                                }
                             }
                         }
                     }
@@ -2823,10 +2893,10 @@ int main(int argc, char* argv[]) {
             double fps = (frameCount > 0) ? frameCount / totalElapsed : 0;
             double instantFps = (frameTimes.last() > 0) ? 1000.0 / frameTimes.last() : 0;
 
-            // Debug overlay layout constants - scaled 40% larger to match font
-            float lineHeight = 13 * hiDpiScale;   // Was 9, now 13 (40% larger)
-            float padding = 3 * hiDpiScale;       // Was 2, now 3 (40% larger)
-            float labelWidth = 112 * hiDpiScale;  // Was 80, now 112 (40% larger)
+            // Debug overlay layout constants - scaled by DEBUG_OVERLAY_SCALE to match font
+            float lineHeight = static_cast<float>(9 * DEBUG_OVERLAY_SCALE) * hiDpiScale;
+            float padding = static_cast<float>(2 * DEBUG_OVERLAY_SCALE) * hiDpiScale;
+            float labelWidth = static_cast<float>(80 * DEBUG_OVERLAY_SCALE) * hiDpiScale;
 
             // === PASS 1: Build all debug lines and measure max width ===
             // Line types: 0=normal, 1=highlight, 2=anim, 3=key, 4=gap_small, 5=gap_large, 6=single
@@ -2839,22 +2909,27 @@ int main(int argc, char* argv[]) {
             std::vector<DebugLine> lines;
             std::ostringstream oss;
 
-            // Helper to add lines
+            // Helper to add debug lines - unified interface for all line types
+            // type: 0=normal, 1=highlight, 2=anim, 3=key, 4=gap_small, 5=gap_large, 6=single
+            auto addDebugLine = [&](int type, const std::string& label = "", const std::string& value = "", const std::string& key = "") {
+                lines.push_back({type, label, value, key});
+            };
+            // Convenience wrappers for common types
             auto addLine = [&](const std::string& label, const std::string& value) {
-                lines.push_back({0, label, value, ""});
+                addDebugLine(0, label, value);
             };
             auto addHighlight = [&](const std::string& label, const std::string& value) {
-                lines.push_back({1, label, value, ""});
+                addDebugLine(1, label, value);
             };
             auto addAnim = [&](const std::string& label, const std::string& value) {
-                lines.push_back({2, label, value, ""});
+                addDebugLine(2, label, value);
             };
             auto addKey = [&](const std::string& key, const std::string& label, const std::string& value) {
-                lines.push_back({3, label, value, key});
+                addDebugLine(3, label, value, key);
             };
-            auto addSmallGap = [&]() { lines.push_back({4, "", "", ""}); };
-            auto addLargeGap = [&]() { lines.push_back({5, "", "", ""}); };
-            auto addSingle = [&](const std::string& text) { lines.push_back({6, text, "", ""}); };
+            auto addSmallGap = [&]() { addDebugLine(4); };
+            auto addLargeGap = [&]() { addDebugLine(5); };
+            auto addSingle = [&](const std::string& text) { addDebugLine(6, text); };
 
             // Build all lines - FPS and frame time first
             oss.str("");
@@ -2999,6 +3074,7 @@ int main(int argc, char* argv[]) {
                     addLine("Frames skipped:", oss.str());
 
                 if (framesRendered + framesSkipped > 0) {
+                    // Note: Assumes all animations have same frame count/duration (enforced during load)
                     double skipRate = 100.0 * framesSkipped / (framesRendered + framesSkipped);
                     oss.str("");
                     oss << std::fixed << std::setprecision(1) << skipRate << "%";
@@ -3139,8 +3215,14 @@ int main(int argc, char* argv[]) {
                 uint8_t* dst = static_cast<uint8_t*>(pixels);
                 size_t rowBytes = renderWidth * 4;
 
-                for (int row = 0; row < renderHeight; row++) {
-                    memcpy(dst + row * pitch, src + row * pixmap.rowBytes(), rowBytes);
+                // Optimize: single memcpy if pitch matches rowBytes (common case)
+                if (pitch == static_cast<int>(pixmap.rowBytes())) {
+                    memcpy(dst, src, rowBytes * renderHeight);
+                } else {
+                    // Row-by-row copy needed when pitch differs (e.g., aligned stride)
+                    for (int row = 0; row < renderHeight; row++) {
+                        memcpy(dst + row * pitch, src + row * pixmap.rowBytes(), rowBytes);
+                    }
                 }
 
                 SDL_UnlockTexture(texture);
@@ -3177,8 +3259,9 @@ int main(int argc, char* argv[]) {
             }
         } else {
             // No new frame - yield CPU briefly to prevent busy-spinning
+            // Increased from 1ms to 5ms to reduce CPU usage when idle
             auto idleStart = Clock::now();
-            SDL_Delay(1);
+            SDL_Delay(5);
             auto idleEnd = Clock::now();
             DurationMs idleTime = idleEnd - idleStart;
             idleTimes.add(idleTime.count());

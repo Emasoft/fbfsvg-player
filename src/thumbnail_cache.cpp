@@ -115,8 +115,9 @@ void ThumbnailCache::processLoadRequest(const ThumbnailLoadRequest& req) {
         auto it = cache_.find(req.filePath);
         if (it != cache_.end() &&
             (it->second.state == ThumbnailState::Ready ||
-             it->second.state == ThumbnailState::Loading)) {
-            return;  // Already processed
+             it->second.state == ThumbnailState::Loading ||
+             it->second.state == ThumbnailState::Pending)) {
+            return;  // Already processed or being processed
         }
 
         // Mark as loading
@@ -354,6 +355,10 @@ std::string ThumbnailCache::generateThumbnailSVG(const std::string& svgPath,
 
     // Full processing for normal-sized files
     std::string prefixedContent = SVGGridCompositor::prefixSVGIds(actualContent, prefix);
+    if (prefixedContent.empty() && !actualContent.empty()) {
+        std::cerr << "[ThumbnailCache] Warning: prefixSVGIds returned empty for " << svgPath << std::endl;
+        prefixedContent = actualContent;  // Fallback to unprefixed
+    }
 
     // Extract FULL viewBox dimensions (including minX, minY offset)
     // Critical: Some SVGs have viewBox="100 100 200 200" - content starts at (100,100)

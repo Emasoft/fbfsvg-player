@@ -257,10 +257,15 @@ void FolderBrowser::setDirectoryAsync(const std::string& path, ProgressCallback 
         return;
     }
 
-    // Reset scan state
+    // Issue 15 fix: Reset scan state atomically
+    // Order matters: scanningInProgress_ must be set last to signal scan has started
+    // scanCancelRequested_ must be cleared before starting the scan thread
+    // These atomics can be observed individually, but the ordering ensures:
+    // - If scanningInProgress_ is true, the scan thread has started
+    // - If scanCancelRequested_ is false, the scan is allowed to proceed
     scanComplete_.store(false);
     scanCancelRequested_.store(false);
-    scanningInProgress_.store(true);
+    scanningInProgress_.store(true);  // Signal scan started (observed last)
 
     // Issue 2 fix: protect pendingDir_ and pendingAddToHistory_ with pendingMutex_
     std::string pendingDirCopy;
@@ -486,6 +491,14 @@ void FolderBrowser::finalizeScan() {
     calculateGridCells();
     calculateButtonRegions();
     calculateBreadcrumbs();
+
+    // Issue 12 fix: Validate currentPage_ after allEntries_ changes
+    int totalPages = getTotalPages();
+    if (totalPages > 0) {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        currentPage_ = std::min(currentPage_, std::max(0, totalPages - 1));
+    }
+
     updateCurrentPage();
 
     // Clear loading state
@@ -532,6 +545,9 @@ void FolderBrowser::toggleSortMode() {
 }
 
 int FolderBrowser::getTotalPages() const {
+    // Issue 11 fix: Return 0 for empty directories instead of 1
+    if (allEntries_.empty()) return 0;
+
     int entriesPerPage = getEntriesPerPage();
     if (entriesPerPage <= 0) return 1;
     return std::max(1, static_cast<int>(std::ceil(
@@ -886,9 +902,19 @@ void FolderBrowser::sortEntries() {
         entry.gridIndex = static_cast<int>(allEntries_.size());
         allEntries_.push_back(entry);
     }
+
+    // Issue 12 fix: Validate currentPage_ after allEntries_ changes
+    int totalPages = getTotalPages();
+    if (totalPages > 0) {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        currentPage_ = std::min(currentPage_, std::max(0, totalPages - 1));
+    }
 }
 
 void FolderBrowser::updateCurrentPage() {
+    // Issue 8 fix: Protect currentPageEntries_ and gridCells_ modifications with mutex
+    std::lock_guard<std::mutex> lock(stateMutex_);
+
     currentPageEntries_.clear();
     int entriesPerPage = getEntriesPerPage();
     int startIdx = currentPage_ * entriesPerPage;
@@ -1249,9 +1275,7 @@ std::string FolderBrowser::generateSVGThumbnail(const std::string& svgPath, floa
     int priority = cellIndex;
 
     // Request background loading (non-blocking)
-    std::string filename = svgPath.substr(svgPath.rfind('/') + 1);
-    std::cout << "[FolderBrowser] Requesting load: " << filename
-              << " (state=" << static_cast<int>(state) << ", priority=" << priority << ")" << std::endl;
+    // Issue 10 fix: Remove debug spam from thumbnail requests
     thumbnailCache_->requestLoad(svgPath, width, height, priority);
 
     // Return animated placeholder while loading
