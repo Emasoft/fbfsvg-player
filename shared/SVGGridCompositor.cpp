@@ -6,6 +6,7 @@
 #include <regex>
 #include <cmath>
 #include <algorithm>
+#include <iostream>  // For std::cerr in DEBUG builds
 
 namespace svgplayer {
 
@@ -218,6 +219,9 @@ bool SVGGridCompositor::extractViewBox(const std::string& svg, float& width, flo
             width = std::stof(match[1].str());
             foundWidth = true;
         } catch (const std::exception&) {
+#ifdef DEBUG
+            std::cerr << "Warning: Invalid width value in SVG attribute" << std::endl;
+#endif
             // Ignore invalid width value
         }
     }
@@ -226,6 +230,9 @@ bool SVGGridCompositor::extractViewBox(const std::string& svg, float& width, flo
             height = std::stof(match[1].str());
             foundHeight = true;
         } catch (const std::exception&) {
+#ifdef DEBUG
+            std::cerr << "Warning: Invalid height value in SVG attribute" << std::endl;
+#endif
             // Ignore invalid height value
         }
     }
@@ -259,6 +266,9 @@ bool SVGGridCompositor::extractFullViewBox(const std::string& svg, float& minX, 
             width = std::stof(match[1].str());
             foundWidth = true;
         } catch (const std::exception&) {
+#ifdef DEBUG
+            std::cerr << "Warning: Invalid width value in SVG attribute" << std::endl;
+#endif
             // Ignore invalid width value
         }
     }
@@ -267,6 +277,9 @@ bool SVGGridCompositor::extractFullViewBox(const std::string& svg, float& minX, 
             height = std::stof(match[1].str());
             foundHeight = true;
         } catch (const std::exception&) {
+#ifdef DEBUG
+            std::cerr << "Warning: Invalid height value in SVG attribute" << std::endl;
+#endif
             // Ignore invalid height value
         }
     }
@@ -275,11 +288,20 @@ bool SVGGridCompositor::extractFullViewBox(const std::string& svg, float& minX, 
 }
 
 std::string SVGGridCompositor::prefixSVGIds(const std::string& svg, const std::string& prefix) {
+    // KNOWN LIMITATION: This function does NOT handle JavaScript ID references
+    // (e.g., getElementById("id"), querySelector("#id"), etc.).
+    // If your SVG contains embedded JavaScript that references elements by ID,
+    // those references will NOT be prefixed and may break after combining.
+    // This is acceptable for most use cases as SMIL animations (not JavaScript)
+    // are the primary animation mechanism for this compositor.
+
     // Static regex objects - compiled once, reused for all calls
     // This provides massive performance improvement for large files
     static const std::regex idAttrRegex(R"(id\s*=\s*["']([^"']+)["'])");
     static const std::regex hrefRegex(R"((xlink:)?href\s*=\s*["']#([^"']+)["'])");
     static const std::regex urlRegex(R"(url\s*\(\s*#([^)]+)\s*\))");
+    static const std::regex xlinkUrlRegex(R"((xlink:)?href\s*=\s*["']url\s*\(\s*#([^)]+)\s*\)["'])");  // Issue 5: xlink:href="url(#id)"
+    static const std::regex dataIdRegex(R"((data-[a-zA-Z0-9-]+\s*=\s*["'])#([^"']+)(["']))");  // Issue 4: data-* attributes with #id
     static const std::regex beginRegex(R"(begin\s*=\s*["']([^"'.]+)\.([^"']+)["'])");
     static const std::regex endRegex(R"(end\s*=\s*["']([^"'.]+)\.([^"']+)["'])");
     static const std::regex valuesRegex(R"(values\s*=\s*["']([^"']+)["'])");
@@ -295,6 +317,12 @@ std::string SVGGridCompositor::prefixSVGIds(const std::string& svg, const std::s
 
     // Pattern 3: url(#value) -> url(#prefix_value)
     result = std::regex_replace(result, urlRegex, "url(#" + prefix + "$1)");
+
+    // Pattern 3a: xlink:href="url(#id)" -> xlink:href="url(#prefix_id)" (rare but valid)
+    result = std::regex_replace(result, xlinkUrlRegex, "$1href=\"url(#" + prefix + "$2)\"");
+
+    // Pattern 3b: data-*="#id" -> data-*="#prefix_id" (custom data attributes)
+    result = std::regex_replace(result, dataIdRegex, "$1#" + prefix + "$2$3");
 
     // Pattern 4: begin="id.event" -> begin="prefix_id.event" (for SMIL animations)
     result = std::regex_replace(result, beginRegex, "begin=\"" + prefix + "$1.$2\"");
