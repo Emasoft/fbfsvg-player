@@ -35,8 +35,12 @@ jobs:
         id: tests
         continue-on-error: true
         run: |
+          # Run tests and capture exit code properly (PIPESTATUS[0] gets exit code of first command in pipeline)
+          set -o pipefail
           ./scripts/run_test_cycle.sh --skip-build 2>&1 | tee test-output.log
-          echo "exit_code=$?" >> $GITHUB_OUTPUT
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+          echo "exit_code=${TEST_EXIT_CODE}" >> $GITHUB_OUTPUT
+          exit ${TEST_EXIT_CODE}
 
       - name: Upload Test Report
         uses: actions/upload-artifact@v4
