@@ -184,12 +184,14 @@ build_ios_arch() {
     OBJ_FILE="$BUILD_DIR/svg_player_ios.o"
     SHARED_OBJ_FILE="$BUILD_DIR/SVGAnimationController.o"
     COMPOSITOR_OBJ_FILE="$BUILD_DIR/SVGGridCompositor.o"
+    INSTRUMENTATION_OBJ_FILE="$BUILD_DIR/svg_instrumentation.o"
     LIB_FILE="$BUILD_DIR/libsvg_player.a"
 
     log_info "Compiling for $PLATFORM ($arch)..."
     log_info "Sources: $SRC_DIR/svg_player_ios.cpp"
     log_info "         $SHARED_DIR/SVGAnimationController.cpp"
     log_info "         $SHARED_DIR/SVGGridCompositor.cpp"
+    log_info "         $SHARED_DIR/svg_instrumentation.cpp"
 
     # Compile the iOS-specific source file
     # This file provides a C-compatible API for UIKit integration
@@ -211,9 +213,15 @@ build_ios_arch() {
         -o "$COMPOSITOR_OBJ_FILE" \
         -DIOS_BUILD
 
+    # Compile the shared instrumentation
+    $CXX $CXXFLAGS $INCLUDES \
+        -c "$SHARED_DIR/svg_instrumentation.cpp" \
+        -o "$INSTRUMENTATION_OBJ_FILE" \
+        -DIOS_BUILD
+
     # Create static library with all object files
-    ar rcs "$LIB_FILE" "$OBJ_FILE" "$SHARED_OBJ_FILE" "$COMPOSITOR_OBJ_FILE"
-    rm -f "$OBJ_FILE" "$SHARED_OBJ_FILE" "$COMPOSITOR_OBJ_FILE"
+    ar rcs "$LIB_FILE" "$OBJ_FILE" "$SHARED_OBJ_FILE" "$COMPOSITOR_OBJ_FILE" "$INSTRUMENTATION_OBJ_FILE"
+    rm -f "$OBJ_FILE" "$SHARED_OBJ_FILE" "$COMPOSITOR_OBJ_FILE" "$INSTRUMENTATION_OBJ_FILE"
 
     # Copy header file for integration
     cp "$SRC_DIR/svg_player_ios.h" "$BUILD_DIR/"

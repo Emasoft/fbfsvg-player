@@ -129,6 +129,9 @@ SVG_PLAYER_API void SVGPlayer_SetDWriteFontCollection(SVGPlayerRef player, void*
 //
 //   #define SVG_PLAYER_BUILDING_DLL
 //   #include "../../shared/svg_player_api.cpp"
+//   #include "../../shared/SVGAnimationController.cpp"
+//   #include "../../shared/SVGGridCompositor.cpp"
+//   #include "../../shared/svg_instrumentation.cpp"
 //
 //   // Windows-specific extensions here
 

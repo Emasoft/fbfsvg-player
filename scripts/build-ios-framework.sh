@@ -40,11 +40,12 @@ FRAMEWORK_BUILD_DIR="$BUILD_DIR/framework-build"
 IOS_SDK_DIR="$PROJECT_ROOT/ios-sdk/SVGPlayer"
 SKIA_DIR="$PROJECT_ROOT/skia-build/src/skia"
 
-# Source files (includes shared animation controller and grid compositor)
+# Source files (includes shared animation controller, grid compositor, and instrumentation)
 CPP_SOURCES=(
     "$PROJECT_ROOT/src/svg_player_ios.cpp"
     "$PROJECT_ROOT/shared/SVGAnimationController.cpp"
     "$PROJECT_ROOT/shared/SVGGridCompositor.cpp"
+    "$PROJECT_ROOT/shared/svg_instrumentation.cpp"
 )
 
 OBJC_SOURCES=(
