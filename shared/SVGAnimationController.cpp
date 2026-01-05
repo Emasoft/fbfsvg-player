@@ -3,6 +3,8 @@
 // See SVGAnimationController.h for class documentation
 
 #include "SVGAnimationController.h"
+#include "svg_instrumentation.h"
+#include "SVGTypes.h"  // For SVGRenderStats
 
 #include <fstream>
 #include <sstream>
@@ -385,6 +387,21 @@ bool SVGAnimationController::update(double deltaTime) {
     size_t currentFrameIndex = static_cast<size_t>(getCurrentFrame());
     if (currentFrameIndex != previousFrame) {
         lastFrameIndex_ = currentFrameIndex;
+
+        // Invoke instrumentation hook for frame rendered
+        // Convert AnimationStats to SVGRenderStats for the hook
+        SVGRenderStats renderStats = {};
+        renderStats.renderTimeMs = stats_.renderTimeMs;
+        renderStats.updateTimeMs = stats_.updateTimeMs;
+        renderStats.animationTimeMs = stats_.animationTimeMs;
+        renderStats.currentFrame = stats_.currentFrame;
+        renderStats.totalFrames = stats_.totalFrames;
+        renderStats.fps = stats_.fps;
+        renderStats.frameSkips = stats_.frameSkips;
+        renderStats.peakMemoryBytes = 0;  // Not tracked in animation stats
+        renderStats.elementsRendered = 0;  // Not tracked in animation stats
+        instrumentation::invokeFrameRendered(renderStats);
+
         return true;  // Frame changed, needs re-render
     }
 
@@ -611,6 +628,7 @@ void SVGAnimationController::handleLoopBehavior() {
             if (currentTime_ >= duration_) {
                 currentTime_ = duration_;
                 pause();
+                instrumentation::invokeAnimationEnd();  // Instrumentation hook
                 if (endCallback_) {
                     endCallback_();
                 }
@@ -627,6 +645,7 @@ void SVGAnimationController::handleLoopBehavior() {
                     currentTime_ -= duration_;
                     completedLoops_++;
                 }
+                instrumentation::invokeAnimationLoop();  // Instrumentation hook
                 if (loopCallback_) {
                     loopCallback_(completedLoops_);
                 }
@@ -635,6 +654,7 @@ void SVGAnimationController::handleLoopBehavior() {
                     currentTime_ += duration_;
                     completedLoops_++;
                 }
+                instrumentation::invokeAnimationLoop();  // Instrumentation hook
                 if (loopCallback_) {
                     loopCallback_(completedLoops_);
                 }
@@ -647,6 +667,7 @@ void SVGAnimationController::handleLoopBehavior() {
                 currentTime_ = duration_ - (currentTime_ - duration_);
                 playingForward_ = false;
                 completedLoops_++;
+                instrumentation::invokeAnimationLoop();  // Instrumentation hook
                 if (loopCallback_) {
                     loopCallback_(completedLoops_);
                 }
@@ -654,6 +675,7 @@ void SVGAnimationController::handleLoopBehavior() {
                 currentTime_ = -currentTime_;
                 playingForward_ = true;
                 completedLoops_++;
+                instrumentation::invokeAnimationLoop();  // Instrumentation hook
                 if (loopCallback_) {
                     loopCallback_(completedLoops_);
                 }
@@ -667,11 +689,13 @@ void SVGAnimationController::handleLoopBehavior() {
                 if (completedLoops_ >= repeatCount_) {
                     currentTime_ = duration_;
                     pause();
+                    instrumentation::invokeAnimationEnd();  // Instrumentation hook
                     if (endCallback_) {
                         endCallback_();
                     }
                 } else {
                     currentTime_ = fmod(currentTime_, duration_);
+                    instrumentation::invokeAnimationLoop();  // Instrumentation hook
                     if (loopCallback_) {
                         loopCallback_(completedLoops_);
                     }

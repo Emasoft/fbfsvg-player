@@ -2,6 +2,7 @@
 
 #include "thumbnail_cache.h"
 #include "../shared/SVGGridCompositor.h"
+#include "../shared/svg_instrumentation.h"
 
 #include <algorithm>
 #include <fstream>
@@ -64,6 +65,7 @@ void ThumbnailCache::stopLoader() {
 void ThumbnailCache::loaderThread() {
     // Get a simple thread index for logging (hash of thread id, mod 100 for readability)
     auto threadId = std::hash<std::thread::id>{}(std::this_thread::get_id()) % 100;
+    SVG_INSTRUMENT_CALL(onLoaderThreadStart);
 
     while (!stopRequested_.load()) {
         ThumbnailLoadRequest req;
@@ -84,6 +86,7 @@ void ThumbnailCache::loaderThread() {
                 requestQueue_.pop();
                 queueSize = requestQueue_.size();
                 hasRequest = true;
+                SVG_INSTRUMENT_VALUE(onRequestDequeued, requestQueue_.size());
             }
         }
 
@@ -95,6 +98,7 @@ void ThumbnailCache::loaderThread() {
 #ifdef THUMBNAIL_CACHE_DEBUG
     std::cout << "[ThumbnailCache] Loader thread exiting" << std::endl;
 #endif
+    SVG_INSTRUMENT_CALL(onLoaderThreadStop);
 }
 
 void ThumbnailCache::processLoadRequest(const ThumbnailLoadRequest& req) {
@@ -123,6 +127,7 @@ void ThumbnailCache::processLoadRequest(const ThumbnailLoadRequest& req) {
         // Mark as loading
         if (it != cache_.end()) {
             it->second.state = ThumbnailState::Loading;
+            SVG_INSTRUMENT_VALUE(onThumbnailStateChange, static_cast<int>(ThumbnailState::Loading), req.filePath);
         } else {
             ThumbnailCacheEntry entry;
             entry.filePath = req.filePath;
@@ -131,6 +136,7 @@ void ThumbnailCache::processLoadRequest(const ThumbnailLoadRequest& req) {
             entry.state = ThumbnailState::Loading;
             entry.lastAccess = std::chrono::steady_clock::now();
             cache_[req.filePath] = std::move(entry);
+            SVG_INSTRUMENT_VALUE(onThumbnailStateChange, static_cast<int>(ThumbnailState::Loading), req.filePath);
         }
     }
 
@@ -164,6 +170,7 @@ void ThumbnailCache::processLoadRequest(const ThumbnailLoadRequest& req) {
 
                 it->second.svgContent = std::move(thumbnailSVG);
                 it->second.state = ThumbnailState::Ready;
+                SVG_INSTRUMENT_VALUE(onThumbnailStateChange, static_cast<int>(ThumbnailState::Ready), req.filePath);
                 it->second.fileModTime = modTime;
                 it->second.contentSize = newSize;
                 it->second.lastAccess = std::chrono::steady_clock::now();
@@ -185,6 +192,7 @@ void ThumbnailCache::processLoadRequest(const ThumbnailLoadRequest& req) {
                 lruOrder_.push_back(req.filePath);
             } else {
                 it->second.state = ThumbnailState::Error;
+                SVG_INSTRUMENT_VALUE(onThumbnailStateChange, static_cast<int>(ThumbnailState::Error), req.filePath);
                 std::cout << "[ThumbnailCache] " << filename << " -> Error" << std::endl;
             }
         }
@@ -452,6 +460,7 @@ void ThumbnailCache::requestLoad(const std::string& filePath, float width, float
         {
             std::lock_guard<std::mutex> queueLock(queueMutex_);
             requestQueue_.push({filePath, width, height, priority});
+            SVG_INSTRUMENT_VALUE(onRequestQueued, requestQueue_.size());
         }
     }
     queueCondition_.notify_one();
@@ -530,6 +539,7 @@ void ThumbnailCache::evictOldestEntry() {
     if (it != cache_.end()) {
         totalCacheBytes_.fetch_sub(it->second.contentSize);
         cache_.erase(it);
+        SVG_INSTRUMENT_VALUE(onLRUEviction, 1);
     }
 }
 

@@ -4,6 +4,7 @@
 #include "folder_browser.h"
 #include "thumbnail_cache.h"
 #include "shared/SVGGridCompositor.h"
+#include "../shared/svg_instrumentation.h"
 #include <filesystem>
 #include <algorithm>
 #include <sstream>
@@ -282,6 +283,7 @@ void FolderBrowser::setDirectoryAsync(const std::string& path, ProgressCallback 
 
     // Launch background scan thread
     scanThread_ = std::thread([this, callback, pendingDirCopy]() {
+        SVG_INSTRUMENT_CALL(onScanStart);
         std::vector<BrowserEntry> entries;
         fs::path current(pendingDirCopy);
         bool atRoot = (current == current.root_path());
@@ -431,6 +433,7 @@ void FolderBrowser::setDirectoryAsync(const std::string& path, ProgressCallback 
         }
 
         if (callback) callback(1.0f, "Complete");
+        SVG_INSTRUMENT_CALL(onScanComplete);
         scanningInProgress_.store(false);
         scanComplete_.store(true);
     });
@@ -603,6 +606,7 @@ void FolderBrowser::setPage(int page) {
         updateCurrentPage();
         calculateButtonRegions();  // Update button enabled states
         markDirty();  // Page changed, trigger browser SVG regeneration
+        SVG_INSTRUMENT_VALUE(onPageChange, page);
     }
 }
 
@@ -618,6 +622,7 @@ void FolderBrowser::selectEntry(int index) {
     }
     if (changed) {
         markDirty();  // Selection changed, trigger browser SVG regeneration
+        SVG_INSTRUMENT_VALUE(onSelectionChange, newIndex);
     }
 }
 
@@ -699,6 +704,7 @@ bool FolderBrowser::canLoad() const {
 }
 
 void FolderBrowser::scanDirectory() {
+    SVG_INSTRUMENT_CALL(onScanStart);
     allEntries_.clear();
 
     // Copy currentDir_ under lock for thread-safe access
@@ -855,6 +861,7 @@ void FolderBrowser::scanDirectory() {
 
     // Apply current sort mode
     sortEntries();
+    SVG_INSTRUMENT_CALL(onScanComplete);
 }
 
 void FolderBrowser::sortEntries() {
@@ -1786,6 +1793,7 @@ std::string FolderBrowser::generateBrowserSVG() {
 
     svg << R"(</svg>)";
 
+    SVG_INSTRUMENT_CALL(onBrowserSVGRegenerated);
     return svg.str();
 }
 

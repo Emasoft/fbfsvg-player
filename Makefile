@@ -16,6 +16,9 @@ BUILD_DIR := build
 SCRIPTS_DIR := scripts
 SKIA_DIR := skia-build/src/skia
 
+# Compiler (prefer clang++ on macOS)
+CXX ?= clang++
+
 # Source files
 MAIN_SRC := $(SRC_DIR)/svg_player_animated.cpp
 
@@ -301,6 +304,103 @@ distclean: clean
 	@echo "All build artifacts cleaned (including Skia)"
 
 #==============================================================================
+# Test Targets
+#==============================================================================
+
+# Test source files
+TEST_SRC := tests/test_folder_browser_automated.cpp
+TEST_TARGET := $(BUILD_DIR)/run_tests
+
+# Compiler flags for tests
+TEST_CXXFLAGS := -std=c++17 -DSVG_INSTRUMENTATION_ENABLED=1 -g -O1
+# SDL2 include path from sdl2-config or pkg-config
+SDL2_CFLAGS := $(shell sdl2-config --cflags 2>/dev/null || pkg-config --cflags sdl2 2>/dev/null)
+TEST_INCLUDES := -I. -I./shared -I./tests -I./src -I$(SKIA_DIR) $(SDL2_CFLAGS)
+
+# Platform-specific test configuration
+ifeq ($(PLATFORM),macos)
+    SKIA_OUT := $(SKIA_DIR)/out/release-macos
+    # SDL2 from Homebrew requires sdl2-config for proper linking
+    SDL2_FLAGS := $(shell sdl2-config --libs 2>/dev/null || echo "-lSDL2")
+    # ICU library for unicode support (Skia requires ICU 78)
+    ICU_PREFIX := $(shell brew --prefix icu4c@78 2>/dev/null || echo "/opt/homebrew/opt/icu4c@78")
+    ICU_LIBS := -L$(ICU_PREFIX)/lib -licuuc -licui18n -licudata
+    # Link order matters: SVG module, resources, then core Skia, then dependencies
+    TEST_LDFLAGS := $(SKIA_OUT)/libsvg.a \
+        $(SKIA_OUT)/libskresources.a \
+        $(SKIA_OUT)/libsksg.a \
+        $(SKIA_OUT)/libskshaper.a \
+        $(SKIA_OUT)/libskunicode_core.a \
+        $(SKIA_OUT)/libskunicode_icu.a \
+        $(SKIA_OUT)/libharfbuzz.a \
+        $(SKIA_OUT)/libskia.a \
+        $(ICU_LIBS) \
+        -framework CoreFoundation \
+        -framework CoreGraphics \
+        -framework CoreText \
+        -framework ImageIO \
+        -framework Metal \
+        -framework MetalKit \
+        -framework QuartzCore \
+        -framework Cocoa \
+        $(SDL2_FLAGS) \
+        -lc++
+else ifeq ($(PLATFORM),linux)
+    SKIA_OUT := $(SKIA_DIR)/out/release-linux
+    TEST_LDFLAGS := $(SKIA_OUT)/libskia.a \
+        -lSDL2 -lGL -lEGL -lGLESv2 \
+        -lpthread -ldl -lm -lfreetype -lfontconfig -lX11
+endif
+
+.PHONY: test-build
+test-build: $(BUILD_DIR)
+	@echo "=== Building Test Suite ==="
+	@echo "Platform: $(PLATFORM) ($(ARCH))"
+	@echo "Test flags: $(TEST_CXXFLAGS)"
+	@$(CXX) $(TEST_CXXFLAGS) $(TEST_INCLUDES) \
+		$(TEST_SRC) \
+		$(SRC_DIR)/thumbnail_cache.cpp \
+		$(SRC_DIR)/folder_browser.cpp \
+		shared/SVGAnimationController.cpp \
+		shared/SVGGridCompositor.cpp \
+		shared/svg_player_api.cpp \
+		shared/svg_instrumentation.cpp \
+		$(TEST_LDFLAGS) \
+		-o $(TEST_TARGET)
+	@echo "Test binary: $(TEST_TARGET)"
+	@echo "=== Build Complete ==="
+
+.PHONY: test
+test: test-build
+	@echo "=== Running Automated Tests ==="
+	@$(TEST_TARGET) --report-format=console
+	@echo "=== Tests Complete ==="
+
+.PHONY: test-report
+test-report: test-build
+	@echo "=== Running Tests with JSON Report ==="
+	@$(TEST_TARGET) --report-format=json --report-output=test-report.json
+	@echo "Report saved to: test-report.json"
+
+.PHONY: test-cycle
+test-cycle:
+	@echo "=== Running Full Test Cycle ==="
+	@./$(SCRIPTS_DIR)/run_test_cycle.sh
+
+.PHONY: test-update-baseline
+test-update-baseline: test-build
+	@echo "=== Updating Test Baselines ==="
+	@$(TEST_TARGET) --update-baseline
+	@echo "Baselines updated in: tests/baselines/"
+
+.PHONY: test-clean
+test-clean:
+	@rm -f $(TEST_TARGET)
+	@rm -f test-report.json
+	@rm -f test-report.html
+	@echo "Test artifacts cleaned"
+
+#==============================================================================
 # Run Targets
 #==============================================================================
 
@@ -393,6 +493,14 @@ help:
 	@echo "  make skia-macos     Build Skia for macOS (universal)"
 	@echo "  make skia-linux     Build Skia for Linux"
 	@echo "  make skia-ios       Build Skia XCFramework for iOS"
+	@echo ""
+	@echo "=== Test Targets ==="
+	@echo "  make test           Build and run all tests"
+	@echo "  make test-build     Build test suite only"
+	@echo "  make test-report    Run tests with JSON report"
+	@echo "  make test-cycle     Full autonomous test cycle (with auto-revert)"
+	@echo "  make test-update-baseline  Update performance baselines"
+	@echo "  make test-clean     Clean test artifacts"
 	@echo ""
 	@echo "=== Maintenance ==="
 	@echo "  make clean          Remove build artifacts"
