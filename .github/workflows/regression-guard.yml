@@ -119,9 +119,12 @@ See issue for details."
 
             PLATFORM=$(uname -m)
             BASELINE_DIR="tests/baselines/macos_${PLATFORM}"
+            TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-            # Update baselines
-            jq '.metrics' test-report.json > "${BASELINE_DIR}/performance.json"
+            # Update baselines with proper format (version, timestamp, platform, metrics)
+            jq --arg ts "${TIMESTAMP}" --arg plat "macos_${PLATFORM}" \
+              '{version: 1, timestamp: $ts, platform: $plat, metrics: .metrics}' \
+              test-report.json > "${BASELINE_DIR}/performance.json"
             git rev-parse HEAD > "${BASELINE_DIR}/commit_hash.txt"
 
             # Commit changes

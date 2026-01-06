@@ -116,8 +116,11 @@ if [[ "${UPDATE_BASELINE}" == "true" ]]; then
     echo -e "${GREEN}Updating baselines (--update-baseline)${NC}"
     mkdir -p "${BASELINE_DIR}"
 
-    # Save current metrics as baseline
-    jq '.metrics' "${REPORT_FILE}" > "${BASELINE_DIR}/performance.json"
+    # Save current metrics as baseline (with proper format including version, timestamp, platform)
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    jq --arg ts "${TIMESTAMP}" --arg plat "${PLATFORM}" \
+        '{version: 1, timestamp: $ts, platform: $plat, metrics: .metrics}' \
+        "${REPORT_FILE}" > "${BASELINE_DIR}/performance.json"
 
     # Save current commit as last known good
     git rev-parse HEAD > "${BASELINE_DIR}/commit_hash.txt"
@@ -127,7 +130,12 @@ if [[ "${UPDATE_BASELINE}" == "true" ]]; then
 elif "${SCRIPT_DIR}/check_improvements.sh" "${REPORT_FILE}" 2>/dev/null; then
     echo -e "${GREEN}Performance improved! Updating baselines...${NC}"
     mkdir -p "${BASELINE_DIR}"
-    jq '.metrics' "${REPORT_FILE}" > "${BASELINE_DIR}/performance.json"
+
+    # Save with proper baseline format
+    TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    jq --arg ts "${TIMESTAMP}" --arg plat "${PLATFORM}" \
+        '{version: 1, timestamp: $ts, platform: $plat, metrics: .metrics}' \
+        "${REPORT_FILE}" > "${BASELINE_DIR}/performance.json"
     git rev-parse HEAD > "${BASELINE_DIR}/commit_hash.txt"
 
     # Commit baseline updates
