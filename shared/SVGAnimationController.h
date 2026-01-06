@@ -18,6 +18,9 @@
 #include <chrono>
 #include <cmath>
 #include <functional>
+#include <mutex>
+#include <atomic>
+#include <cstdint>
 
 namespace svgplayer {
 

@@ -94,12 +94,19 @@ if [ ! -f "$TEST_BINARY" ]; then
     log_info "Test binary not found, building..."
     cd "$PROJECT_ROOT"
 
-    # Check for Skia
+    # Check for Skia (architecture-specific)
     SKIA_DIR="${PROJECT_ROOT}/skia-build/src/skia"
-    SKIA_OUT="${SKIA_DIR}/out/release-linux"
+    SKIA_OUT="${SKIA_DIR}/out/release-linux-${ARCH_NAME}"
+
+    # Fallback to release-linux if arch-specific not found
+    if [ ! -f "${SKIA_OUT}/libskia.a" ]; then
+        SKIA_OUT="${SKIA_DIR}/out/release-linux"
+    fi
+
+    log_info "Using Skia from: ${SKIA_OUT}"
 
     if [ ! -f "${SKIA_OUT}/libskia.a" ]; then
-        log_error "Skia libraries not found at ${SKIA_OUT}"
+        log_error "Skia libraries not found at ${SKIA_DIR}/out/release-linux-${ARCH_NAME}"
         log_info "Run './skia-build/build-linux.sh' to build Skia first"
 
         # Create a minimal test result indicating build failure
@@ -131,7 +138,15 @@ EOF
     # Build test binary
     log_info "Compiling test suite..."
 
-    TEST_SRC="${PROJECT_ROOT}/tests/test_folder_browser_automated.cpp"
+    # All source files needed for tests (same as macOS Makefile test-build)
+    TEST_SOURCES="${PROJECT_ROOT}/tests/test_folder_browser_automated.cpp \
+        ${PROJECT_ROOT}/src/thumbnail_cache.cpp \
+        ${PROJECT_ROOT}/src/folder_browser.cpp \
+        ${PROJECT_ROOT}/shared/SVGAnimationController.cpp \
+        ${PROJECT_ROOT}/shared/SVGGridCompositor.cpp \
+        ${PROJECT_ROOT}/shared/svg_player_api.cpp \
+        ${PROJECT_ROOT}/shared/svg_instrumentation.cpp"
+
     TEST_CXXFLAGS="-std=c++17 -DSVG_INSTRUMENTATION_ENABLED=1 -g -O1"
 
     # Get SDL2 flags
@@ -144,12 +159,14 @@ EOF
 
     TEST_INCLUDES="-I${PROJECT_ROOT} -I${PROJECT_ROOT}/shared -I${PROJECT_ROOT}/tests -I${PROJECT_ROOT}/src -I${SKIA_DIR} ${SDL2_CFLAGS} ${ICU_CFLAGS}"
 
-    # Skia libraries (order matters)
+    # Skia libraries (order matters - dependencies come after dependents in static linking)
+    # Match the order from macOS Makefile for consistency
     SKIA_LIBS="${SKIA_OUT}/libsvg.a \
         ${SKIA_OUT}/libskresources.a \
+        ${SKIA_OUT}/libsksg.a \
         ${SKIA_OUT}/libskshaper.a \
-        ${SKIA_OUT}/libskunicode_core.a \
         ${SKIA_OUT}/libskunicode_icu.a \
+        ${SKIA_OUT}/libskunicode_core.a \
         ${SKIA_OUT}/libharfbuzz.a \
         ${SKIA_OUT}/libskparagraph.a \
         ${SKIA_OUT}/libskia.a \
@@ -166,7 +183,7 @@ EOF
     mkdir -p "${PROJECT_ROOT}/build"
 
     $CXX $TEST_CXXFLAGS $TEST_INCLUDES \
-        "$TEST_SRC" \
+        $TEST_SOURCES \
         -o "$TEST_BINARY" \
         $SKIA_LIBS \
         $ICU_LIBS \
@@ -203,7 +220,7 @@ RAW_OUTPUT=$(mktemp)
 trap "rm -f $RAW_OUTPUT" EXIT
 
 # Run tests with timeout (5 minutes max)
-START_TIME=$(date +%s.%N)
+START_TIME=$(date +%s.%N 2>/dev/null || date +%s)
 
 if timeout 300 "$TEST_BINARY" --json > "$RAW_OUTPUT" 2>&1; then
     TEST_EXIT_CODE=0
@@ -211,8 +228,9 @@ else
     TEST_EXIT_CODE=$?
 fi
 
-END_TIME=$(date +%s.%N)
-DURATION=$(echo "$END_TIME - $START_TIME" | bc)
+END_TIME=$(date +%s.%N 2>/dev/null || date +%s)
+# Calculate duration using awk (more portable than bc)
+DURATION=$(awk "BEGIN {printf \"%.3f\", $END_TIME - $START_TIME}")
 
 # Process results
 if [ -s "$RAW_OUTPUT" ] && head -1 "$RAW_OUTPUT" | grep -q '^{'; then

@@ -6,8 +6,10 @@
 #define SVGPLAYER_TYPES_H
 
 #include <stddef.h>  // For size_t
+#include <stdint.h>  // For int32_t, uint64_t, etc.
 
 #ifdef __cplusplus
+#include <cstdint>   // C++ version of stdint.h
 extern "C" {
 #endif
 

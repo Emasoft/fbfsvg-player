@@ -13,6 +13,7 @@
 
 #include <functional>
 #include <string>
+#include <cstdint>
 
 // Include the actual type definitions (forward declarations cause namespace issues)
 #include "SVGTypes.h"
