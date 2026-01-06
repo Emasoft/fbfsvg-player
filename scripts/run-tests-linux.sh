@@ -256,8 +256,12 @@ if [ -s "$RAW_OUTPUT" ] && head -1 "$RAW_OUTPUT" | grep -q '^{'; then
     fi
 else
     # Parse text output to JSON format
-    PASSED=$(grep -c "PASS" "$RAW_OUTPUT" 2>/dev/null || echo "0")
-    FAILED=$(grep -c "FAIL" "$RAW_OUTPUT" 2>/dev/null || echo "0")
+    # Note: grep -c returns exit code 1 when count is 0, but still outputs "0"
+    # Use || true to suppress error exit, then default empty to 0
+    PASSED=$(grep -c "\[PASS\]" "$RAW_OUTPUT" 2>/dev/null || true)
+    FAILED=$(grep -c "\[FAIL\]" "$RAW_OUTPUT" 2>/dev/null || true)
+    PASSED=${PASSED:-0}
+    FAILED=${FAILED:-0}
     TOTAL=$((PASSED + FAILED))
 
     # Escape output for JSON

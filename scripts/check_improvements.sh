@@ -9,17 +9,13 @@
 set -e
 
 # Check for required dependencies
-if ! command -v bc &> /dev/null; then
-    echo "Error: 'bc' is required but not installed."
-    echo "Install with: brew install bc (macOS) or apt-get install bc (Linux)"
-    exit 1
-fi
-
 if ! command -v jq &> /dev/null; then
     echo "Error: 'jq' is required but not installed."
     echo "Install with: brew install jq (macOS) or apt-get install jq (Linux)"
     exit 1
 fi
+
+# We use awk instead of bc for portability (bc not always available in containers)
 
 if [[ $# -lt 1 ]]; then
     echo "Usage: $0 <test-report.json>"
@@ -66,21 +62,21 @@ BASELINE_RENDER=$(jq -r '.avgRenderTimeMs // .renderTimeMs // 0' "${BASELINE}")
 CURRENT_MEMORY=$(jq -r '.metrics.peakCacheBytes // .metrics.peakMemoryBytes // 0' "${REPORT}")
 BASELINE_MEMORY=$(jq -r '.peakCacheBytes // .peakMemoryBytes // 0' "${BASELINE}")
 
-# Calculate improvements
+# Calculate improvements using awk (portable, no bc dependency)
 if [[ "${BASELINE_FPS}" != "0" ]] && [[ "${BASELINE_FPS}" != "null" ]]; then
-    FPS_IMPROVEMENT=$(echo "scale=2; (${CURRENT_FPS} - ${BASELINE_FPS}) / ${BASELINE_FPS} * 100" | bc)
+    FPS_IMPROVEMENT=$(awk "BEGIN {printf \"%.2f\", (${CURRENT_FPS} - ${BASELINE_FPS}) / ${BASELINE_FPS} * 100}")
 else
     FPS_IMPROVEMENT=0
 fi
 
 if [[ "${BASELINE_RENDER}" != "0" ]] && [[ "${BASELINE_RENDER}" != "null" ]]; then
-    RENDER_IMPROVEMENT=$(echo "scale=2; (${BASELINE_RENDER} - ${CURRENT_RENDER}) / ${BASELINE_RENDER} * 100" | bc)
+    RENDER_IMPROVEMENT=$(awk "BEGIN {printf \"%.2f\", (${BASELINE_RENDER} - ${CURRENT_RENDER}) / ${BASELINE_RENDER} * 100}")
 else
     RENDER_IMPROVEMENT=0
 fi
 
 if [[ "${BASELINE_MEMORY}" != "0" ]] && [[ "${BASELINE_MEMORY}" != "null" ]]; then
-    MEMORY_IMPROVEMENT=$(echo "scale=2; (${BASELINE_MEMORY} - ${CURRENT_MEMORY}) / ${BASELINE_MEMORY} * 100" | bc)
+    MEMORY_IMPROVEMENT=$(awk "BEGIN {printf \"%.2f\", (${BASELINE_MEMORY} - ${CURRENT_MEMORY}) / ${BASELINE_MEMORY} * 100}")
 else
     MEMORY_IMPROVEMENT=0
 fi
@@ -90,20 +86,20 @@ echo "  FPS:    ${BASELINE_FPS} -> ${CURRENT_FPS} (${FPS_IMPROVEMENT}%)"
 echo "  Render: ${BASELINE_RENDER}ms -> ${CURRENT_RENDER}ms (${RENDER_IMPROVEMENT}%)"
 echo "  Memory: ${BASELINE_MEMORY} -> ${CURRENT_MEMORY} bytes (${MEMORY_IMPROVEMENT}%)"
 
-# Check if any metric improved significantly
+# Check if any metric improved significantly (using awk for comparisons)
 IMPROVED=false
 
-if (( $(echo "${FPS_IMPROVEMENT} > ${THRESHOLD}" | bc -l) )); then
+if awk "BEGIN {exit !(${FPS_IMPROVEMENT} > ${THRESHOLD})}"; then
     echo "FPS improved by ${FPS_IMPROVEMENT}% (threshold: ${THRESHOLD}%)"
     IMPROVED=true
 fi
 
-if (( $(echo "${RENDER_IMPROVEMENT} > ${THRESHOLD}" | bc -l) )); then
+if awk "BEGIN {exit !(${RENDER_IMPROVEMENT} > ${THRESHOLD})}"; then
     echo "Render time improved by ${RENDER_IMPROVEMENT}% (threshold: ${THRESHOLD}%)"
     IMPROVED=true
 fi
 
-if (( $(echo "${MEMORY_IMPROVEMENT} > ${THRESHOLD}" | bc -l) )); then
+if awk "BEGIN {exit !(${MEMORY_IMPROVEMENT} > ${THRESHOLD})}"; then
     echo "Memory usage improved by ${MEMORY_IMPROVEMENT}% (threshold: ${THRESHOLD}%)"
     IMPROVED=true
 fi
