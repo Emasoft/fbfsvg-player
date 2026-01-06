@@ -50,17 +50,18 @@ fi
 THRESHOLD=5.0
 
 # Compare key metrics
+# Note: Both report and baseline have metrics under .metrics object
 # FPS improvement (higher is better)
 CURRENT_FPS=$(jq -r '.metrics.measuredFPS // .metrics.fps // 0' "${REPORT}")
-BASELINE_FPS=$(jq -r '.measuredFPS // .fps // 0' "${BASELINE}")
+BASELINE_FPS=$(jq -r '.metrics.measuredFPS // .metrics.fps // 0' "${BASELINE}")
 
 # Render time improvement (lower is better)
 CURRENT_RENDER=$(jq -r '.metrics.avgRenderTimeMs // .metrics.renderTimeMs // 0' "${REPORT}")
-BASELINE_RENDER=$(jq -r '.avgRenderTimeMs // .renderTimeMs // 0' "${BASELINE}")
+BASELINE_RENDER=$(jq -r '.metrics.avgRenderTimeMs // .metrics.renderTimeMs // 0' "${BASELINE}")
 
 # Memory improvement (lower is better)
 CURRENT_MEMORY=$(jq -r '.metrics.peakCacheBytes // .metrics.peakMemoryBytes // 0' "${REPORT}")
-BASELINE_MEMORY=$(jq -r '.peakCacheBytes // .peakMemoryBytes // 0' "${BASELINE}")
+BASELINE_MEMORY=$(jq -r '.metrics.peakCacheBytes // .metrics.peakMemoryBytes // 0' "${BASELINE}")
 
 # Calculate improvements using awk (portable, no bc dependency)
 if [[ "${BASELINE_FPS}" != "0" ]] && [[ "${BASELINE_FPS}" != "null" ]]; then
