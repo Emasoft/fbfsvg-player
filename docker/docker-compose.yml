@@ -122,6 +122,96 @@ services:
     container_name: svgplayer-dev
     hostname: svgplayer-dev
 
+# =============================================================================
+  # Test Runner Services (for parallel test execution)
+  # Usage: docker-compose up test-arm64 test-x64
+  # These containers run tests and exit, suitable for CI/CD
+  # =============================================================================
+
+  test-arm64:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: developer
+        USER_UID: 1000
+        USER_GID: 1000
+    platform: linux/arm64
+    image: svgplayer-linux-dev:arm64
+    container_name: svgplayer-test-arm64
+    hostname: svgplayer-test-arm64
+
+    volumes:
+      - ..:/workspace:cached
+
+    working_dir: /workspace
+    shm_size: '2gb'
+
+    environment:
+      - TERM=xterm-256color
+      - CC=clang
+      - CXX=clang++
+      - SKIA_BUILD_DIR=/workspace/skia-build
+      - SKIA_OUT_DIR=release-linux-arm64
+      - TARGET_ARCH=arm64
+      - PATH=/workspace/skia-build/depot_tools:/workspace/skia-build/src/skia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - OUTPUT_DIR=/workspace/build/test-results
+
+    command: >
+      bash -c "
+        echo '=== SVGPlayer Linux ARM64 Test Runner ===' &&
+        mkdir -p /workspace/build/test-results &&
+        /workspace/scripts/run-tests-linux.sh --output-dir /workspace/build/test-results
+      "
+
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+
+  test-x64:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: developer
+        USER_UID: 1000
+        USER_GID: 1000
+    platform: linux/amd64
+    image: svgplayer-linux-dev:x64
+    container_name: svgplayer-test-x64
+    hostname: svgplayer-test-x64
+
+    volumes:
+      - ..:/workspace:cached
+
+    working_dir: /workspace
+    shm_size: '2gb'
+
+    environment:
+      - TERM=xterm-256color
+      - CC=clang
+      - CXX=clang++
+      - SKIA_BUILD_DIR=/workspace/skia-build
+      - SKIA_OUT_DIR=release-linux-x64
+      - TARGET_ARCH=x64
+      - PATH=/workspace/skia-build/depot_tools:/workspace/skia-build/src/skia/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      - OUTPUT_DIR=/workspace/build/test-results
+
+    command: >
+      bash -c "
+        echo '=== SVGPlayer Linux x64 Test Runner ===' &&
+        mkdir -p /workspace/build/test-results &&
+        /workspace/scripts/run-tests-linux.sh --output-dir /workspace/build/test-results
+      "
+
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+
 # Named volumes for persistence (separate per architecture)
 volumes:
   svgplayer-bash-history-arm64:
