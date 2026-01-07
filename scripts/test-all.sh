@@ -254,7 +254,7 @@ if [ "$TEST_LINUX" = true ]; then
             log_info "Found Linux shared library"
 
             # Verify library is valid ELF
-            if file "$PROJECT_ROOT/build/linux/libsvgplayer.so" | grep -q "ELF"; then
+            if file -L "$PROJECT_ROOT/build/linux/libsvgplayer.so" | grep -q "ELF"; then
                 log_success "Linux library is valid ELF shared object"
                 record_result "linux_library_valid" true
 
@@ -306,7 +306,7 @@ if [ "$TEST_LINUX" = true ]; then
             if docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" exec -T "$DOCKER_SERVICE" bash -c "
                 cd /workspace
                 if [ -f build/linux/libsvgplayer.so ]; then
-                    file build/linux/libsvgplayer.so | grep -q 'ELF' && \
+                    file -L build/linux/libsvgplayer.so | grep -q 'ELF' && \
                     nm -D build/linux/libsvgplayer.so 2>/dev/null | grep -q 'SVGPlayer_Create'
                 else
                     exit 1
