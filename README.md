@@ -8,6 +8,7 @@ A multi-platform animated SVG player with SMIL animation support built using Ski
 |----------|---------------|-------------|-----------|
 | macOS | x64, arm64, universal | Metal | SDL2 |
 | Linux | x64, arm64 | OpenGL/EGL | SDL2 |
+| Windows | x64 | Direct3D/OpenGL | SDL2 |
 | iOS | arm64, simulator (x64+arm64) | Metal | UIKit |
 
 ## Features
@@ -59,6 +60,28 @@ make linux
 ./build/svg_player_animated svg_input_samples/girl_hair.fbf.svg
 ```
 
+### Windows
+
+```batch
+REM 1. Install Visual Studio 2019+ with "Desktop development with C++" workload
+REM    Download from: https://visualstudio.microsoft.com/
+
+REM 2. Download and install SDL2 development libraries
+REM    - Download from: https://libsdl.org/download-2.0.php
+REM    - Extract to C:\SDL2 or the project's external\SDL2 folder
+
+REM 3. Build Skia for Windows (one-time, requires depot_tools)
+REM    In skia-build\src\skia:
+gn gen out/release-windows --args="is_debug=false is_official_build=true skia_use_system_libjpeg_turbo=false skia_use_system_libpng=false skia_use_system_zlib=false skia_use_system_expat=false skia_use_system_icu=false skia_use_system_harfbuzz=false skia_use_system_freetype2=false skia_enable_svg=true target_cpu=\"x64\""
+ninja -C out/release-windows skia svg
+
+REM 4. Build the SVG player
+scripts\build-windows.bat
+
+REM 5. Run with a test SVG
+build\windows\svg_player_animated.exe svg_input_samples\girl_hair.fbf.svg
+```
+
 ### iOS
 
 ```bash
@@ -103,6 +126,15 @@ make ios-xcframework
 | `make linux` | Build for current architecture |
 | `make linux-debug` | Build with debug symbols |
 | `make linux-ci` | Build non-interactively (for CI) |
+
+### Windows Targets
+
+| Target | Description |
+|--------|-------------|
+| `make windows` | Show Windows build instructions |
+| `make windows-info` | Show detailed Windows build info |
+
+**Note:** Windows builds require Visual Studio on Windows. Run `scripts\build-windows.bat` directly.
 
 ### iOS Targets
 
@@ -178,14 +210,17 @@ SKIA-BUILD-ARM64/
 ├── src/                             # Main source code
 │   ├── svg_player_animated.cpp      # macOS version
 │   ├── svg_player_animated_linux.cpp # Linux version
+│   ├── svg_player_animated_windows.cpp # Windows version
 │   ├── svg_player_ios.cpp           # iOS library implementation
 │   ├── svg_player_ios.h             # iOS public API header
+│   ├── file_dialog_windows.cpp      # Windows file dialog
 │   └── platform.h                   # Cross-platform abstractions
 ├── scripts/                         # Build scripts
 │   ├── build.sh                     # Master build script
 │   ├── build-macos.sh              # macOS build
 │   ├── build-macos-arch.sh         # macOS architecture-specific
 │   ├── build-linux.sh              # Linux build
+│   ├── build-windows.bat           # Windows build
 │   ├── build-ios.sh                # iOS build
 │   ├── build-skia.sh               # Skia for macOS
 │   ├── build-skia-linux.sh         # Skia for Linux

@@ -1,10 +1,11 @@
 # Makefile for SVG Video Player
-# Multi-platform build system for macOS, Linux, and iOS
+# Multi-platform build system for macOS, Linux, iOS, and Windows
 #
 # Supported platforms:
 #   - macOS (x64, arm64, universal)
 #   - Linux (x64, arm64)
 #   - iOS (device, simulator, XCFramework)
+#   - Windows (x64) - requires Windows host with Visual Studio
 
 # Detect host OS
 UNAME_S := $(shell uname -s)
@@ -173,6 +174,36 @@ linux-debug:
 .PHONY: linux-ci
 linux-ci:
 	@./$(SCRIPTS_DIR)/build-linux.sh -y
+
+#==============================================================================
+# Windows Targets (requires Windows host with Visual Studio)
+#==============================================================================
+
+.PHONY: windows
+windows:
+	@echo "Windows builds require Windows host with Visual Studio."
+	@echo "On Windows, run: scripts\\build-windows.bat"
+	@echo ""
+	@echo "Requirements:"
+	@echo "  - Visual Studio 2019+ with C++ Desktop workload"
+	@echo "  - SDL2 development libraries"
+	@echo "  - Skia built for Windows (skia-build/src/skia/out/release-windows)"
+
+.PHONY: windows-info
+windows-info:
+	@echo "=== Windows Build Information ==="
+	@echo ""
+	@echo "The Windows player uses SDL2 with DirectWrite fonts."
+	@echo "Build from Windows using: scripts\\build-windows.bat"
+	@echo ""
+	@echo "Source files:"
+	@echo "  - src/svg_player_animated_windows.cpp"
+	@echo "  - src/file_dialog_windows.cpp"
+	@echo ""
+	@echo "Dependencies:"
+	@echo "  - Visual Studio 2019+ (Desktop C++ workload)"
+	@echo "  - SDL2 (https://libsdl.org)"
+	@echo "  - Skia (pre-built or build from source)"
 
 #==============================================================================
 # iOS Targets
