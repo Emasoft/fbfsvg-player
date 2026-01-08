@@ -984,7 +984,11 @@ class ThreadedRenderer {
                 localAnimStates = animationStates;
             }
 
-            if (localWidth <= 0 || localHeight <= 0) continue;
+            // Integer overflow protection: validate dimensions before buffer calculations
+            // Maximum dimension matches saveScreenshotPPM limit (32768x32768 = 1 gigapixel)
+            constexpr int MAX_RENDER_DIM = 32768;
+            if (localWidth <= 0 || localHeight <= 0 ||
+                localWidth > MAX_RENDER_DIM || localHeight > MAX_RENDER_DIM) continue;
 
             renderInProgress = true;
             renderTimedOut = false;
@@ -1052,13 +1056,20 @@ class ThreadedRenderer {
                         timeoutCount++;
                     }
 
-                    // Copy to back buffer
+                    // Copy to back buffer with integer overflow protection
                     if (renderSuccess) {
                         SkPixmap pixmap;
                         if (threadSurface->peekPixels(&pixmap)) {
-                            std::lock_guard<std::mutex> lock(bufferMutex);
-                            backBuffer.resize(localWidth * localHeight);
-                            memcpy(backBuffer.data(), pixmap.addr(), localWidth * localHeight * sizeof(uint32_t));
+                            // Use size_t for safe buffer size calculations
+                            size_t pixelCount = static_cast<size_t>(localWidth) * static_cast<size_t>(localHeight);
+                            size_t byteCount = pixelCount * sizeof(uint32_t);
+
+                            // Validate pixmap has enough data before memcpy
+                            if (pixmap.computeByteSize() >= byteCount) {
+                                std::lock_guard<std::mutex> lock(bufferMutex);
+                                backBuffer.resize(pixelCount);
+                                memcpy(backBuffer.data(), pixmap.addr(), byteCount);
+                            }
                         }
                     }
                 }
@@ -1207,6 +1218,24 @@ class RollingAverage {
 // Input: ARGB8888 pixel buffer (32-bit per pixel)
 // Output: PPM file with 24-bit RGB (8 bits per channel)
 bool saveScreenshotPPM(const std::vector<uint32_t>& pixels, int width, int height, const std::string& filename) {
+    // Integer overflow protection: validate dimensions before calculating buffer size
+    // Maximum reasonable screenshot size: 32768x32768 (1 gigapixel)
+    constexpr int MAX_SCREENSHOT_DIM = 32768;
+    if (width <= 0 || height <= 0 || width > MAX_SCREENSHOT_DIM || height > MAX_SCREENSHOT_DIM) {
+        std::cerr << "Invalid screenshot dimensions: " << width << "x" << height << std::endl;
+        return false;
+    }
+
+    // Use size_t to avoid integer overflow in buffer size calculation
+    size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
+    size_t rgbBufferSize = pixelCount * 3;
+
+    // Sanity check: ensure input buffer has expected size
+    if (pixels.size() < pixelCount) {
+        std::cerr << "Pixel buffer too small: " << pixels.size() << " < " << pixelCount << std::endl;
+        return false;
+    }
+
     std::ofstream file(filename, std::ios::binary);
     if (!file.is_open()) {
         std::cerr << "Failed to open file for screenshot: " << filename << std::endl;
@@ -1218,8 +1247,8 @@ bool saveScreenshotPPM(const std::vector<uint32_t>& pixels, int width, int heigh
 
     // Convert ARGB8888 to RGB24 and write raw bytes
     // ARGB8888 layout: [A7-A0][R7-R0][G7-G0][B7-B0] = 32 bits per pixel
-    std::vector<uint8_t> rgb(width * height * 3);
-    for (int i = 0; i < width * height; ++i) {
+    std::vector<uint8_t> rgb(rgbBufferSize);
+    for (size_t i = 0; i < pixelCount; ++i) {
         uint32_t pixel = pixels[i];
         rgb[i * 3 + 0] = (pixel >> 16) & 0xFF;  // R
         rgb[i * 3 + 1] = (pixel >> 8) & 0xFF;   // G

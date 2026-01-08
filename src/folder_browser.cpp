@@ -35,9 +35,13 @@ FolderBrowser::~FolderBrowser() {
     stopThumbnailLoader();
 
     // Cancel any running scan and wait for thread to finish
+    // Issue 1 fix: Protect scanThread_ access with scanThreadMutex_
     cancelScan();
-    if (scanThread_.joinable()) {
-        scanThread_.join();
+    {
+        std::lock_guard<std::mutex> lock(scanThreadMutex_);
+        if (scanThread_.joinable()) {
+            scanThread_.join();
+        }
     }
 }
 
@@ -236,9 +240,13 @@ void FolderBrowser::goForwardAsync(ProgressCallback callback) {
 
 void FolderBrowser::setDirectoryAsync(const std::string& path, ProgressCallback callback, bool addToHistory) {
     // Cancel any existing scan first
+    // Issue 1 fix: Protect scanThread_ access with scanThreadMutex_
     cancelScan();
-    if (scanThread_.joinable()) {
-        scanThread_.join();
+    {
+        std::lock_guard<std::mutex> lock(scanThreadMutex_);
+        if (scanThread_.joinable()) {
+            scanThread_.join();
+        }
     }
 
     // Validate path before starting thread
@@ -282,7 +290,10 @@ void FolderBrowser::setDirectoryAsync(const std::string& path, ProgressCallback 
     setProgress(0.0f);
 
     // Launch background scan thread
-    scanThread_ = std::thread([this, callback, pendingDirCopy]() {
+    // Issue 1 fix: Protect scanThread_ assignment with scanThreadMutex_
+    {
+        std::lock_guard<std::mutex> lock(scanThreadMutex_);
+        scanThread_ = std::thread([this, callback, pendingDirCopy]() {
         SVG_INSTRUMENT_CALL(onScanStart);
         std::vector<BrowserEntry> entries;
         fs::path current(pendingDirCopy);
@@ -436,7 +447,8 @@ void FolderBrowser::setDirectoryAsync(const std::string& path, ProgressCallback 
         SVG_INSTRUMENT_CALL(onScanComplete);
         scanningInProgress_.store(false);
         scanComplete_.store(true);
-    });
+        });
+    }  // Release scanThreadMutex_ after thread is launched
 }
 
 void FolderBrowser::cancelScan() {
@@ -451,8 +463,12 @@ void FolderBrowser::finalizeScan() {
     if (!scanComplete_.load()) return;
 
     // Wait for thread to finish
-    if (scanThread_.joinable()) {
-        scanThread_.join();
+    // Issue 1 fix: Protect scanThread_ access with scanThreadMutex_
+    {
+        std::lock_guard<std::mutex> lock(scanThreadMutex_);
+        if (scanThread_.joinable()) {
+            scanThread_.join();
+        }
     }
 
     // Cancel any pending thumbnail requests for the old directory
@@ -468,11 +484,21 @@ void FolderBrowser::finalizeScan() {
         pendingEntries_.clear();
     }
 
-    // Update directory state - protect with stateMutex_ (Issue 3 fix: copy before using under different lock)
+    // Issue 2/3 fix: Read pendingDir_ and pendingAddToHistory_ under pendingMutex_ first
+    // to avoid data race (they are written under pendingMutex_ in setDirectoryAsync)
+    std::string localPendingDir;
+    bool localAddToHistory;
+    {
+        std::lock_guard<std::mutex> lock(pendingMutex_);
+        localPendingDir = pendingDir_;
+        localAddToHistory = pendingAddToHistory_;
+    }
+
+    // Update directory state - protect with stateMutex_
     std::string dirCopy;
     {
         std::lock_guard<std::mutex> lock(stateMutex_);
-        currentDir_ = pendingDir_;
+        currentDir_ = localPendingDir;
         dirCopy = currentDir_;
         currentPage_ = 0;
         selectedIndex_ = -1;
@@ -480,7 +506,7 @@ void FolderBrowser::finalizeScan() {
 
     // Add to navigation history if requested
     // Protected by historyMutex_ for thread-safe access
-    if (pendingAddToHistory_) {
+    if (localAddToHistory) {
         std::lock_guard<std::mutex> lock(historyMutex_);
         if (historyIndex_ >= 0 && historyIndex_ < static_cast<int>(history_.size()) - 1) {
             history_.erase(history_.begin() + historyIndex_ + 1, history_.end());
@@ -1205,15 +1231,20 @@ HitTestResult FolderBrowser::hitTest(float screenX, float screenY,
         return HitTestResult::LoadButton;
     }
 
-    // Check grid cells
-    for (const auto& cell : gridCells_) {
-        if (cell.entryIndex >= 0 && cell.entryIndex < static_cast<int>(currentPageEntries_.size())) {
-            // Check if click is within cell bounds (including label area)
-            float cellBottom = cell.y + cell.height + config_.labelHeight;
-            if (screenX >= cell.x && screenX <= cell.x + cell.width &&
-                screenY >= cell.y && screenY <= cellBottom) {
-                if (outEntry) *outEntry = &currentPageEntries_[cell.entryIndex];
-                return HitTestResult::Entry;
+    // Check grid cells (thread-safe: lock while accessing currentPageEntries_)
+    {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        for (const auto& cell : gridCells_) {
+            if (cell.entryIndex >= 0 && cell.entryIndex < static_cast<int>(currentPageEntries_.size())) {
+                // Check if click is within cell bounds (including label area)
+                float cellBottom = cell.y + cell.height + config_.labelHeight;
+                if (screenX >= cell.x && screenX <= cell.x + cell.width &&
+                    screenY >= cell.y && screenY <= cellBottom) {
+                    // Note: outEntry points to internal data - caller must not hold reference
+                    // past next state modification. Consider copying entry data for safer API.
+                    if (outEntry) *outEntry = &currentPageEntries_[cell.entryIndex];
+                    return HitTestResult::Entry;
+                }
             }
         }
     }
@@ -1629,6 +1660,26 @@ std::string FolderBrowser::generateCellLabel(const BrowserEntry& entry, float ce
 }
 
 std::string FolderBrowser::generateBrowserSVG() {
+    // Thread-safe: copy mutable state under lock to avoid races
+    // These variables are accessed from scan thread and main thread
+    int localCurrentPage;
+    int localSelectedIndex;
+    int localHoveredIndex;
+    int localClickFeedbackIndex;
+    float localClickFeedbackIntensity;
+    std::vector<BrowserEntry> localPageEntries;
+    std::vector<GridCell> localGridCells;
+    {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        localCurrentPage = currentPage_;
+        localSelectedIndex = selectedIndex_;
+        localHoveredIndex = hoveredIndex_;
+        localClickFeedbackIndex = clickFeedbackIndex_;
+        localClickFeedbackIntensity = clickFeedbackIntensity_;
+        localPageEntries = currentPageEntries_;  // Deep copy for thread safety
+        localGridCells = gridCells_;             // Deep copy for thread safety
+    }
+
     std::ostringstream svg;
 
     // SVG header
@@ -1673,7 +1724,7 @@ std::string FolderBrowser::generateBrowserSVG() {
         svg << R"(<text x=")" << textCenterX << R"(" y=")" << textY
             << R"(" fill="#e2e8f0" font-family="sans-serif" font-size=")" << pageIndicatorFontSize
             << R"(" text-anchor="middle" font-weight="500">)"
-            << "Page " << (currentPage_ + 1) << " / " << getTotalPages() << R"(</text>)";
+            << "Page " << (localCurrentPage + 1) << " / " << getTotalPages() << R"(</text>)";
 
         // Next page arrow button (▶)
         std::string nextColor = nextPageButton_.enabled ? "#74b9ff" : "#4a5568";
@@ -1691,25 +1742,25 @@ std::string FolderBrowser::generateBrowserSVG() {
     // Nav bar with back/forward/sort buttons
     svg << generateNavBar();
 
-    // Draw grid cells
-    for (const auto& cell : gridCells_) {
-        if (cell.entryIndex < 0 || cell.entryIndex >= static_cast<int>(currentPageEntries_.size())) continue;
+    // Draw grid cells (using thread-safe local copies)
+    for (const auto& cell : localGridCells) {
+        if (cell.entryIndex < 0 || cell.entryIndex >= static_cast<int>(localPageEntries.size())) continue;
 
-        const BrowserEntry& entry = currentPageEntries_[cell.entryIndex];
+        const BrowserEntry& entry = localPageEntries[cell.entryIndex];
 
         // Hover highlight for hovered cell (only if not selected)
-        if (cell.index == hoveredIndex_ && cell.index != selectedIndex_) {
+        if (cell.index == localHoveredIndex && cell.index != localSelectedIndex) {
             svg << generateHoverHighlight(cell);
         }
 
         // Selection highlight for selected cell
-        if (cell.index == selectedIndex_) {
+        if (cell.index == localSelectedIndex) {
             svg << generateSelectionHighlight(cell);
         }
 
         // Cell background (lighter for hovered or selected)
-        std::string cellFill = (cell.index == selectedIndex_) ? "#3d4448" :
-                               (cell.index == hoveredIndex_) ? "#363d40" : "#2d3436";
+        std::string cellFill = (cell.index == localSelectedIndex) ? "#3d4448" :
+                               (cell.index == localHoveredIndex) ? "#363d40" : "#2d3436";
         svg << R"(<rect x=")" << cell.x << R"(" y=")" << cell.y
             << R"(" width=")" << cell.width << R"(" height=")" << cell.height
             << R"(" fill=")" << cellFill << R"(" stroke="#636e72" stroke-width="1" rx="8"/>)";
@@ -1765,9 +1816,10 @@ std::string FolderBrowser::generateBrowserSVG() {
     }
 
     // Click feedback flash (rendered on top of all cells for visibility)
-    if (hasClickFeedback() && clickFeedbackIndex_ >= 0) {
-        for (const auto& cell : gridCells_) {
-            if (cell.index == clickFeedbackIndex_ && cell.entryIndex >= 0) {
+    // Using local copies for thread safety
+    if (localClickFeedbackIntensity > 0.0f && localClickFeedbackIndex >= 0) {
+        for (const auto& cell : localGridCells) {
+            if (cell.index == localClickFeedbackIndex && cell.entryIndex >= 0) {
                 svg << generateClickFeedbackHighlight(cell);
                 break;
             }
@@ -1809,17 +1861,40 @@ bool FolderBrowser::regenerateBrowserSVGIfNeeded() {
     // Check if state has changed (explicit dirty flag OR detected changes)
     bool needsRegen = dirty_.load();
 
-    // Also check for state changes that might have been missed
+    // Thread-safe: copy protected state under lock for comparison
+    int curPage, curSelected, curHovered, curClickIdx;
+    float curClickIntensity;
+    std::string curDir;
+    size_t curEntryCount;
+    bool curIsLoading;
+    float curProgress = loadingProgress_.load();  // atomic, no lock needed
+
+    {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        curPage = currentPage_;
+        curSelected = selectedIndex_;
+        curHovered = hoveredIndex_;
+        curClickIdx = clickFeedbackIndex_;
+        curClickIntensity = clickFeedbackIntensity_;
+        curDir = currentDir_;
+        curIsLoading = isLoading_;
+    }
+    {
+        std::lock_guard<std::mutex> lock(scanMutex_);
+        curEntryCount = allEntries_.size();
+    }
+
+    // Compare against last known state (no lock needed for last* - only accessed here on main thread)
     if (!needsRegen) {
-        needsRegen = (currentPage_ != lastPage_) ||
-                     (selectedIndex_ != lastSelectedIndex_) ||
-                     (hoveredIndex_ != lastHoveredIndex_) ||
-                     (clickFeedbackIndex_ != lastClickFeedbackIndex_) ||
-                     (clickFeedbackIntensity_ != lastClickFeedbackIntensity_) ||
-                     (currentDir_ != lastDirectory_) ||
-                     (allEntries_.size() != lastEntryCount_) ||
-                     (isLoading_ != lastIsLoading_) ||
-                     (loadingProgress_.load() != lastLoadingProgress_);
+        needsRegen = (curPage != lastPage_) ||
+                     (curSelected != lastSelectedIndex_) ||
+                     (curHovered != lastHoveredIndex_) ||
+                     (curClickIdx != lastClickFeedbackIndex_) ||
+                     (curClickIntensity != lastClickFeedbackIntensity_) ||
+                     (curDir != lastDirectory_) ||
+                     (curEntryCount != lastEntryCount_) ||
+                     (curIsLoading != lastIsLoading_) ||
+                     (curProgress != lastLoadingProgress_);
     }
 
     // Check if thumbnail cache has new ready thumbnails
@@ -1833,16 +1908,16 @@ bool FolderBrowser::regenerateBrowserSVGIfNeeded() {
         if (thumbnailsReady) {
             std::cout << "[FolderBrowser] Regenerating SVG: new thumbnails ready" << std::endl;
         }
-        // Update state tracking
-        lastPage_ = currentPage_;
-        lastSelectedIndex_ = selectedIndex_;
-        lastHoveredIndex_ = hoveredIndex_;
-        lastClickFeedbackIndex_ = clickFeedbackIndex_;
-        lastClickFeedbackIntensity_ = clickFeedbackIntensity_;
-        lastDirectory_ = currentDir_;
-        lastEntryCount_ = allEntries_.size();
-        lastIsLoading_ = isLoading_;
-        lastLoadingProgress_ = loadingProgress_.load();
+        // Update state tracking with the copied values (consistent snapshot)
+        lastPage_ = curPage;
+        lastSelectedIndex_ = curSelected;
+        lastHoveredIndex_ = curHovered;
+        lastClickFeedbackIndex_ = curClickIdx;
+        lastClickFeedbackIntensity_ = curClickIntensity;
+        lastDirectory_ = curDir;
+        lastEntryCount_ = curEntryCount;
+        lastIsLoading_ = curIsLoading;
+        lastLoadingProgress_ = curProgress;
 
         // Regenerate the browser SVG
         cachedBrowserSVG_ = generateBrowserSVG();

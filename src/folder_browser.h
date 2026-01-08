@@ -308,6 +308,7 @@ private:
     std::atomic<bool> scanningInProgress_{false};  // True while background scan running
     std::atomic<bool> scanCancelRequested_{false}; // True when cancel requested
     std::atomic<bool> scanComplete_{false};        // True when scan finished (main thread polls)
+    std::mutex scanThreadMutex_;                   // Protects scanThread_ join/assignment operations
     std::thread scanThread_;                       // Background scanning thread
     std::mutex scanMutex_;                         // Protects pendingEntries_
     std::mutex pendingMutex_;                      // Protects pendingDir_ and pendingAddToHistory_
