@@ -88,7 +88,8 @@ rem Check for Skia
 set "SKIA_DIR=%PROJECT_ROOT%\skia-build\src\skia"
 set "SKIA_OUT=%SKIA_DIR%\out\release-windows"
 
-if not exist "%SKIA_OUT%\libskia.lib" (
+rem Windows Skia build produces skia.lib (not libskia.lib - that's Unix naming)
+if not exist "%SKIA_OUT%\skia.lib" (
     echo [ERROR] Skia library not found at %SKIA_OUT%
     echo.
     echo Please build Skia for Windows first:
