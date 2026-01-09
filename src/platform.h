@@ -301,7 +301,7 @@ inline CPUStats getProcessCPUStats() {
         return SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
     }
 #elif defined(PLATFORM_WINDOWS)
-    #include "include/ports/SkFontMgr_win.h"
+    #include "include/ports/SkTypeface_win.h"
     inline sk_sp<SkFontMgr> createPlatformFontMgr() {
         return SkFontMgr_New_DirectWrite();
     }
