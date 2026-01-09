@@ -81,7 +81,7 @@ jobs:
         uses: actions/cache@v4
         with:
           # Cache output AND all headers (full module dirs since some headers are in utils/)
-          # Also include src/ for internal headers and skresources which svg module depends on
+          # Also include src/ for internal headers and modules needed by svg
           path: |
             skia-build/src/skia/out/release-linux-${{ runner.arch == 'X64' && 'x64' || 'arm64' }}
             skia-build/src/skia/include
@@ -91,7 +91,8 @@ jobs:
             skia-build/src/skia/modules/skshaper
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
-          key: skia-linux-${{ runner.arch }}-v4-${{ hashFiles('skia-build/build-linux.sh') }}
+            skia-build/src/skia/modules/skcms
+          key: skia-linux-${{ runner.arch }}-v5-${{ hashFiles('skia-build/build-linux.sh') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
@@ -150,7 +151,7 @@ jobs:
         uses: actions/cache@v4
         with:
           # Cache output AND all headers (full module dirs since some headers are in utils/)
-          # Also include src/ for internal headers and skresources which svg module depends on
+          # Also include src/ for internal headers and modules needed by svg
           path: |
             skia-build/src/skia/out/release-macos
             skia-build/src/skia/include
@@ -160,7 +161,8 @@ jobs:
             skia-build/src/skia/modules/skshaper
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
-          key: skia-macos-arm64-v4-${{ hashFiles('skia-build/build-macos.sh') }}
+            skia-build/src/skia/modules/skcms
+          key: skia-macos-arm64-v5-${{ hashFiles('skia-build/build-macos.sh') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
@@ -208,7 +210,7 @@ jobs:
         uses: actions/cache@v4
         with:
           # Cache output AND all headers (full module dirs since some headers are in utils/)
-          # Also include src/ for internal headers and skresources which svg module depends on
+          # Also include src/ for internal headers and modules needed by svg
           path: |
             skia-build/src/skia/out/release-ios-device
             skia-build/src/skia/out/release-ios-simulator
@@ -219,7 +221,8 @@ jobs:
             skia-build/src/skia/modules/skshaper
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
-          key: skia-ios-v4-${{ hashFiles('skia-build/build-ios.sh', 'skia-build/build-ios-arch.sh') }}
+            skia-build/src/skia/modules/skcms
+          key: skia-ios-v5-${{ hashFiles('skia-build/build-ios.sh', 'skia-build/build-ios-arch.sh') }}
 
       - name: Build Skia iOS Device (if not cached)
         if: steps.cache-skia-ios.outputs.cache-hit != 'true'
@@ -310,7 +313,7 @@ jobs:
         uses: actions/cache@v4
         with:
           # Cache output AND all headers (full module dirs since some headers are in utils/)
-          # Also include src/ for internal headers that some modules depend on
+          # Also include src/ for internal headers and modules needed by svg
           path: |
             skia-build/src/skia/out/release-windows
             skia-build/src/skia/include
@@ -320,7 +323,8 @@ jobs:
             skia-build/src/skia/modules/skshaper
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
-          key: skia-windows-x64-v4-${{ hashFiles('skia-build/build-windows.bat', 'scripts/build-windows.bat') }}
+            skia-build/src/skia/modules/skcms
+          key: skia-windows-x64-v5-${{ hashFiles('skia-build/build-windows.bat', 'scripts/build-windows.bat') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
