@@ -1391,7 +1391,8 @@ SVGLoadError loadSVGFile(const std::string& path,
     int newSvgHeight = 600;
 
     const auto& viewBox = root->getViewBox();
-    if (viewBox.isValid()) {
+    // viewBox is std::optional<SkRect>, use has_value() to check if populated
+    if (viewBox.has_value()) {
         newSvgWidth = static_cast<int>(viewBox->width());
         newSvgHeight = static_cast<int>(viewBox->height());
     } else {
