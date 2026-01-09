@@ -1607,9 +1607,17 @@ std::string FolderBrowser::generateNavBar() const {
 std::string FolderBrowser::formatModifiedTime(std::time_t time) const {
     if (time == 0) return "";
 
-    // Issue 7 fix: use localtime_r for thread safety
+    // Issue 7 fix: use thread-safe localtime variant
     std::tm tm_storage;
-    std::tm* tm = localtime_r(&time, &tm_storage);
+    std::tm* tm = nullptr;
+#ifdef _WIN32
+    // Windows uses localtime_s with reversed argument order
+    if (localtime_s(&tm_storage, &time) == 0) {
+        tm = &tm_storage;
+    }
+#else
+    tm = localtime_r(&time, &tm_storage);
+#endif
     if (!tm) return "";
 
     std::ostringstream ss;

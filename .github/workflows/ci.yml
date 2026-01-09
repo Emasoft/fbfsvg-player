@@ -358,7 +358,7 @@ jobs:
             Write-Host "Moved Skia output to: $expectedPath"
             Get-ChildItem $expectedPath | Select-Object -First 10
 
-            # Also move headers if needed
+            # Also move headers, modules, and src if needed
             if ((Test-Path "$unexpectedSkiaRoot\include") -and !(Test-Path "$expectedSkiaRoot\include")) {
               Write-Host "Moving Skia headers..."
               Copy-Item -Recurse -Force "$unexpectedSkiaRoot\include" "$expectedSkiaRoot\include"
@@ -366,6 +366,10 @@ jobs:
             if ((Test-Path "$unexpectedSkiaRoot\modules") -and !(Test-Path "$expectedSkiaRoot\modules")) {
               Write-Host "Moving Skia modules..."
               Copy-Item -Recurse -Force "$unexpectedSkiaRoot\modules" "$expectedSkiaRoot\modules"
+            }
+            if ((Test-Path "$unexpectedSkiaRoot\src") -and !(Test-Path "$expectedSkiaRoot\src")) {
+              Write-Host "Moving Skia src (internal headers)..."
+              Copy-Item -Recurse -Force "$unexpectedSkiaRoot\src" "$expectedSkiaRoot\src"
             }
           } elseif (Test-Path $expectedPath) {
             Write-Host "Skia output already at expected location: $expectedPath"
