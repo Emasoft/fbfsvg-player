@@ -80,7 +80,8 @@ jobs:
         id: cache-skia
         uses: actions/cache@v4
         with:
-          path: skia-build/src/skia/out/release-linux
+          # Cache architecture-specific directory (x64 or arm64) since SDK expects this path
+          path: skia-build/src/skia/out/release-linux-${{ runner.arch == 'X64' && 'x64' || 'arm64' }}
           key: skia-linux-${{ runner.arch }}-${{ hashFiles('skia-build/build-linux.sh') }}
 
       - name: Build Skia (if not cached)
@@ -146,7 +147,8 @@ jobs:
         if: steps.cache-skia.outputs.cache-hit != 'true'
         run: |
           cd skia-build
-          ./build-macos.sh -y
+          # macOS build script has no interactive prompts, no -y needed
+          ./build-macos.sh
         timeout-minutes: 30
 
       - name: Build macOS Desktop Player
@@ -195,7 +197,8 @@ jobs:
         if: steps.cache-skia-ios.outputs.cache-hit != 'true'
         run: |
           cd skia-build
-          ./build-ios.sh -y
+          # iOS build script has no interactive prompts, builds device by default
+          ./build-ios.sh --xcframework
         timeout-minutes: 45
 
       - name: Build iOS XCFramework
@@ -250,8 +253,8 @@ jobs:
           Write-Host "Extracting SDL2..."
           Expand-Archive -Path $SDL2_ZIP -DestinationPath .
 
-          # Rename to expected location
-          Rename-Item -Path "SDL2-$SDL2_VERSION" -NewName "external\SDL2"
+          # Move to expected location (Move-Item handles paths correctly, unlike Rename-Item)
+          Move-Item -Path "SDL2-$SDL2_VERSION" -Destination "external\SDL2"
 
           Write-Host "SDL2 installed at: $PWD\external\SDL2"
           Get-ChildItem "external\SDL2"
