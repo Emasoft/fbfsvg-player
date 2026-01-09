@@ -80,15 +80,15 @@ jobs:
         id: cache-skia
         uses: actions/cache@v4
         with:
-          # Cache output AND headers needed for compilation
+          # Cache output AND all headers (full module dirs since some headers are in utils/)
           path: |
             skia-build/src/skia/out/release-linux-${{ runner.arch == 'X64' && 'x64' || 'arm64' }}
             skia-build/src/skia/include
-            skia-build/src/skia/modules/svg/include
-            skia-build/src/skia/modules/skparagraph/include
-            skia-build/src/skia/modules/skshaper/include
-            skia-build/src/skia/modules/skunicode/include
-          key: skia-linux-${{ runner.arch }}-v2-${{ hashFiles('skia-build/build-linux.sh') }}
+            skia-build/src/skia/modules/svg
+            skia-build/src/skia/modules/skparagraph
+            skia-build/src/skia/modules/skshaper
+            skia-build/src/skia/modules/skunicode
+          key: skia-linux-${{ runner.arch }}-v3-${{ hashFiles('skia-build/build-linux.sh') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
@@ -146,15 +146,15 @@ jobs:
         id: cache-skia
         uses: actions/cache@v4
         with:
-          # Cache output AND headers needed for compilation
+          # Cache output AND all headers (full module dirs since some headers are in utils/)
           path: |
             skia-build/src/skia/out/release-macos
             skia-build/src/skia/include
-            skia-build/src/skia/modules/svg/include
-            skia-build/src/skia/modules/skparagraph/include
-            skia-build/src/skia/modules/skshaper/include
-            skia-build/src/skia/modules/skunicode/include
-          key: skia-macos-arm64-v2-${{ hashFiles('skia-build/build-macos.sh') }}
+            skia-build/src/skia/modules/svg
+            skia-build/src/skia/modules/skparagraph
+            skia-build/src/skia/modules/skshaper
+            skia-build/src/skia/modules/skunicode
+          key: skia-macos-arm64-v3-${{ hashFiles('skia-build/build-macos.sh') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
@@ -201,16 +201,16 @@ jobs:
         id: cache-skia-ios
         uses: actions/cache@v4
         with:
-          # Cache output AND headers needed for compilation
+          # Cache output AND all headers (full module dirs since some headers are in utils/)
           path: |
             skia-build/src/skia/out/release-ios-device
             skia-build/src/skia/out/release-ios-simulator
             skia-build/src/skia/include
-            skia-build/src/skia/modules/svg/include
-            skia-build/src/skia/modules/skparagraph/include
-            skia-build/src/skia/modules/skshaper/include
-            skia-build/src/skia/modules/skunicode/include
-          key: skia-ios-v2-${{ hashFiles('skia-build/build-ios.sh', 'skia-build/build-ios-arch.sh') }}
+            skia-build/src/skia/modules/svg
+            skia-build/src/skia/modules/skparagraph
+            skia-build/src/skia/modules/skshaper
+            skia-build/src/skia/modules/skunicode
+          key: skia-ios-v3-${{ hashFiles('skia-build/build-ios.sh', 'skia-build/build-ios-arch.sh') }}
 
       - name: Build Skia iOS Device (if not cached)
         if: steps.cache-skia-ios.outputs.cache-hit != 'true'
@@ -300,15 +300,15 @@ jobs:
         id: cache-skia
         uses: actions/cache@v4
         with:
-          # Cache output AND headers needed for compilation
+          # Cache output AND all headers (full module dirs since some headers are in utils/)
           path: |
             skia-build/src/skia/out/release-windows
             skia-build/src/skia/include
-            skia-build/src/skia/modules/svg/include
-            skia-build/src/skia/modules/skparagraph/include
-            skia-build/src/skia/modules/skshaper/include
-            skia-build/src/skia/modules/skunicode/include
-          key: skia-windows-x64-v2-${{ hashFiles('skia-build/build-windows.bat') }}
+            skia-build/src/skia/modules/svg
+            skia-build/src/skia/modules/skparagraph
+            skia-build/src/skia/modules/skshaper
+            skia-build/src/skia/modules/skunicode
+          key: skia-windows-x64-v3-${{ hashFiles('skia-build/build-windows.bat') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
@@ -357,11 +357,11 @@ jobs:
             }
           } elseif (Test-Path $expectedPath) {
             Write-Host "Skia output already at expected location: $expectedPath"
-            # Verify library file exists
-            if (Test-Path "$expectedPath\libskia.lib") {
-              Write-Host "Found libskia.lib"
+            # Verify library file exists (Windows uses skia.lib, not libskia.lib)
+            if (Test-Path "$expectedPath\skia.lib") {
+              Write-Host "Found skia.lib"
             } else {
-              Write-Host "WARNING: libskia.lib not found!"
+              Write-Host "WARNING: skia.lib not found!"
               Write-Host "Library files in $expectedPath :"
               Get-ChildItem "$expectedPath\*.lib" -ErrorAction SilentlyContinue | Select-Object Name
             }
