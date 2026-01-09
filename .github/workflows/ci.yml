@@ -140,8 +140,15 @@ jobs:
         id: cache-skia
         uses: actions/cache@v4
         with:
-          path: skia-build/src/skia/out/release-macos
-          key: skia-macos-arm64-${{ hashFiles('skia-build/build-macos.sh') }}
+          # Cache output AND headers needed for compilation
+          path: |
+            skia-build/src/skia/out/release-macos
+            skia-build/src/skia/include
+            skia-build/src/skia/modules/svg/include
+            skia-build/src/skia/modules/skparagraph/include
+            skia-build/src/skia/modules/skshaper/include
+            skia-build/src/skia/modules/skunicode/include
+          key: skia-macos-arm64-v2-${{ hashFiles('skia-build/build-macos.sh') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
@@ -188,10 +195,16 @@ jobs:
         id: cache-skia-ios
         uses: actions/cache@v4
         with:
+          # Cache output AND headers needed for compilation
           path: |
             skia-build/src/skia/out/release-ios-device
             skia-build/src/skia/out/release-ios-simulator
-          key: skia-ios-${{ hashFiles('skia-build/build-ios.sh', 'skia-build/build-ios-arch.sh') }}
+            skia-build/src/skia/include
+            skia-build/src/skia/modules/svg/include
+            skia-build/src/skia/modules/skparagraph/include
+            skia-build/src/skia/modules/skshaper/include
+            skia-build/src/skia/modules/skunicode/include
+          key: skia-ios-v2-${{ hashFiles('skia-build/build-ios.sh', 'skia-build/build-ios-arch.sh') }}
 
       - name: Build Skia iOS Device (if not cached)
         if: steps.cache-skia-ios.outputs.cache-hit != 'true'
@@ -281,8 +294,15 @@ jobs:
         id: cache-skia
         uses: actions/cache@v4
         with:
-          path: skia-build/src/skia/out/release-windows
-          key: skia-windows-x64-${{ hashFiles('skia-build/build-windows.bat') }}
+          # Cache output AND headers needed for compilation
+          path: |
+            skia-build/src/skia/out/release-windows
+            skia-build/src/skia/include
+            skia-build/src/skia/modules/svg/include
+            skia-build/src/skia/modules/skparagraph/include
+            skia-build/src/skia/modules/skshaper/include
+            skia-build/src/skia/modules/skunicode/include
+          key: skia-windows-x64-v2-${{ hashFiles('skia-build/build-windows.bat') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
@@ -301,6 +321,10 @@ jobs:
           $unexpectedPath = "D:\src\skia\out\release-windows"
           $expectedPath = "skia-build\src\skia\out\release-windows"
 
+          # Also handle headers if they're at D:\src\skia
+          $unexpectedSkiaRoot = "D:\src\skia"
+          $expectedSkiaRoot = "skia-build\src\skia"
+
           if (Test-Path $unexpectedPath) {
             Write-Host "Skia output found at $unexpectedPath, moving to expected location..."
 
@@ -315,8 +339,26 @@ jobs:
 
             Write-Host "Moved Skia output to: $expectedPath"
             Get-ChildItem $expectedPath | Select-Object -First 10
+
+            # Also move headers if needed
+            if ((Test-Path "$unexpectedSkiaRoot\include") -and !(Test-Path "$expectedSkiaRoot\include")) {
+              Write-Host "Moving Skia headers..."
+              Copy-Item -Recurse -Force "$unexpectedSkiaRoot\include" "$expectedSkiaRoot\include"
+            }
+            if ((Test-Path "$unexpectedSkiaRoot\modules") -and !(Test-Path "$expectedSkiaRoot\modules")) {
+              Write-Host "Moving Skia modules..."
+              Copy-Item -Recurse -Force "$unexpectedSkiaRoot\modules" "$expectedSkiaRoot\modules"
+            }
           } elseif (Test-Path $expectedPath) {
             Write-Host "Skia output already at expected location: $expectedPath"
+            # Verify library file exists
+            if (Test-Path "$expectedPath\libskia.lib") {
+              Write-Host "Found libskia.lib"
+            } else {
+              Write-Host "WARNING: libskia.lib not found!"
+              Write-Host "Library files in $expectedPath :"
+              Get-ChildItem "$expectedPath\*.lib" -ErrorAction SilentlyContinue | Select-Object Name
+            }
           } else {
             Write-Host "ERROR: Skia output not found at either location"
             Write-Host "Checking D:\src..."

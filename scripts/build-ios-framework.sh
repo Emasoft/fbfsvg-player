@@ -105,6 +105,7 @@ check_prerequisites() {
     local skia_device="$SKIA_DIR/out/release-ios-device"
     local skia_sim_arm="$SKIA_DIR/out/release-ios-simulator-arm64"
     local skia_sim_x64="$SKIA_DIR/out/release-ios-simulator-x64"
+    local skia_sim_generic="$SKIA_DIR/out/release-ios-simulator"
 
     if [ ! -f "$skia_device/libskia.a" ]; then
         log_error "Skia iOS device library not found at: $skia_device/libskia.a"
@@ -112,8 +113,8 @@ check_prerequisites() {
         exit 1
     fi
 
-    # Check for at least one simulator architecture
-    if [ ! -f "$skia_sim_arm/libskia.a" ] && [ ! -f "$skia_sim_x64/libskia.a" ]; then
+    # Check for at least one simulator architecture (includes generic path as fallback)
+    if [ ! -f "$skia_sim_arm/libskia.a" ] && [ ! -f "$skia_sim_x64/libskia.a" ] && [ ! -f "$skia_sim_generic/libskia.a" ]; then
         log_error "Skia iOS simulator library not found"
         log_info "Run: make skia-ios-simulator"
         exit 1
@@ -162,7 +163,12 @@ compile_sources() {
         if [ "$arch" = "x86_64" ]; then
             skia_lib_dir="$SKIA_DIR/out/release-ios-simulator-x64"
         else
-            skia_lib_dir="$SKIA_DIR/out/release-ios-simulator-arm64"
+            # Try architecture-specific path first, fall back to generic
+            if [ -f "$SKIA_DIR/out/release-ios-simulator-arm64/libskia.a" ]; then
+                skia_lib_dir="$SKIA_DIR/out/release-ios-simulator-arm64"
+            else
+                skia_lib_dir="$SKIA_DIR/out/release-ios-simulator"
+            fi
         fi
     fi
 
