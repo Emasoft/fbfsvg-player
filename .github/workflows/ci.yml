@@ -189,17 +189,35 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            skia-build/src/skia/out/release-ios-arm64
-            skia-build/src/skia/out/release-ios-simulator-arm64
-          key: skia-ios-${{ hashFiles('skia-build/build-ios.sh') }}
+            skia-build/src/skia/out/release-ios-device
+            skia-build/src/skia/out/release-ios-simulator
+          key: skia-ios-${{ hashFiles('skia-build/build-ios.sh', 'skia-build/build-ios-arch.sh') }}
 
-      - name: Build Skia iOS (if not cached)
+      - name: Build Skia iOS Device (if not cached)
         if: steps.cache-skia-ios.outputs.cache-hit != 'true'
         run: |
           cd skia-build
-          # iOS build script has no interactive prompts, builds device by default
-          ./build-ios.sh --xcframework
-        timeout-minutes: 45
+          # Build device first (arm64)
+          ./build-ios.sh --device
+          # Check if build succeeded
+          if [ ! -f "src/skia/out/release-ios-device/libskia.a" ]; then
+            echo "ERROR: iOS device build failed!"
+            exit 1
+          fi
+        timeout-minutes: 30
+
+      - name: Build Skia iOS Simulator (if not cached)
+        if: steps.cache-skia-ios.outputs.cache-hit != 'true'
+        run: |
+          cd skia-build
+          # Build simulator for current architecture (arm64 on macos-14)
+          ./build-ios.sh --simulator
+          # Check if build succeeded
+          if [ ! -f "src/skia/out/release-ios-simulator/libskia.a" ]; then
+            echo "ERROR: iOS simulator build failed!"
+            exit 1
+          fi
+        timeout-minutes: 30
 
       - name: Build iOS XCFramework
         run: ./scripts/build-ios-framework.sh -y
@@ -273,6 +291,40 @@ jobs:
           cd skia-build
           call build-windows.bat /y
         timeout-minutes: 45
+
+      - name: Fix Skia Output Path
+        if: steps.cache-skia.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          # Windows gclient sometimes puts Skia at D:\src\skia instead of relative path
+          # Check if Skia output is at the unexpected location and move it
+          $unexpectedPath = "D:\src\skia\out\release-windows"
+          $expectedPath = "skia-build\src\skia\out\release-windows"
+
+          if (Test-Path $unexpectedPath) {
+            Write-Host "Skia output found at $unexpectedPath, moving to expected location..."
+
+            # Create parent directories
+            New-Item -ItemType Directory -Force -Path "skia-build\src\skia\out" | Out-Null
+
+            # Move the output directory
+            if (Test-Path $expectedPath) {
+              Remove-Item -Recurse -Force $expectedPath
+            }
+            Move-Item -Path $unexpectedPath -Destination $expectedPath
+
+            Write-Host "Moved Skia output to: $expectedPath"
+            Get-ChildItem $expectedPath | Select-Object -First 10
+          } elseif (Test-Path $expectedPath) {
+            Write-Host "Skia output already at expected location: $expectedPath"
+          } else {
+            Write-Host "ERROR: Skia output not found at either location"
+            Write-Host "Checking D:\src..."
+            if (Test-Path "D:\src") { Get-ChildItem "D:\src" -Recurse -Depth 3 | Select-Object -First 20 }
+            Write-Host "Checking skia-build\src..."
+            if (Test-Path "skia-build\src") { Get-ChildItem "skia-build\src" -Recurse -Depth 3 | Select-Object -First 20 }
+            exit 1
+          }
 
       - name: Build Windows Player
         shell: cmd
