@@ -219,12 +219,106 @@ jobs:
           path: build/SVGPlayer.xcframework
 
   # ==========================================================================
+  # Windows Build and Test
+  # ==========================================================================
+  windows-build:
+    name: Windows Build
+    runs-on: windows-2022
+    needs: api-compile-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download SDL2
+        shell: pwsh
+        run: |
+          # Download SDL2 development libraries
+          $SDL2_VERSION = "2.30.0"
+          $SDL2_URL = "https://github.com/libsdl-org/SDL/releases/download/release-$SDL2_VERSION/SDL2-devel-$SDL2_VERSION-VC.zip"
+          $SDL2_ZIP = "SDL2-devel.zip"
+
+          Write-Host "Downloading SDL2 $SDL2_VERSION..."
+          Invoke-WebRequest -Uri $SDL2_URL -OutFile $SDL2_ZIP
+
+          Write-Host "Extracting SDL2..."
+          Expand-Archive -Path $SDL2_ZIP -DestinationPath .
+
+          # Rename to expected location
+          Rename-Item -Path "SDL2-$SDL2_VERSION" -NewName "external\SDL2"
+
+          Write-Host "SDL2 installed at: $PWD\external\SDL2"
+          Get-ChildItem "external\SDL2"
+
+      - name: Cache Skia Build
+        id: cache-skia
+        uses: actions/cache@v4
+        with:
+          path: skia-build/src/skia/out/release-windows
+          key: skia-windows-x64-${{ hashFiles('skia-build/build-windows.bat') }}
+
+      - name: Build Skia (if not cached)
+        if: steps.cache-skia.outputs.cache-hit != 'true'
+        shell: cmd
+        run: |
+          cd skia-build
+          call build-windows.bat /y
+        timeout-minutes: 45
+
+      - name: Build Windows Player
+        shell: cmd
+        run: |
+          call scripts\build-windows.bat /y
+
+      - name: Verify Windows Binary
+        shell: pwsh
+        run: |
+          Write-Host "Checking binary exists..."
+          Get-ChildItem "build\windows"
+
+          Write-Host ""
+          Write-Host "Verifying PE format..."
+          $exe = "build\windows\svg_player_animated.exe"
+          if (Test-Path $exe) {
+            $fileInfo = Get-Item $exe
+            Write-Host "File: $($fileInfo.Name)"
+            Write-Host "Size: $($fileInfo.Length) bytes"
+            Write-Host "Created: $($fileInfo.CreationTime)"
+
+            # Basic PE header check
+            $bytes = [System.IO.File]::ReadAllBytes($exe)
+            if ($bytes[0] -eq 0x4D -and $bytes[1] -eq 0x5A) {
+              Write-Host "Valid PE executable (MZ header found)"
+            } else {
+              Write-Host "ERROR: Invalid PE header"
+              exit 1
+            }
+          } else {
+            Write-Host "ERROR: Executable not found"
+            exit 1
+          }
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-player
+          path: |
+            build/windows/svg_player_animated.exe
+            build/windows/SDL2.dll
+
+  # ==========================================================================
   # Summary Job
   # ==========================================================================
   build-summary:
     name: Build Summary
     runs-on: ubuntu-latest
-    needs: [api-compile-test, linux-build, macos-build, ios-build]
+    needs: [api-compile-test, linux-build, macos-build, ios-build, windows-build]
     if: always()
     steps:
       - name: Check Results
@@ -236,12 +330,14 @@ jobs:
           echo "Linux Build: ${{ needs.linux-build.result }}"
           echo "macOS Build: ${{ needs.macos-build.result }}"
           echo "iOS Build: ${{ needs.ios-build.result }}"
+          echo "Windows Build: ${{ needs.windows-build.result }}"
           echo ""
 
           if [ "${{ needs.api-compile-test.result }}" != "success" ] || \
              [ "${{ needs.linux-build.result }}" != "success" ] || \
              [ "${{ needs.macos-build.result }}" != "success" ] || \
-             [ "${{ needs.ios-build.result }}" != "success" ]; then
+             [ "${{ needs.ios-build.result }}" != "success" ] || \
+             [ "${{ needs.windows-build.result }}" != "success" ]; then
             echo "One or more builds failed!"
             exit 1
           fi
