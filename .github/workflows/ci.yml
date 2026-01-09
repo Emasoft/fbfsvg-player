@@ -301,14 +301,17 @@ jobs:
         uses: actions/cache@v4
         with:
           # Cache output AND all headers (full module dirs since some headers are in utils/)
+          # Also include src/ for internal headers that some modules depend on
           path: |
             skia-build/src/skia/out/release-windows
             skia-build/src/skia/include
+            skia-build/src/skia/src
             skia-build/src/skia/modules/svg
             skia-build/src/skia/modules/skparagraph
             skia-build/src/skia/modules/skshaper
             skia-build/src/skia/modules/skunicode
-          key: skia-windows-x64-v3-${{ hashFiles('skia-build/build-windows.bat') }}
+            skia-build/src/skia/modules/skresources
+          key: skia-windows-x64-v4-${{ hashFiles('skia-build/build-windows.bat', 'scripts/build-windows.bat') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'

@@ -142,9 +142,9 @@ rem Create build directory
 set "BUILD_DIR=%PROJECT_ROOT%\build\windows"
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
 
-rem Determine compiler flags
-set "CXXFLAGS=/std:c++17 /EHsc /W3 /DWIN32 /D_WINDOWS /DUNICODE /D_UNICODE"
-set "INCLUDES=/I"%SKIA_DIR%" /I"%SKIA_DIR%\include" /I"%SDL2_DIR%\include" /I"%PROJECT_ROOT%\src" /I"%PROJECT_ROOT%\shared""
+rem Determine compiler flags (NOMINMAX prevents Windows min/max macros conflicting with Skia)
+set "CXXFLAGS=/std:c++17 /EHsc /W3 /DWIN32 /D_WINDOWS /DUNICODE /D_UNICODE /DNOMINMAX"
+set "INCLUDES=/I"%PROJECT_ROOT%" /I"%SKIA_DIR%" /I"%SKIA_DIR%\include" /I"%SKIA_DIR%\src" /I"%SDL2_DIR%\include" /I"%PROJECT_ROOT%\src" /I"%PROJECT_ROOT%\shared""
 set "LIBPATHS=/LIBPATH:"%SKIA_OUT%" /LIBPATH:"%SDL2_DIR%\lib\x64""
 set "LIBS=skia.lib svg.lib SDL2.lib SDL2main.lib opengl32.lib user32.lib gdi32.lib shell32.lib comdlg32.lib ole32.lib shlwapi.lib advapi32.lib dwrite.lib"
 
