@@ -80,9 +80,15 @@ jobs:
         id: cache-skia
         uses: actions/cache@v4
         with:
-          # Cache architecture-specific directory (x64 or arm64) since SDK expects this path
-          path: skia-build/src/skia/out/release-linux-${{ runner.arch == 'X64' && 'x64' || 'arm64' }}
-          key: skia-linux-${{ runner.arch }}-${{ hashFiles('skia-build/build-linux.sh') }}
+          # Cache output AND headers needed for compilation
+          path: |
+            skia-build/src/skia/out/release-linux-${{ runner.arch == 'X64' && 'x64' || 'arm64' }}
+            skia-build/src/skia/include
+            skia-build/src/skia/modules/svg/include
+            skia-build/src/skia/modules/skparagraph/include
+            skia-build/src/skia/modules/skshaper/include
+            skia-build/src/skia/modules/skunicode/include
+          key: skia-linux-${{ runner.arch }}-v2-${{ hashFiles('skia-build/build-linux.sh') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
