@@ -1,11 +1,53 @@
 #!/bin/bash
 # test-window-controls.sh - Automated tests for window control features
 # Tests: position, size, maximize, M key, F key
+#
+# SAFEGUARDS:
+# - Maximum script runtime: 60 seconds
+# - Per-test timeout: 5 seconds for background processes
+# - Cleanup trap kills all child processes on exit
+# - Watchdog kills any stray player processes
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 PLAYER="$PROJECT_ROOT/build/svg_player_animated"
 SVG_FILE="$PROJECT_ROOT/svg_input_samples/panther_bird.fbf.svg"
+
+# Maximum runtime for entire test suite (seconds)
+MAX_RUNTIME=60
+# Maximum runtime for a single background test (seconds)
+TEST_TIMEOUT=5
+
+# Track all background PIDs for cleanup
+declare -a BG_PIDS=()
+
+# Cleanup function - kills all background processes
+cleanup() {
+    local exit_code=$?
+    # Kill all tracked background processes
+    for pid in "${BG_PIDS[@]}"; do
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+    done
+    # Kill any stray player processes from this test run
+    pkill -f "svg_player_animated.*panther_bird" 2>/dev/null || true
+    exit $exit_code
+}
+
+# Set trap for cleanup on any exit
+trap cleanup EXIT INT TERM
+
+# Watchdog: kill script if it runs too long
+(
+    sleep $MAX_RUNTIME
+    echo ""
+    echo "[ERROR] Test suite exceeded ${MAX_RUNTIME}s timeout - killing"
+    # Kill parent and all children
+    kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null
+) &
+WATCHDOG_PID=$!
+# Don't track watchdog in BG_PIDS (it should exit when we do)
+disown $WATCHDOG_PID 2>/dev/null || true
 
 # Ensure logs directory exists
 mkdir -p "$PROJECT_ROOT/tests/logs"
@@ -94,24 +136,28 @@ fi
 # Test 6: M key for maximize toggle (requires cliclick)
 info "Test 6: M key toggles maximize"
 if command -v cliclick &> /dev/null; then
-    # Start player in background at known position
-    "$PLAYER" "$SVG_FILE" --windowed --pos=100,100 --size=640x480 > /tmp/player_output.txt 2>&1 &
+    # Start player in background at known position with hard timeout
+    timeout $TEST_TIMEOUT "$PLAYER" "$SVG_FILE" --windowed --pos=100,100 --size=640x480 > /tmp/player_output.txt 2>&1 &
     PLAYER_PID=$!
+    BG_PIDS+=($PLAYER_PID)
     sleep 1.5
 
-    # Click on window to focus it (center of 640x480 window at 100,100)
-    cliclick c:420,340
-    sleep 0.3
+    # Check if player is still running before sending keys
+    if kill -0 $PLAYER_PID 2>/dev/null; then
+        # Click on window to focus it (center of 640x480 window at 100,100)
+        cliclick c:420,340
+        sleep 0.3
 
-    # Press M key to maximize, then restore
-    cliclick t:m
-    sleep 0.5
-    cliclick t:m
-    sleep 0.3
-    cliclick t:q
-    sleep 0.5
+        # Press M key to maximize, then restore
+        cliclick t:m
+        sleep 0.5
+        cliclick t:m
+        sleep 0.3
+        cliclick t:q
+        sleep 0.5
+    fi
 
-    # Kill if still running
+    # Kill if still running (should have timed out or quit)
     kill $PLAYER_PID 2>/dev/null || true
     wait $PLAYER_PID 2>/dev/null || true
 
@@ -128,23 +174,28 @@ fi
 # Test 7: F key for fullscreen toggle (requires cliclick)
 info "Test 7: F key toggles fullscreen"
 if command -v cliclick &> /dev/null; then
-    # Start player in background at known position
-    "$PLAYER" "$SVG_FILE" --windowed --pos=100,100 --size=640x480 > /tmp/player_output.txt 2>&1 &
+    # Start player in background at known position with hard timeout
+    timeout $TEST_TIMEOUT "$PLAYER" "$SVG_FILE" --windowed --pos=100,100 --size=640x480 > /tmp/player_output.txt 2>&1 &
     PLAYER_PID=$!
+    BG_PIDS+=($PLAYER_PID)
     sleep 1.5
 
-    # Click on window to focus it (center of 640x480 window at 100,100)
-    cliclick c:420,340
-    sleep 0.3
+    # Check if player is still running before sending keys
+    if kill -0 $PLAYER_PID 2>/dev/null; then
+        # Click on window to focus it (center of 640x480 window at 100,100)
+        cliclick c:420,340
+        sleep 0.3
 
-    # Press F key twice then quit
-    cliclick t:f
-    sleep 0.5
-    cliclick t:f
-    sleep 0.3
-    cliclick t:q
-    sleep 0.5
+        # Press F key twice then quit
+        cliclick t:f
+        sleep 0.5
+        cliclick t:f
+        sleep 0.3
+        cliclick t:q
+        sleep 0.5
+    fi
 
+    # Kill if still running (should have timed out or quit)
     kill $PLAYER_PID 2>/dev/null || true
     wait $PLAYER_PID 2>/dev/null || true
 
@@ -184,6 +235,9 @@ echo "PASSED: $PASS_COUNT"
 echo "FAILED: $FAIL_COUNT"
 echo "Log: $TEST_LOG"
 echo ""
+
+# Kill the watchdog before exiting
+kill $WATCHDOG_PID 2>/dev/null || true
 
 if [[ $FAIL_COUNT -gt 0 ]]; then
     echo "SOME TESTS FAILED"
