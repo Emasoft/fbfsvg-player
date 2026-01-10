@@ -1391,8 +1391,13 @@ SVGLoadError loadSVGFile(const std::string& path,
     int newSvgHeight = 600;
 
     const auto& viewBox = root->getViewBox();
-    // Use operator bool() to check if viewBox is populated (works with both std::optional and SkTLazy)
-    if (viewBox) {
+    // Check if viewBox is populated (Windows uses std::optional, macOS/Linux use SkTLazy)
+#if defined(PLATFORM_WINDOWS)
+    const bool hasViewBox = viewBox.has_value();
+#else
+    const bool hasViewBox = viewBox.isValid();
+#endif
+    if (hasViewBox) {
         newSvgWidth = static_cast<int>(viewBox->width());
         newSvgHeight = static_cast<int>(viewBox->height());
     } else {
