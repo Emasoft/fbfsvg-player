@@ -366,6 +366,13 @@ void printHelp(const char* programName) {
     std::cerr << "    " << programName << " animation.svg              # Starts in fullscreen (default)\n";
     std::cerr << "    " << programName << " animation.svg --windowed   # Starts in a window\n";
     std::cerr << "    " << programName << " --version\n\n";
+    std::cerr << "TIPS:\n";
+    std::cerr << "    Assign player to a specific Desktop (macOS):\n";
+    std::cerr << "      1. Start the player with any SVG file\n";
+    std::cerr << "      2. Right-click the player icon in the Dock\n";
+    std::cerr << "      3. Select Options > Assign To > Desktop 2 (or desired desktop)\n";
+    std::cerr << "      4. The player will now always open on that desktop\n";
+    std::cerr << "    This is useful for running tests on a separate desktop.\n\n";
     std::cerr << "BUILD INFO:\n";
     std::cerr << "    " << SVG_PLAYER_BUILD_INFO << "\n";
 }

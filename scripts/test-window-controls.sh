@@ -7,6 +7,11 @@
 # - Per-test timeout: 5 seconds for background processes
 # - Cleanup trap kills all child processes on exit
 # - Watchdog kills any stray player processes
+#
+# TIP: To run tests on a specific Desktop (macOS):
+#   1. Start the player manually once
+#   2. Right-click player icon in Dock > Options > Assign To > Desktop 2
+#   3. Now tests will run on Desktop 2, not interfering with your work
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
