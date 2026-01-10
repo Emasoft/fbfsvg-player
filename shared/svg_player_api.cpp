@@ -284,8 +284,8 @@ bool parseSVG(SVGPlayer* player, const char* data, size_t length) {
     // Extract intrinsic size
     SkSize containerSize = SkSize::Make(800, 600);  // Default if not specified
 
-    // Get viewBox if available (getViewBox() returns std::optional<SkRect>)
-    if (root->getViewBox().has_value()) {
+    // Get viewBox if available (use operator bool() for cross-platform compatibility)
+    if (root->getViewBox()) {
         player->viewBox = *root->getViewBox();
         // Initialize zoom viewBox state - these track zoom/pan modifications
         player->originalViewBox = player->viewBox;

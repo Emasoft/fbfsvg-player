@@ -1363,8 +1363,8 @@ SVGLoadError loadSVGFile(const std::string& path,
     int newSvgHeight = 600;
 
     const auto& viewBox = root->getViewBox();
-    // viewBox is std::optional<SkRect>, use has_value() to check if populated
-    if (viewBox.has_value()) {
+    // Use operator bool() to check if viewBox is populated (works with both std::optional and SkTLazy)
+    if (viewBox) {
         newSvgWidth = static_cast<int>(viewBox->width());
         newSvgHeight = static_cast<int>(viewBox->height());
     } else {
@@ -1535,8 +1535,8 @@ int main(int argc, char* argv[]) {
     int svgHeight = 600;
 
     const auto& viewBox = root->getViewBox();
-    // viewBox is std::optional<SkRect>, use has_value() to check if populated
-    if (viewBox.has_value()) {
+    // Use operator bool() to check if viewBox is populated (works with both std::optional and SkTLazy)
+    if (viewBox) {
         // Use viewBox dimensions - this is the actual content coordinate space
         svgWidth = static_cast<int>(viewBox->width());
         svgHeight = static_cast<int>(viewBox->height());
