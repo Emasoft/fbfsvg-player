@@ -146,7 +146,7 @@ rem Determine compiler flags (NOMINMAX prevents Windows min/max macros conflicti
 set "CXXFLAGS=/std:c++17 /EHsc /W3 /DWIN32 /D_WINDOWS /DUNICODE /D_UNICODE /DNOMINMAX"
 set "INCLUDES=/I"%PROJECT_ROOT%" /I"%SKIA_DIR%" /I"%SKIA_DIR%\include" /I"%SKIA_DIR%\src" /I"%SDL2_DIR%\include" /I"%PROJECT_ROOT%\src" /I"%PROJECT_ROOT%\shared""
 set "LIBPATHS=/LIBPATH:"%SKIA_OUT%" /LIBPATH:"%SDL2_DIR%\lib\x64""
-set "LIBS=skia.lib svg.lib skshaper.lib skresources.lib skunicode.lib SDL2.lib SDL2main.lib opengl32.lib user32.lib gdi32.lib shell32.lib comdlg32.lib ole32.lib shlwapi.lib advapi32.lib dwrite.lib"
+set "LIBS=skia.lib svg.lib skshaper.lib skresources.lib skunicode_core.lib skunicode_icu.lib SDL2.lib SDL2main.lib opengl32.lib user32.lib gdi32.lib shell32.lib comdlg32.lib ole32.lib shlwapi.lib advapi32.lib dwrite.lib"
 
 if "%BUILD_TYPE%"=="debug" (
     set "CXXFLAGS=%CXXFLAGS% /Od /Zi /DEBUG"
