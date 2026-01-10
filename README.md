@@ -1,6 +1,37 @@
-# SVG Video Player
+# fbfsvg-player
 
-A multi-platform animated SVG player with SMIL animation support built using Skia.
+**The first multi-platform player for the FBF.SVG vector video format.**
+
+fbfsvg-player is a high-performance animated SVG player built using Skia that exclusively plays files conforming to the [FBF.SVG format specification](https://github.com/Emasoft/svg2fbf).
+
+## What is FBF.SVG?
+
+**FBF.SVG (Frame-by-Frame SVG)** is an open vector video format that enables declarative frame-by-frame animations as valid SVG 1.1/2.0 documents. Unlike traditional video formats, FBF.SVG files are:
+
+- **Pure Vector**: Infinitely scalable without quality loss
+- **Self-Contained**: Single SVG file with no external dependencies
+- **Declarative**: Uses SMIL timing, not JavaScript or CSS code
+- **Secure**: Strict CSP compliance with no embedded scripts
+- **Universal**: Valid SVG viewable in any browser or SVG editor
+
+### Animation Modes
+
+FBF.SVG supports eight playback modes:
+
+| Mode | Behavior |
+|------|----------|
+| `once` | Plays from start to end, then stops |
+| `once_reversed` | Plays from end to start, then stops |
+| `loop` | Continuous forward playback |
+| `loop_reversed` | Continuous reverse playback |
+| `pingpong_once` | Forward, backward, then stops |
+| `pingpong_loop` | Continuous forward-backward cycle |
+| `pingpong_once_reversed` | Backward, forward, then stops |
+| `pingpong_loop_reversed` | Continuous backward-forward cycle |
+
+### Format Specification
+
+For complete format details, schema, and validation tools, see the [FBF.SVG Specification](https://github.com/Emasoft/svg2fbf).
 
 ## Supported Platforms
 
@@ -13,14 +44,15 @@ A multi-platform animated SVG player with SMIL animation support built using Ski
 
 ## Features
 
-- **SMIL Animation Support**: Full support for SVG animations via SMIL (Synchronized Multimedia Integration Language)
-- **Frame-by-Frame Playback**: Smooth frame-based rendering with configurable FPS
+- **Native FBF.SVG Support**: Optimized for the FBF.SVG vector video format
+- **SMIL Animation Engine**: Full support for declarative SMIL timing
+- **Frame-by-Frame Playback**: Smooth rendering with configurable FPS
 - **Hardware Acceleration**: Metal on Apple platforms, OpenGL/EGL on Linux
-- **Fullscreen Mode**: Toggle fullscreen with `--fullscreen` flag or `F` key
+- **Fullscreen Mode**: Toggle with `--fullscreen` flag or `F` key
 - **Playback Controls**: Play, pause, seek, and speed control
-- **Pre-buffering**: Threaded rendering with consumer-producer pattern for smooth playback
+- **Pre-buffering**: Threaded rendering for smooth playback
 - **Universal Binary**: Supports both x86_64 and arm64 on macOS
-- **iOS Integration**: Static library with C API for UIKit apps
+- **iOS Integration**: XCFramework with C API for UIKit apps
 
 ## Quick Start
 
@@ -33,10 +65,10 @@ make deps
 # 2. Build Skia (one-time, takes 30-60 minutes)
 make skia
 
-# 3. Build the SVG player
+# 3. Build the FBF.SVG player
 make
 
-# 4. Run with a test SVG
+# 4. Run with an FBF.SVG file
 make run
 ```
 
@@ -53,11 +85,11 @@ sudo apt-get install libfreetype6-dev libfontconfig1-dev libx11-dev
 # 2. Build Skia for Linux
 make skia-linux
 
-# 3. Build the SVG player
+# 3. Build the FBF.SVG player
 make linux
 
-# 4. Run with a test SVG
-./build/svg_player_animated svg_input_samples/girl_hair.fbf.svg
+# 4. Run with an FBF.SVG file
+./build/svg_player_animated animation.fbf.svg
 ```
 
 ### Windows
@@ -71,15 +103,15 @@ REM    - Download from: https://libsdl.org/download-2.0.php
 REM    - Extract to C:\SDL2 or the project's external\SDL2 folder
 
 REM 3. Build Skia for Windows (one-time, requires depot_tools)
-REM    In skia-build\src\skia:
-gn gen out/release-windows --args="is_debug=false is_official_build=true skia_use_system_libjpeg_turbo=false skia_use_system_libpng=false skia_use_system_zlib=false skia_use_system_expat=false skia_use_system_icu=false skia_use_system_harfbuzz=false skia_use_system_freetype2=false skia_enable_svg=true target_cpu=\"x64\""
-ninja -C out/release-windows skia svg
+cd skia-build
+build-windows.bat
+cd ..
 
-REM 4. Build the SVG player
+REM 4. Build the FBF.SVG player
 scripts\build-windows.bat
 
-REM 5. Run with a test SVG
-build\windows\svg_player_animated.exe svg_input_samples\girl_hair.fbf.svg
+REM 5. Run with an FBF.SVG file
+build\windows\svg_player_animated.exe animation.fbf.svg
 ```
 
 ### iOS
@@ -94,6 +126,54 @@ make ios-xcframework
 # 3. Integrate into your Xcode project
 # Drag build/svg_player.xcframework into your project
 ```
+
+## Usage
+
+### Desktop (macOS/Linux/Windows)
+
+```bash
+# Basic usage
+./build/svg_player_animated <file.fbf.svg>
+
+# With fullscreen
+./build/svg_player_animated <file.fbf.svg> --fullscreen
+
+# Example
+./build/svg_player_animated svg_input_samples/girl_hair.fbf.svg
+```
+
+### iOS Integration
+
+```c
+#include "svg_player_ios.h"
+
+// Create player
+SVGPlayerHandle player = SVGPlayer_Create();
+
+// Load FBF.SVG file
+SVGPlayer_LoadSVG(player, "animation.fbf.svg");
+
+// Start playback
+SVGPlayer_SetPlaybackState(player, SVGPlaybackState_Playing);
+
+// In your CADisplayLink callback:
+SVGPlayer_Update(player, deltaTime);
+SVGPlayer_Render(player, pixelBuffer, width, height, scale);
+
+// Cleanup
+SVGPlayer_Destroy(player);
+```
+
+## Keyboard Controls (Desktop)
+
+| Key | Action |
+|-----|--------|
+| `Space` | Play/Pause |
+| `F` | Toggle fullscreen |
+| `Left/Right` | Seek backward/forward |
+| `Up/Down` | Increase/decrease playback speed |
+| `R` | Reset to beginning |
+| `Q` / `Escape` | Quit |
 
 ## Build Targets
 
@@ -134,7 +214,7 @@ make ios-xcframework
 | `make windows` | Show Windows build instructions |
 | `make windows-info` | Show detailed Windows build info |
 
-**Note:** Windows builds require Visual Studio on Windows. Run `scripts\build-windows.bat` directly.
+**Note:** Windows builds require Visual Studio. Run `scripts\build-windows.bat` directly on Windows.
 
 ### iOS Targets
 
@@ -155,81 +235,35 @@ make ios-xcframework
 | `make skia-linux` | Build Skia for Linux |
 | `make skia-ios` | Build Skia XCFramework for iOS |
 
-## Usage
-
-### Desktop (macOS/Linux)
-
-```bash
-# Basic usage
-./build/svg_player_animated <svg_file>
-
-# With fullscreen
-./build/svg_player_animated <svg_file> --fullscreen
-
-# Example
-./build/svg_player_animated svg_input_samples/girl_hair.fbf.svg
-```
-
-### iOS Integration
-
-```c
-#include "svg_player_ios.h"
-
-// Create player
-SVGPlayerHandle player = SVGPlayer_Create();
-
-// Load SVG
-SVGPlayer_LoadSVG(player, "animation.svg");
-
-// Start playback
-SVGPlayer_SetPlaybackState(player, SVGPlaybackState_Playing);
-
-// In your CADisplayLink callback:
-SVGPlayer_Update(player, deltaTime);
-SVGPlayer_Render(player, pixelBuffer, width, height, scale);
-
-// Cleanup
-SVGPlayer_Destroy(player);
-```
-
-## Keyboard Controls (Desktop)
-
-| Key | Action |
-|-----|--------|
-| `Space` | Play/Pause |
-| `F` | Toggle fullscreen |
-| `Left/Right` | Seek backward/forward |
-| `Up/Down` | Increase/decrease playback speed |
-| `R` | Reset to beginning |
-| `Q` / `Escape` | Quit |
-
 ## Project Structure
 
 ```
-SKIA-BUILD-ARM64/
+fbfsvg-player/
 ├── src/                             # Main source code
-│   ├── svg_player_animated.cpp      # macOS version
-│   ├── svg_player_animated_linux.cpp # Linux version
-│   ├── svg_player_animated_windows.cpp # Windows version
+│   ├── svg_player_animated.cpp      # macOS player
+│   ├── svg_player_animated_linux.cpp # Linux player
+│   ├── svg_player_animated_windows.cpp # Windows player
 │   ├── svg_player_ios.cpp           # iOS library implementation
 │   ├── svg_player_ios.h             # iOS public API header
 │   ├── file_dialog_windows.cpp      # Windows file dialog
 │   └── platform.h                   # Cross-platform abstractions
+├── shared/                          # Unified cross-platform API
+│   ├── svg_player_api.h             # Master C API header
+│   ├── svg_player_api.cpp           # Platform-independent implementation
+│   ├── SVGAnimationController.h/.cpp # Core animation logic
+│   └── SVGTypes.h                   # Shared type definitions
 ├── scripts/                         # Build scripts
-│   ├── build.sh                     # Master build script
-│   ├── build-macos.sh              # macOS build
-│   ├── build-macos-arch.sh         # macOS architecture-specific
-│   ├── build-linux.sh              # Linux build
-│   ├── build-windows.bat           # Windows build
-│   ├── build-ios.sh                # iOS build
-│   ├── build-skia.sh               # Skia for macOS
-│   ├── build-skia-linux.sh         # Skia for Linux
-│   └── install-deps.sh             # macOS dependencies
+│   ├── build-macos.sh               # macOS build
+│   ├── build-linux.sh               # Linux build
+│   ├── build-windows.bat            # Windows build
+│   ├── build-ios.sh                 # iOS build
+│   └── ...
+├── ios-sdk/                         # iOS SDK components
+├── linux-sdk/                       # Linux SDK components
+├── macos-sdk/                       # macOS SDK components
 ├── build/                           # Build output (gitignored)
-├── svg_input_samples/               # Sample SVG files
+├── svg_input_samples/               # Sample FBF.SVG files
 ├── skia-build/                      # Skia build system (submodule)
-│   ├── src/skia/                    # Skia source code
-│   └── depot_tools/                 # Chromium build tools
 ├── Makefile                         # Main build configuration
 └── README.md                        # This file
 ```
@@ -250,11 +284,17 @@ SKIA-BUILD-ARM64/
 - /proc filesystem for CPU monitoring
 - System packages for dependencies
 
+### Windows
+
+- Uses Direct3D or OpenGL for rendering
+- DirectWrite for font management
+- Visual Studio required for building
+
 ### iOS
 
 - Uses Metal for GPU-accelerated rendering
 - CoreText for fonts (shared with macOS)
-- Builds as static library for UIKit integration
+- Builds as XCFramework for UIKit integration
 - No SDL2 - uses native UIKit windowing
 
 ## Dependencies
@@ -274,6 +314,11 @@ SKIA-BUILD-ARM64/
 - **libfontconfig1-dev**: Font configuration
 - **libfreetype6-dev**: Font rendering
 - **libx11-dev**: X11 windowing
+
+### Windows Dependencies
+
+- **Visual Studio 2019+**: With "Desktop development with C++" workload
+- **SDL2**: Development libraries for Windows x64
 
 ### iOS Dependencies
 
@@ -326,6 +371,10 @@ make deps
 make skia-linux
 make linux
 ```
+
+## Related Projects
+
+- [svg2fbf](https://github.com/Emasoft/svg2fbf) - FBF.SVG format specification and conversion tools
 
 ## License
 

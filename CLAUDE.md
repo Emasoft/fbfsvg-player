@@ -1,8 +1,22 @@
-# SVG Video Player - Development Guide
+# fbfsvg-player - Development Guide
 
 ## Project Overview
 
-Multi-platform animated SVG player with SMIL animation support built using Skia.
+**fbfsvg-player** is the first multi-platform player for the FBF.SVG vector video format, built using Skia.
+
+### What is FBF.SVG?
+
+**FBF.SVG (Frame-by-Frame SVG)** is an open vector video format that enables declarative frame-by-frame animations as valid SVG 1.1/2.0 documents. Key characteristics:
+
+- **Pure Vector**: Infinitely scalable without quality loss
+- **Self-Contained**: Single SVG file with no external dependencies
+- **Declarative**: Uses SMIL timing, not JavaScript or CSS code
+- **Secure**: Strict CSP compliance with no embedded scripts
+- **Eight Animation Modes**: once, loop, pingpong (and reversed variants)
+
+**Format Specification**: [github.com/Emasoft/svg2fbf](https://github.com/Emasoft/svg2fbf)
+
+**Repository**: [github.com/Emasoft/fbfsvg-player](https://github.com/Emasoft/fbfsvg-player)
 
 ---
 
@@ -64,7 +78,7 @@ The folder browser displays SVG files as a **composite animated SVG** where ALL 
 ## Directory Structure
 
 ```
-SKIA-BUILD-ARM64/
+fbfsvg-player/
 ├── shared/                      # UNIFIED CROSS-PLATFORM API (single source of truth)
 │   ├── svg_player_api.h         # Master C API header - all platforms use this
 │   ├── svg_player_api.cpp       # Platform-independent implementation
@@ -130,7 +144,7 @@ SKIA-BUILD-ARM64/
 │   │   └── svgplayer.pc         # pkg-config
 │   └── ios/                     # iOS build output
 │
-├── svg_input_samples/           # Test SVG files
+├── svg_input_samples/           # Sample FBF.SVG files
 ├── Makefile                     # Main build configuration
 └── README.md                    # User documentation
 ```
