@@ -1,0 +1,194 @@
+#!/bin/bash
+# test-window-controls.sh - Automated tests for window control features
+# Tests: position, size, maximize, M key, F key
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PLAYER="$PROJECT_ROOT/build/svg_player_animated"
+SVG_FILE="$PROJECT_ROOT/svg_input_samples/panther_bird.fbf.svg"
+
+# Ensure logs directory exists
+mkdir -p "$PROJECT_ROOT/tests/logs"
+TEST_LOG="$PROJECT_ROOT/tests/logs/window-controls-$(date +%Y%m%d_%H%M%S).log"
+
+PASS_COUNT=0
+FAIL_COUNT=0
+
+pass() {
+    echo "[PASS] $1"
+    echo "[PASS] $1" >> "$TEST_LOG"
+    PASS_COUNT=$((PASS_COUNT + 1))
+}
+
+fail() {
+    echo "[FAIL] $1"
+    echo "[FAIL] $1" >> "$TEST_LOG"
+    FAIL_COUNT=$((FAIL_COUNT + 1))
+}
+
+info() {
+    echo "[INFO] $1"
+    echo "[INFO] $1" >> "$TEST_LOG"
+}
+
+# Check if player exists
+if [[ ! -x "$PLAYER" ]]; then
+    echo "ERROR: Player not found at $PLAYER"
+    echo "Run 'make macos' first"
+    exit 1
+fi
+
+echo "========================================"
+echo "Window Controls Test Suite"
+echo "Started: $(date)"
+echo "========================================"
+echo ""
+
+# Test 1: Help shows new options
+info "Test 1: Help shows new options"
+HELP_OUTPUT=$("$PLAYER" --help 2>&1)
+if echo "$HELP_OUTPUT" | grep -q "\-\-pos=X,Y" && \
+   echo "$HELP_OUTPUT" | grep -q "\-\-size=WxH" && \
+   echo "$HELP_OUTPUT" | grep -q "\-\-maximize"; then
+    pass "Help shows all new window control options"
+else
+    fail "Help missing some window control options"
+fi
+
+# Test 2: Custom position
+info "Test 2: Window with custom position (--pos=200,150)"
+OUTPUT=$(timeout 2 "$PLAYER" "$SVG_FILE" --windowed --pos=200,150 2>&1 || true)
+if echo "$OUTPUT" | grep -q "Rendering..."; then
+    pass "Player started with custom position"
+else
+    fail "Player failed to start with custom position"
+fi
+
+# Test 3: Custom size
+info "Test 3: Window with custom size (--size=640x480)"
+OUTPUT=$(timeout 2 "$PLAYER" "$SVG_FILE" --windowed --size=640x480 2>&1 || true)
+if echo "$OUTPUT" | grep -q "Rendering..."; then
+    pass "Player started with custom size"
+else
+    fail "Player failed to start with custom size"
+fi
+
+# Test 4: Maximize option
+info "Test 4: Start maximized (--maximize)"
+OUTPUT=$(timeout 2 "$PLAYER" "$SVG_FILE" --maximize 2>&1 || true)
+if echo "$OUTPUT" | grep -q "Started maximized"; then
+    pass "Player started maximized"
+else
+    fail "Player failed to start maximized"
+fi
+
+# Test 5: Combined position and size
+info "Test 5: Combined position and size"
+OUTPUT=$(timeout 2 "$PLAYER" "$SVG_FILE" --windowed --pos=100,100 --size=800x600 2>&1 || true)
+if echo "$OUTPUT" | grep -q "Rendering..."; then
+    pass "Player started with combined position and size"
+else
+    fail "Player failed with combined position and size"
+fi
+
+# Test 6: M key for maximize toggle (requires cliclick)
+info "Test 6: M key toggles maximize"
+if command -v cliclick &> /dev/null; then
+    # Start player in background at known position
+    "$PLAYER" "$SVG_FILE" --windowed --pos=100,100 --size=640x480 > /tmp/player_output.txt 2>&1 &
+    PLAYER_PID=$!
+    sleep 1.5
+
+    # Click on window to focus it (center of 640x480 window at 100,100)
+    cliclick c:420,340
+    sleep 0.3
+
+    # Press M key to maximize, then restore
+    cliclick t:m
+    sleep 0.5
+    cliclick t:m
+    sleep 0.3
+    cliclick t:q
+    sleep 0.5
+
+    # Kill if still running
+    kill $PLAYER_PID 2>/dev/null || true
+    wait $PLAYER_PID 2>/dev/null || true
+
+    OUTPUT=$(cat /tmp/player_output.txt 2>/dev/null || echo "")
+    if echo "$OUTPUT" | grep -q "MAXIMIZED" && echo "$OUTPUT" | grep -q "RESTORED"; then
+        pass "M key toggles maximize/restore"
+    else
+        fail "M key maximize toggle not confirmed"
+    fi
+else
+    info "SKIP: cliclick not available for M key test"
+fi
+
+# Test 7: F key for fullscreen toggle (requires cliclick)
+info "Test 7: F key toggles fullscreen"
+if command -v cliclick &> /dev/null; then
+    # Start player in background at known position
+    "$PLAYER" "$SVG_FILE" --windowed --pos=100,100 --size=640x480 > /tmp/player_output.txt 2>&1 &
+    PLAYER_PID=$!
+    sleep 1.5
+
+    # Click on window to focus it (center of 640x480 window at 100,100)
+    cliclick c:420,340
+    sleep 0.3
+
+    # Press F key twice then quit
+    cliclick t:f
+    sleep 0.5
+    cliclick t:f
+    sleep 0.3
+    cliclick t:q
+    sleep 0.5
+
+    kill $PLAYER_PID 2>/dev/null || true
+    wait $PLAYER_PID 2>/dev/null || true
+
+    OUTPUT=$(cat /tmp/player_output.txt 2>/dev/null || echo "")
+    if echo "$OUTPUT" | grep -q "Fullscreen: ON" && echo "$OUTPUT" | grep -q "Fullscreen: OFF"; then
+        pass "F key toggles fullscreen"
+    else
+        fail "F key fullscreen toggle not confirmed"
+    fi
+else
+    info "SKIP: cliclick not available for F key test"
+fi
+
+# Test 8: Invalid position format error
+info "Test 8: Invalid position format error"
+OUTPUT=$("$PLAYER" "$SVG_FILE" --pos=invalid 2>&1 || true)
+if echo "$OUTPUT" | grep -q "Invalid position format"; then
+    pass "Invalid position format detected"
+else
+    fail "Invalid position format not detected"
+fi
+
+# Test 9: Invalid size format error
+info "Test 9: Invalid size format error"
+OUTPUT=$("$PLAYER" "$SVG_FILE" --size=invalid 2>&1 || true)
+if echo "$OUTPUT" | grep -q "Invalid size format"; then
+    pass "Invalid size format detected"
+else
+    fail "Invalid size format not detected"
+fi
+
+echo ""
+echo "========================================"
+echo "Test Results"
+echo "========================================"
+echo "PASSED: $PASS_COUNT"
+echo "FAILED: $FAIL_COUNT"
+echo "Log: $TEST_LOG"
+echo ""
+
+if [[ $FAIL_COUNT -gt 0 ]]; then
+    echo "SOME TESTS FAILED"
+    exit 1
+else
+    echo "ALL TESTS PASSED"
+    exit 0
+fi

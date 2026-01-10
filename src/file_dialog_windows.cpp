@@ -19,6 +19,9 @@
 #include <vector>
 #include <cstdio>
 
+// SDL includes for window control functions
+#include <SDL.h>
+
 #pragma comment(lib, "comdlg32.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "shlwapi.lib")
@@ -254,6 +257,28 @@ std::string openFolderDialog(const char* title, const char* initialPath) {
     }
 
     return "";  // Cancelled or invalid
+}
+
+// Stub for Windows - maximize button configuration is macOS-specific
+void configureWindowForZoom(SDL_Window* /* window */) {
+    // No-op on Windows - maximize button behavior is standard
+}
+
+bool toggleWindowMaximize(SDL_Window* window) {
+    // On Windows, use SDL's cross-platform maximize/restore
+    Uint32 flags = SDL_GetWindowFlags(window);
+    if (flags & SDL_WINDOW_MAXIMIZED) {
+        SDL_RestoreWindow(window);
+        return false;
+    } else {
+        SDL_MaximizeWindow(window);
+        return true;
+    }
+}
+
+bool isWindowMaximized(SDL_Window* window) {
+    Uint32 flags = SDL_GetWindowFlags(window);
+    return (flags & SDL_WINDOW_MAXIMIZED) != 0;
 }
 
 #endif // _WIN32 || _WIN64

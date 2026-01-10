@@ -11,6 +11,10 @@
 #include <unistd.h>
 #include <limits.h>
 
+// SDL includes for window configuration
+#include <SDL.h>
+#include <SDL_syswm.h>
+
 std::string openSVGFileDialog(const char* title, const char* initialPath) {
     // NSOpenPanel must be created and run on the main thread
     // Since we're in an SDL app, we need to use @autoreleasepool
@@ -95,6 +99,105 @@ std::string openFolderDialog(const char* title, const char* initialPath) {
         }
 
         return std::string();
+    }
+}
+
+// Custom window delegate that implements zoom behavior
+@interface SDLWindowZoomDelegate : NSObject <NSWindowDelegate>
+@property (nonatomic, assign) NSRect originalFrame;
+@property (nonatomic, assign) BOOL isZoomed;
+@end
+
+@implementation SDLWindowZoomDelegate
+
+- (NSRect)windowWillUseStandardFrame:(NSWindow *)window defaultFrame:(NSRect)newFrame {
+    // Return the screen's visible frame (minus dock/menu) for zoom
+    NSScreen *screen = [window screen];
+    if (screen) {
+        return [screen visibleFrame];
+    }
+    return newFrame;
+}
+
+@end
+
+// Static delegate instance (one per app is fine)
+static SDLWindowZoomDelegate* g_zoomDelegate = nil;
+
+void configureWindowForZoom(SDL_Window* window) {
+    // On macOS, configure the green titlebar button to zoom (maximize) instead of fullscreen
+    // This requires accessing the native NSWindow and modifying its collectionBehavior
+    @autoreleasepool {
+        // Get the native window info from SDL
+        SDL_SysWMinfo wmInfo;
+        SDL_VERSION(&wmInfo.version);
+
+        if (SDL_GetWindowWMInfo(window, &wmInfo)) {
+            // Get the NSWindow from the SDL window info
+            NSWindow* nsWindow = wmInfo.info.cocoa.window;
+
+            if (nsWindow) {
+                // Remove fullscreen capability from the window entirely
+                // This makes the green button perform zoom (maximize) instead of fullscreen
+                NSWindowCollectionBehavior behavior = [nsWindow collectionBehavior];
+
+                // Remove all fullscreen behaviors
+                behavior &= ~NSWindowCollectionBehaviorFullScreenPrimary;
+                behavior &= ~NSWindowCollectionBehaviorFullScreenAuxiliary;
+
+                // Add the behavior that explicitly disables fullscreen for this window
+                // This makes the green button show the + (zoom) icon instead of arrows
+                behavior |= NSWindowCollectionBehaviorFullScreenNone;
+
+                [nsWindow setCollectionBehavior:behavior];
+
+                // Also ensure the zoom button is enabled in the style mask
+                NSWindowStyleMask styleMask = [nsWindow styleMask];
+                // Make sure resizable is set (required for zoom to work)
+                styleMask |= NSWindowStyleMaskResizable;
+                [nsWindow setStyleMask:styleMask];
+
+                // Create and set a custom delegate that implements windowWillUseStandardFrame:
+                // This tells macOS what size to use when the zoom button is clicked
+                if (!g_zoomDelegate) {
+                    g_zoomDelegate = [[SDLWindowZoomDelegate alloc] init];
+                }
+                [nsWindow setDelegate:g_zoomDelegate];
+            }
+        }
+    }
+}
+
+bool toggleWindowMaximize(SDL_Window* window) {
+    @autoreleasepool {
+        SDL_SysWMinfo wmInfo;
+        SDL_VERSION(&wmInfo.version);
+
+        if (SDL_GetWindowWMInfo(window, &wmInfo)) {
+            NSWindow* nsWindow = wmInfo.info.cocoa.window;
+            if (nsWindow) {
+                // Toggle zoom state using macOS native zoom
+                [nsWindow zoom:nil];
+                // Return the new zoom state
+                return [nsWindow isZoomed];
+            }
+        }
+        return false;
+    }
+}
+
+bool isWindowMaximized(SDL_Window* window) {
+    @autoreleasepool {
+        SDL_SysWMinfo wmInfo;
+        SDL_VERSION(&wmInfo.version);
+
+        if (SDL_GetWindowWMInfo(window, &wmInfo)) {
+            NSWindow* nsWindow = wmInfo.info.cocoa.window;
+            if (nsWindow) {
+                return [nsWindow isZoomed];
+            }
+        }
+        return false;
     }
 }
 

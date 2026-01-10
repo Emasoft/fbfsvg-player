@@ -342,12 +342,16 @@ void printHelp(const char* programName) {
     std::cerr << "    -h, --help        Show this help message and exit\n";
     std::cerr << "    -v, --version     Show version information and exit\n";
     std::cerr << "    -w, --windowed    Start in windowed mode (default is fullscreen)\n";
-    std::cerr << "    -f, --fullscreen  Start in fullscreen mode (default)\n\n";
+    std::cerr << "    -f, --fullscreen  Start in fullscreen mode (default)\n";
+    std::cerr << "    -m, --maximize    Start in maximized (zoomed) windowed mode\n";
+    std::cerr << "    --pos=X,Y         Set initial window position (e.g., --pos=100,200)\n";
+    std::cerr << "    --size=WxH        Set initial window size (e.g., --size=800x600)\n\n";
     std::cerr << "KEYBOARD CONTROLS:\n";
     std::cerr << "    Space         Play/Pause animation\n";
     std::cerr << "    R             Restart animation from beginning\n";
-    std::cerr << "    G             Toggle fullscreen mode\n";
-    std::cerr << "    F             Toggle frame limiter\n";
+    std::cerr << "    F             Toggle fullscreen mode\n";
+    std::cerr << "    M             Toggle maximize/restore (zoom)\n";
+    std::cerr << "    T             Toggle frame limiter\n";
     std::cerr << "    Left/Right    Seek backward/forward 1 second\n";
     std::cerr << "    Up/Down       Speed up/slow down playback\n";
     std::cerr << "    L             Toggle loop mode\n";
@@ -1412,6 +1416,11 @@ int main(int argc, char* argv[]) {
     // Parse command-line arguments
     const char* inputPath = nullptr;
     bool startFullscreen = true;  // Default to fullscreen for best viewing experience
+    bool startMaximized = false;  // Start maximized (zoom) instead of normal windowed
+    int startPosX = SDL_WINDOWPOS_CENTERED;  // Window X position (-1 = centered)
+    int startPosY = SDL_WINDOWPOS_CENTERED;  // Window Y position (-1 = centered)
+    int startWidth = 0;   // 0 = use SVG dimensions
+    int startHeight = 0;  // 0 = use SVG dimensions
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
@@ -1429,6 +1438,29 @@ int main(int argc, char* argv[]) {
             startFullscreen = true;
         } else if (strcmp(argv[i], "--windowed") == 0 || strcmp(argv[i], "-w") == 0) {
             startFullscreen = false;  // Override default fullscreen
+        } else if (strcmp(argv[i], "--maximize") == 0 || strcmp(argv[i], "-m") == 0) {
+            startMaximized = true;
+            startFullscreen = false;  // Maximize implies windowed mode
+        } else if (strncmp(argv[i], "--pos=", 6) == 0) {
+            // Parse position as X,Y (e.g., --pos=100,200)
+            int x, y;
+            if (sscanf(argv[i] + 6, "%d,%d", &x, &y) == 2) {
+                startPosX = x;
+                startPosY = y;
+            } else {
+                std::cerr << "Invalid position format: " << argv[i] << " (use --pos=X,Y)" << std::endl;
+                return 1;
+            }
+        } else if (strncmp(argv[i], "--size=", 7) == 0) {
+            // Parse size as WxH (e.g., --size=800x600)
+            int w, h;
+            if (sscanf(argv[i] + 7, "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
+                startWidth = w;
+                startHeight = h;
+            } else {
+                std::cerr << "Invalid size format: " << argv[i] << " (use --size=WxH)" << std::endl;
+                return 1;
+            }
         } else if (argv[i][0] != '-') {
             // Non-option argument is the input file
             inputPath = argv[i];
@@ -1614,18 +1646,26 @@ int main(int argc, char* argv[]) {
 
     // Window creation with optional exclusive fullscreen
     // For fullscreen: use native display resolution
-    // For windowed: use SVG-based dimensions
+    // For windowed: use SVG-based dimensions or command-line overrides
     Uint32 windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
-    int createWidth = windowWidth;
-    int createHeight = windowHeight;
+
+    // Apply size override from command-line if specified
+    int createWidth = (startWidth > 0) ? startWidth : windowWidth;
+    int createHeight = (startHeight > 0) ? startHeight : windowHeight;
+
     if (startFullscreen) {
         windowFlags |= SDL_WINDOW_FULLSCREEN;
         // Use native display resolution for fullscreen
         createWidth = displayMode.w;
         createHeight = displayMode.h;
     }
-    SDL_Window* window = SDL_CreateWindow("SVG Player (Animated) - Skia", SDL_WINDOWPOS_CENTERED,
-                                          SDL_WINDOWPOS_CENTERED, createWidth, createHeight, windowFlags);
+
+    // Apply position from command-line (or use centered if not specified)
+    int createPosX = startPosX;
+    int createPosY = startPosY;
+
+    SDL_Window* window = SDL_CreateWindow("SVG Player (Animated) - Skia", createPosX, createPosY,
+                                          createWidth, createHeight, windowFlags);
 
     // Track fullscreen state (matches command line flag)
     bool isFullscreen = startFullscreen;
@@ -1634,6 +1674,16 @@ int main(int argc, char* argv[]) {
         std::cerr << "Window creation failed: " << SDL_GetError() << std::endl;
         SDL_Quit();
         return 1;
+    }
+
+    // Configure green button to zoom/maximize instead of fullscreen (macOS)
+    // Fullscreen should only be triggered by F key, not by clicking green button
+    configureWindowForZoom(window);
+
+    // Apply maximize if requested (after window creation and zoom config)
+    if (startMaximized && !startFullscreen) {
+        toggleWindowMaximize(window);
+        std::cout << "Started maximized" << std::endl;
     }
 
     // VSync state
@@ -1845,10 +1895,11 @@ int main(int argc, char* argv[]) {
     std::cout << "  ESC/Q - Quit" << std::endl;
     std::cout << "  SPACE - Pause/Resume animation" << std::endl;
     std::cout << "  D - Toggle debug info overlay" << std::endl;
-    std::cout << "  G - Toggle fullscreen mode" << std::endl;
+    std::cout << "  F - Toggle fullscreen mode" << std::endl;
+    std::cout << "  M - Toggle maximize/restore (zoom)" << std::endl;
     std::cout << "  S - Toggle stress test (50ms delay per frame)" << std::endl;
     std::cout << "  V - Toggle VSync" << std::endl;
-    std::cout << "  F - Toggle frame limiter (" << displayRefreshRate << " FPS cap)" << std::endl;
+    std::cout << "  T - Toggle frame limiter (" << displayRefreshRate << " FPS cap)" << std::endl;
     std::cout << "  P - Toggle parallel mode: Off <-> PreBuffer" << std::endl;
     std::cout << "      Off: Direct single-threaded rendering" << std::endl;
     std::cout << "      PreBuffer: Pre-render animation frames ahead using thread pool" << std::endl;
@@ -1904,7 +1955,11 @@ int main(int argc, char* argv[]) {
                 case SDL_KEYDOWN:
                     if (event.key.keysym.sym == SDLK_ESCAPE) {
                         if (g_browserMode) {
-                            // Exit browser mode instead of quitting
+                            // Exit browser mode - proper cleanup matching 'B' key toggle
+                            g_folderBrowser.stopThumbnailLoader();
+                            stopAsyncBrowserDomParse();  // Stop any pending DOM parse
+                            g_folderBrowser.cancelScan();
+                            g_browserAsyncScanning = false;
                             g_browserMode = false;
                             g_browserSvgDom = nullptr;
                             clearBrowserAnimations();
@@ -2010,8 +2065,8 @@ int main(int argc, char* argv[]) {
                         skipStatsThisFrame = true;
 
                         std::cout << "VSync: " << (vsyncEnabled ? "ON" : "OFF") << std::endl;
-                    } else if (event.key.keysym.sym == SDLK_f) {
-                        // Toggle frame limiter
+                    } else if (event.key.keysym.sym == SDLK_t) {
+                        // Toggle frame limiter (T for Timing limiter)
                         frameLimiterEnabled = !frameLimiterEnabled;
                         // Reset ALL stats (critical for accurate FPS/hit rate)
                         eventTimes.reset();
@@ -2052,8 +2107,8 @@ int main(int argc, char* argv[]) {
                         framesDelivered = 0;
                         startTime = Clock::now();
                         skipStatsThisFrame = true;
-                    } else if (event.key.keysym.sym == SDLK_g) {
-                        // Toggle fullscreen mode (exclusive fullscreen - takes over display)
+                    } else if (event.key.keysym.sym == SDLK_f) {
+                        // Toggle fullscreen mode (F for Fullscreen - exclusive, takes over display)
                         // Clear screen to black BEFORE mode switch to prevent ghosting artifacts
                         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
                         SDL_RenderClear(renderer);
@@ -2076,6 +2131,16 @@ int main(int argc, char* argv[]) {
                         // Force resize detection on next frame
                         skipStatsThisFrame = true;
                         std::cout << "Fullscreen: " << (isFullscreen ? "ON (exclusive)" : "OFF") << std::endl;
+                    } else if (event.key.keysym.sym == SDLK_m) {
+                        // Toggle maximize/zoom (M for Maximize)
+                        // Only works in windowed mode, not in fullscreen
+                        if (!isFullscreen) {
+                            bool nowMaximized = toggleWindowMaximize(window);
+                            std::cout << "Window: " << (nowMaximized ? "MAXIMIZED" : "RESTORED") << std::endl;
+                            skipStatsThisFrame = true;
+                        } else {
+                            std::cout << "Exit fullscreen first (press F)" << std::endl;
+                        }
                     } else if (event.key.keysym.sym == SDLK_d) {
                         // Toggle debug overlay
                         showDebugOverlay = !showDebugOverlay;
@@ -2384,7 +2449,11 @@ int main(int argc, char* argv[]) {
 
                         switch (hitResult) {
                             case svgplayer::HitTestResult::CancelButton:
-                                // Cancel button closes browser without loading
+                                // Cancel button closes browser - proper cleanup
+                                g_folderBrowser.stopThumbnailLoader();
+                                stopAsyncBrowserDomParse();
+                                g_folderBrowser.cancelScan();
+                                g_browserAsyncScanning = false;
                                 g_browserMode = false;
                                 g_browserSvgDom = nullptr;
                                 clearBrowserAnimations();
@@ -2398,6 +2467,11 @@ int main(int argc, char* argv[]) {
                                     std::optional<svgplayer::BrowserEntry> selected = g_folderBrowser.getSelectedEntry();
                                     if (selected.has_value() && selected->type == svgplayer::BrowserEntryType::SVGFile) {
                                         std::cout << "\n=== Loading from browser (Load button): " << selected->fullPath << " ===" << std::endl;
+                                        // Proper browser cleanup before loading
+                                        g_folderBrowser.stopThumbnailLoader();
+                                        stopAsyncBrowserDomParse();
+                                        g_folderBrowser.cancelScan();
+                                        g_browserAsyncScanning = false;
                                         g_browserMode = false;
                                         g_browserSvgDom = nullptr;
                                         clearBrowserAnimations();
@@ -2541,6 +2615,11 @@ int main(int argc, char* argv[]) {
                                             }
                                             // Load the selected SVG file (reached via double-click fall-through)
                                             {
+                                                // Proper browser cleanup before loading
+                                                g_folderBrowser.stopThumbnailLoader();
+                                                stopAsyncBrowserDomParse();
+                                                g_folderBrowser.cancelScan();
+                                                g_browserAsyncScanning = false;
                                                 g_browserMode = false;
                                                 g_browserSvgDom = nullptr;
                                                 clearBrowserAnimations();

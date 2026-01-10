@@ -33,6 +33,36 @@ std::string openSVGFileDialog(const char* title = "Open SVG File",
 std::string openFolderDialog(const char* title = "Select Folder",
                               const char* initialPath = "");
 
+// Forward declaration for SDL_Window (avoid including SDL headers in this header)
+struct SDL_Window;
+
+/**
+ * Configures window so green button maximizes instead of going fullscreen.
+ * macOS only - the green titlebar button should zoom/maximize, not enter fullscreen.
+ * Fullscreen mode should only be triggered by explicit key press (F key).
+ *
+ * @param window SDL window to configure
+ */
+void configureWindowForZoom(SDL_Window* window);
+
+/**
+ * Toggle window between maximized (zoomed) and normal state.
+ * On macOS: Uses native zoom behavior (fills screen minus dock/menu)
+ * On other platforms: Uses SDL_MaximizeWindow/SDL_RestoreWindow
+ *
+ * @param window SDL window to toggle
+ * @return true if window is now maximized, false if restored to normal
+ */
+bool toggleWindowMaximize(SDL_Window* window);
+
+/**
+ * Get current maximize state of the window.
+ *
+ * @param window SDL window to check
+ * @return true if window is maximized/zoomed, false otherwise
+ */
+bool isWindowMaximized(SDL_Window* window);
+
 //==============================================================================
 // Platform Detection (mirrors platform.h)
 //==============================================================================
