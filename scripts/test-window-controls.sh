@@ -138,80 +138,78 @@ else
     fail "Player failed with combined position and size"
 fi
 
-# Test 6: M key for maximize toggle (requires cliclick)
+# Test 6: M key for maximize toggle (uses osascript for reliable key sending)
 info "Test 6: M key toggles maximize"
-if command -v cliclick &> /dev/null; then
-    # Start player in background at known position with hard timeout
-    timeout $TEST_TIMEOUT "$PLAYER" "$SVG_FILE" --windowed --pos=100,100 --size=640x480 > /tmp/player_output.txt 2>&1 &
-    PLAYER_PID=$!
-    BG_PIDS+=($PLAYER_PID)
-    sleep 1.5
+# Start player in background at known position with hard timeout
+timeout $TEST_TIMEOUT "$PLAYER" "$SVG_FILE" --windowed --pos=100,100 --size=640x480 > /tmp/player_output.txt 2>&1 &
+PLAYER_PID=$!
+BG_PIDS+=($PLAYER_PID)
+sleep 1.5
 
-    # Check if player is still running before sending keys
-    if kill -0 $PLAYER_PID 2>/dev/null; then
-        # Click on window to focus it (center of 640x480 window at 100,100)
-        cliclick c:420,340
-        sleep 0.3
-
-        # Press M key to maximize, then restore
-        cliclick t:m
-        sleep 0.5
-        cliclick t:m
-        sleep 0.3
-        cliclick t:q
-        sleep 0.5
-    fi
-
-    # Kill if still running (should have timed out or quit)
-    kill $PLAYER_PID 2>/dev/null || true
-    wait $PLAYER_PID 2>/dev/null || true
-
-    OUTPUT=$(cat /tmp/player_output.txt 2>/dev/null || echo "")
-    if echo "$OUTPUT" | grep -q "MAXIMIZED" && echo "$OUTPUT" | grep -q "RESTORED"; then
-        pass "M key toggles maximize/restore"
-    else
-        fail "M key maximize toggle not confirmed"
-    fi
-else
-    info "SKIP: cliclick not available for M key test"
+# Check if player is still running before sending keys
+if kill -0 $PLAYER_PID 2>/dev/null; then
+    # Use osascript to activate window and send keys (more reliable than cliclick)
+    osascript <<'APPLESCRIPT' 2>/dev/null || true
+tell application "System Events"
+    set targetProcess to first process whose name contains "svg_player"
+    set frontmost of targetProcess to true
+    delay 0.3
+    keystroke "m"
+    delay 0.5
+    keystroke "m"
+    delay 0.3
+    keystroke "q"
+end tell
+APPLESCRIPT
+    sleep 0.5
 fi
 
-# Test 7: F key for fullscreen toggle (requires cliclick)
-info "Test 7: F key toggles fullscreen"
-if command -v cliclick &> /dev/null; then
-    # Start player in background at known position with hard timeout
-    timeout $TEST_TIMEOUT "$PLAYER" "$SVG_FILE" --windowed --pos=100,100 --size=640x480 > /tmp/player_output.txt 2>&1 &
-    PLAYER_PID=$!
-    BG_PIDS+=($PLAYER_PID)
-    sleep 1.5
+# Kill if still running (should have timed out or quit)
+kill $PLAYER_PID 2>/dev/null || true
+wait $PLAYER_PID 2>/dev/null || true
 
-    # Check if player is still running before sending keys
-    if kill -0 $PLAYER_PID 2>/dev/null; then
-        # Click on window to focus it (center of 640x480 window at 100,100)
-        cliclick c:420,340
-        sleep 0.3
-
-        # Press F key twice then quit
-        cliclick t:f
-        sleep 0.5
-        cliclick t:f
-        sleep 0.3
-        cliclick t:q
-        sleep 0.5
-    fi
-
-    # Kill if still running (should have timed out or quit)
-    kill $PLAYER_PID 2>/dev/null || true
-    wait $PLAYER_PID 2>/dev/null || true
-
-    OUTPUT=$(cat /tmp/player_output.txt 2>/dev/null || echo "")
-    if echo "$OUTPUT" | grep -q "Fullscreen: ON" && echo "$OUTPUT" | grep -q "Fullscreen: OFF"; then
-        pass "F key toggles fullscreen"
-    else
-        fail "F key fullscreen toggle not confirmed"
-    fi
+OUTPUT=$(cat /tmp/player_output.txt 2>/dev/null || echo "")
+if echo "$OUTPUT" | grep -q "MAXIMIZED" && echo "$OUTPUT" | grep -q "RESTORED"; then
+    pass "M key toggles maximize/restore"
 else
-    info "SKIP: cliclick not available for F key test"
+    fail "M key maximize toggle not confirmed"
+fi
+
+# Test 7: F key for fullscreen toggle (uses osascript for reliable key sending)
+info "Test 7: F key toggles fullscreen"
+# Start player in background at known position with hard timeout
+timeout $TEST_TIMEOUT "$PLAYER" "$SVG_FILE" --windowed --pos=100,100 --size=640x480 > /tmp/player_output.txt 2>&1 &
+PLAYER_PID=$!
+BG_PIDS+=($PLAYER_PID)
+sleep 1.5
+
+# Check if player is still running before sending keys
+if kill -0 $PLAYER_PID 2>/dev/null; then
+    # Use osascript to activate window and send keys (more reliable than cliclick)
+    osascript <<'APPLESCRIPT' 2>/dev/null || true
+tell application "System Events"
+    set targetProcess to first process whose name contains "svg_player"
+    set frontmost of targetProcess to true
+    delay 0.3
+    keystroke "f"
+    delay 0.5
+    keystroke "f"
+    delay 0.3
+    keystroke "q"
+end tell
+APPLESCRIPT
+    sleep 0.5
+fi
+
+# Kill if still running (should have timed out or quit)
+kill $PLAYER_PID 2>/dev/null || true
+wait $PLAYER_PID 2>/dev/null || true
+
+OUTPUT=$(cat /tmp/player_output.txt 2>/dev/null || echo "")
+if echo "$OUTPUT" | grep -q "Fullscreen: ON" && echo "$OUTPUT" | grep -q "Fullscreen: OFF"; then
+    pass "F key toggles fullscreen"
+else
+    fail "F key fullscreen toggle not confirmed"
 fi
 
 # Test 8: Invalid position format error
