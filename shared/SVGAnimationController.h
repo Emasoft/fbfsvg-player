@@ -69,6 +69,15 @@ struct AnimationState {
     std::string value;              // Current value to set
 };
 
+// Frame change tracking for dirty region optimization
+// Tracks which animations changed frame between update() calls
+// Used by DirtyRegionTracker for partial rendering
+struct AnimationFrameChange {
+    std::string targetId;           // Element ID that changed
+    size_t previousFrame;           // Frame index before change
+    size_t currentFrame;            // Frame index after change
+};
+
 // Render statistics - performance metrics for the animation
 struct AnimationStats {
     double renderTimeMs;            // Time spent in Skia rendering
@@ -605,6 +614,33 @@ public:
     std::vector<AnimationState> getCurrentAnimationStates() const;
 
     /**
+     * @brief Get list of animations that changed frame in last update()
+     * @return Vector of AnimationFrameChange structures
+     * @threadsafe Yes - read-only query, protected by mutex_
+     * @note Used by DirtyRegionTracker to determine which elements need re-rendering
+     * @note Vector is cleared and rebuilt on each update() call
+     */
+    std::vector<AnimationFrameChange> getFrameChanges() const;
+
+    /**
+     * @brief Update frame tracking from absolute time (for external time sources)
+     * @param absoluteTime Current animation time in seconds
+     *
+     * This lightweight method tracks which animations changed frame since the last call.
+     * Unlike update(), it does NOT:
+     * - Advance internal time tracking
+     * - Modify playback state
+     * - Trigger callbacks
+     *
+     * Use this when the main loop manages its own time tracking and only needs
+     * dirty region information for partial rendering optimization.
+     *
+     * @threadsafe No - must be called from main thread only
+     * @note Results available via getFrameChanges()
+     */
+    void updateFrameTracking(double absoluteTime);
+
+    /**
      * @section statistics Statistics
      * @threadsafe Yes for getter, Partial for updaters
      */
@@ -658,6 +694,13 @@ public:
      * @threadsafe Yes - read-only calculation, protected by mutex_
      */
     double timeForFrame(int frame) const;
+
+    /**
+     * @brief Enable or disable verbose console output
+     * @param verbose true to enable messages, false to suppress them
+     * @note Defaults to true. Set to false for benchmark/JSON output modes.
+     */
+    void setVerbose(bool verbose);
 
     /**
      * @section event_callbacks Event Callbacks (Optional)
@@ -755,6 +798,7 @@ private:
     std::string originalContent_;
     std::map<size_t, std::string> syntheticIds_;
     bool loaded_;
+    bool verbose_{true};  // Controls console output (false for benchmark/JSON modes)
 
     // Timeline state (using steady_clock for SMIL-compliant monotonic time)
     double currentTime_;
@@ -778,6 +822,12 @@ private:
     AnimationStats stats_;
     size_t lastFrameIndex_;
     std::chrono::steady_clock::time_point lastUpdateTime_;
+
+    // Frame change tracking for dirty region optimization
+    // Stores the frame index from the previous update() for each animation
+    std::vector<size_t> previousFrameIndices_;
+    // Stores animations that changed frame in the last update() call
+    std::vector<AnimationFrameChange> lastFrameChanges_;
 
     // Callbacks
     StateChangeCallback stateChangeCallback_;

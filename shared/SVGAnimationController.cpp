@@ -135,7 +135,9 @@ bool SVGAnimationController::loadFromContent(const std::string& svgContent) {
 
     if (animations_.empty()) {
         // No animations found - still valid SVG, just static
-        std::cout << "SVGAnimationController: No SMIL animations found in SVG" << std::endl;
+        if (verbose_) {
+            std::cout << "SVGAnimationController: No SMIL animations found in SVG" << std::endl;
+        }
         loaded_ = true;
         duration_ = 0.0;
         totalFrames_ = 1;
@@ -177,10 +179,12 @@ bool SVGAnimationController::loadFromContent(const std::string& svgContent) {
 
     loaded_ = true;
 
-    std::cout << "SVGAnimationController: Loaded " << animations_.size() << " animations, "
-              << "duration=" << std::fixed << std::setprecision(2) << duration_ << "s, "
-              << "frames=" << totalFrames_ << ", "
-              << "fps=" << std::fixed << std::setprecision(1) << frameRate_ << std::endl;
+    if (verbose_) {
+        std::cout << "SVGAnimationController: Loaded " << animations_.size() << " animations, "
+                  << "duration=" << std::fixed << std::setprecision(2) << duration_ << "s, "
+                  << "frames=" << totalFrames_ << ", "
+                  << "fps=" << std::fixed << std::setprecision(1) << frameRate_ << std::endl;
+    }
 
     return true;
 }
@@ -383,7 +387,30 @@ bool SVGAnimationController::update(double deltaTime) {
     }
     lastUpdateTime_ = now;
 
-    // Check if frame changed
+    // Track per-animation frame changes for dirty region optimization
+    // Clear previous frame changes and rebuild
+    lastFrameChanges_.clear();
+
+    // Ensure previousFrameIndices_ is sized correctly
+    if (previousFrameIndices_.size() != animations_.size()) {
+        previousFrameIndices_.resize(animations_.size(), 0);
+    }
+
+    // Check each animation for frame changes
+    for (size_t i = 0; i < animations_.size(); ++i) {
+        size_t currFrame = animations_[i].getCurrentFrameIndex(currentTime_);
+        if (currFrame != previousFrameIndices_[i]) {
+            // Animation frame changed - record for dirty tracking
+            AnimationFrameChange change;
+            change.targetId = animations_[i].targetId;
+            change.previousFrame = previousFrameIndices_[i];
+            change.currentFrame = currFrame;
+            lastFrameChanges_.push_back(std::move(change));
+        }
+        previousFrameIndices_[i] = currFrame;
+    }
+
+    // Check if frame changed (global)
     size_t currentFrameIndex = static_cast<size_t>(getCurrentFrame());
     if (currentFrameIndex != previousFrame) {
         lastFrameIndex_ = currentFrameIndex;
@@ -403,6 +430,11 @@ bool SVGAnimationController::update(double deltaTime) {
         SVG_INSTRUMENT_FRAME_RENDERED(renderStats);
 
         return true;  // Frame changed, needs re-render
+    }
+
+    // Also check if any animation changed (for multi-animation sync)
+    if (!lastFrameChanges_.empty()) {
+        return true;  // At least one animation changed frame
     }
 
     return false;  // No visual change
@@ -549,6 +581,39 @@ std::vector<AnimationState> SVGAnimationController::getCurrentAnimationStates() 
     return states;
 }
 
+std::vector<AnimationFrameChange> SVGAnimationController::getFrameChanges() const {
+    // Return copy of frame changes from last update() call
+    // Used by DirtyRegionTracker for partial rendering optimization
+    return lastFrameChanges_;
+}
+
+void SVGAnimationController::updateFrameTracking(double absoluteTime) {
+    // Lightweight frame tracking from external absolute time
+    // Does NOT modify playback state or trigger callbacks
+    // Only updates lastFrameChanges_ for getFrameChanges() retrieval
+
+    lastFrameChanges_.clear();
+
+    // Ensure previousFrameIndices_ is sized correctly
+    if (previousFrameIndices_.size() != animations_.size()) {
+        previousFrameIndices_.resize(animations_.size(), 0);
+    }
+
+    // Check each animation for frame changes at the given time
+    for (size_t i = 0; i < animations_.size(); ++i) {
+        size_t currFrame = animations_[i].getCurrentFrameIndex(absoluteTime);
+        if (currFrame != previousFrameIndices_[i]) {
+            // Animation frame changed - record for dirty tracking
+            AnimationFrameChange change;
+            change.targetId = animations_[i].targetId;
+            change.previousFrame = previousFrameIndices_[i];
+            change.currentFrame = currFrame;
+            lastFrameChanges_.push_back(std::move(change));
+        }
+        previousFrameIndices_[i] = currFrame;
+    }
+}
+
 // === Statistics ===
 
 AnimationStats SVGAnimationController::getStats() const {
@@ -563,6 +628,10 @@ void SVGAnimationController::resetStats() {
 
 void SVGAnimationController::updateRenderTime(double timeMs) {
     stats_.renderTimeMs = timeMs;
+}
+
+void SVGAnimationController::setVerbose(bool verbose) {
+    verbose_ = verbose;
 }
 
 // === Utility ===
@@ -1000,12 +1069,14 @@ std::vector<SMILAnimation> SVGAnimationController::parseAnimations(const std::st
         // Only add animation if it has values and a target
         if (!anim.values.empty() && !anim.targetId.empty()) {
             animations.push_back(anim);
-            std::cout << "SVGAnimationController: Found animation - target='" << anim.targetId
-                      << "', attr='" << anim.attributeName
-                      << "', frames=" << anim.values.size()
-                      << ", duration=" << std::fixed << std::setprecision(4) << anim.duration << "s"
-                      << ", mode='" << anim.calcMode << "'" << std::endl;
-        } else if (animateTagsFound <= 20) {
+            if (verbose_) {
+                std::cout << "SVGAnimationController: Found animation - target='" << anim.targetId
+                          << "', attr='" << anim.attributeName
+                          << "', frames=" << anim.values.size()
+                          << ", duration=" << std::fixed << std::setprecision(4) << anim.duration << "s"
+                          << ", mode='" << anim.calcMode << "'" << std::endl;
+            }
+        } else if (animateTagsFound <= 20 && verbose_) {
             // Debug: show why animation was rejected (limit to first 20 to avoid spam)
             std::cout << "DEBUG: Rejected animate tag #" << animateTagsFound
                       << " - values empty=" << anim.values.empty()
@@ -1016,7 +1087,7 @@ std::vector<SMILAnimation> SVGAnimationController::parseAnimations(const std::st
         pos = tagEnd + 1;
     }
 
-    if (animateTagsFound > 0 && animations.empty()) {
+    if (animateTagsFound > 0 && animations.empty() && verbose_) {
         std::cout << "DEBUG: Parsed " << animateTagsFound << " <animate> tags but none had valid target+values" << std::endl;
     }
 

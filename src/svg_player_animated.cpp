@@ -29,8 +29,10 @@
 #include <sys/stat.h>
 #include <thread>
 #include <unistd.h>
+#include <fcntl.h>   // For O_CREAT, O_WRONLY, O_TRUNC in signal handler
 #include <limits.h>
 #include <vector>
+#include <execinfo.h>  // For backtrace() on macOS/Linux
 
 #include "modules/skshaper/include/SkShaper_factory.h"
 #include "modules/skshaper/utils/FactoryHelpers.h"
@@ -42,6 +44,10 @@
 
 // Shared animation controller for cross-platform SMIL parsing and playback
 #include "../shared/SVGAnimationController.h"
+
+// Dirty region tracking for partial rendering optimization
+#include "../shared/DirtyRegionTracker.h"
+#include "../shared/ElementBoundsExtractor.h"
 
 // Centralized version management for all platforms
 #include "../shared/version.h"
@@ -57,6 +63,14 @@
 
 // Thumbnail cache for background-threaded SVG thumbnail loading
 #include "thumbnail_cache.h"
+
+// Remote control server for programmatic control via TCP/JSON
+#include "remote_control.h"
+
+// Metal GPU backend for macOS (optional, enabled with --metal flag)
+#ifdef __APPLE__
+#include "metal_context.h"
+#endif
 
 // =============================================================================
 // Global shutdown flag for graceful termination
@@ -130,12 +144,95 @@ static const Uint32 DOUBLE_CLICK_THRESHOLD_MS = 400;  // Max time between clicks
 static Uint64 g_browserLastClickTime = 0;             // SDL_GetTicks64() at last click (no 49-day wraparound)
 static int g_browserLastClickIndex = -1;              // Last clicked entry index
 
+// Benchmark mode settings (global for access from threads)
+static bool g_jsonOutput = false;  // Output benchmark stats as JSON (suppress stdout messages)
+
+// Black screen detection - verifies actual content is being rendered
+static std::atomic<int> g_lastNonBlackPixelCount{0};  // Count of non-black pixels in last frame
+static std::atomic<bool> g_blackScreenDetected{false};  // True if last frame was all black
+static std::atomic<int> g_consecutiveBlackFrames{0};  // How many frames in a row were black
+
+// Check if a pixel buffer contains visible (non-black) content
+// Returns the count of non-black pixels (sampling every 100th pixel for speed)
+// excludeOverlayRect: area to exclude from check (debug overlay region)
+inline int countNonBlackPixels(const uint32_t* pixels, int width, int height,
+                               int excludeX = 0, int excludeY = 0,
+                               int excludeW = 0, int excludeH = 0) {
+    if (!pixels || width <= 0 || height <= 0) return 0;
+
+    int nonBlackCount = 0;
+    const int sampleStep = 100;  // Sample every 100th pixel for speed
+
+    for (int i = 0; i < width * height; i += sampleStep) {
+        int x = i % width;
+        int y = i / width;
+
+        // Skip pixels in the exclude rectangle (debug overlay area)
+        if (excludeW > 0 && excludeH > 0 &&
+            x >= excludeX && x < excludeX + excludeW &&
+            y >= excludeY && y < excludeY + excludeH) {
+            continue;
+        }
+
+        // Check if pixel is non-black (any color channel > 10 to allow for near-black)
+        uint32_t pixel = pixels[i];
+        uint8_t r = (pixel >> 16) & 0xFF;
+        uint8_t g = (pixel >> 8) & 0xFF;
+        uint8_t b = pixel & 0xFF;
+
+        if (r > 10 || g > 10 || b > 10) {
+            nonBlackCount++;
+        }
+    }
+
+    return nonBlackCount;
+}
+
+// Convert RepeatMode enum to human-readable string for debug overlay
+inline const char* repeatModeToString(svgplayer::RepeatMode mode) {
+    switch (mode) {
+        case svgplayer::RepeatMode::None:    return "Once";
+        case svgplayer::RepeatMode::Loop:    return "Loop";
+        case svgplayer::RepeatMode::Reverse: return "PingPong";
+        case svgplayer::RepeatMode::Count:   return "Count";
+        default:                              return "Unknown";
+    }
+}
+
 // Signal handler for graceful shutdown (SIGINT, SIGTERM)
 void signalHandler(int signum) {
     if (signum == SIGINT || signum == SIGTERM) {
         g_shutdownRequested.store(true);
-        // NOTE: std::cerr removed - not signal-safe. Main thread detects flag and prints message.
+        // Use write() for signal-safe debug output
+        const char* msg = "[SIGNAL] Shutdown requested\n";
+        write(STDERR_FILENO, msg, strlen(msg));
+        // Also create a marker file to verify handler was called (signal-safe)
+        int fd = open("/tmp/svg_signal_marker.txt", O_CREAT | O_WRONLY | O_TRUNC, 0644);
+        if (fd >= 0) {
+            write(fd, msg, strlen(msg));
+            close(fd);
+        }
     }
+}
+
+// Print stack trace for debugging critical errors (freeze detection, crashes)
+// Uses backtrace() on macOS/Linux - max 64 stack frames
+void printStackTrace(const char* context) {
+    constexpr int MAX_FRAMES = 64;
+    void* callstack[MAX_FRAMES];
+    int numFrames = backtrace(callstack, MAX_FRAMES);
+    char** symbols = backtrace_symbols(callstack, numFrames);
+
+    std::cerr << "\n=== STACK TRACE (" << context << ") ===" << std::endl;
+    if (symbols != nullptr) {
+        for (int i = 0; i < numFrames; i++) {
+            std::cerr << "  [" << i << "] " << symbols[i] << std::endl;
+        }
+        free(symbols);  // backtrace_symbols allocates memory
+    } else {
+        std::cerr << "  (Failed to get stack trace symbols)" << std::endl;
+    }
+    std::cerr << "=== END STACK TRACE ===\n" << std::endl;
 }
 
 // =============================================================================
@@ -201,7 +298,7 @@ void startAsyncBrowserDomParse(const std::string& svgContent) {
                 animateCount++;
                 pos++;
             }
-            if (animateCount > 0) {
+            if (animateCount > 0 && !g_jsonOutput) {
                 std::cout << "DEBUG: Found " << animateCount << " <animate> tags in browser SVG" << std::endl;
             }
 
@@ -284,10 +381,17 @@ void clearBrowserAnimations() {
     g_browserAnimations.clear();
 }
 
-// Install signal handlers for graceful shutdown
+// Install signal handlers for graceful shutdown using sigaction (more reliable than signal)
 void installSignalHandlers() {
-    std::signal(SIGINT, signalHandler);
-    std::signal(SIGTERM, signalHandler);
+    struct sigaction sa;
+    sa.sa_handler = signalHandler;
+    sigemptyset(&sa.sa_mask);
+    // SA_RESTART: Restart interrupted system calls automatically
+    // This is more reliable for catching signals during Metal/SDL operations
+    sa.sa_flags = SA_RESTART;
+
+    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGTERM, &sa, nullptr);
 }
 
 // =============================================================================
@@ -309,8 +413,9 @@ size_t getFileSize(const char* path) {
     return 0;
 }
 
-// Maximum SVG file size (100 MB - reasonable limit to prevent memory issues)
-static constexpr size_t MAX_SVG_FILE_SIZE = 100 * 1024 * 1024;
+// Maximum SVG file size - effectively unlimited (8 GB practical limit)
+// With modern systems having 64GB+ RAM, no practical limit is needed
+static constexpr size_t MAX_SVG_FILE_SIZE = 8ULL * 1024 * 1024 * 1024;
 
 // Debug overlay scaling factor (40% larger than original to match font size)
 static constexpr float DEBUG_OVERLAY_SCALE = 1.4f;
@@ -345,11 +450,18 @@ void printHelp(const char* programName) {
     std::cerr << "    -f, --fullscreen  Start in fullscreen mode (default)\n";
     std::cerr << "    -m, --maximize    Start in maximized (zoomed) windowed mode\n";
     std::cerr << "    --pos=X,Y         Set initial window position (e.g., --pos=100,200)\n";
-    std::cerr << "    --size=WxH        Set initial window size (e.g., --size=800x600)\n\n";
+    std::cerr << "    --size=WxH        Set initial window size (e.g., --size=800x600)\n";
+    std::cerr << "    --remote-control[=PORT]  Enable remote control server (default port: 9999)\n";
+    std::cerr << "    --duration=SECS   Benchmark mode: run for N seconds then exit\n";
+    std::cerr << "    --json            Output benchmark stats as JSON (for scripting)\n";
+#ifdef __APPLE__
+    std::cerr << "    --metal           Enable Metal GPU backend (experimental)\n";
+#endif
+    std::cerr << "\n";
     std::cerr << "KEYBOARD CONTROLS:\n";
     std::cerr << "    Space         Play/Pause animation\n";
     std::cerr << "    R             Restart animation from beginning\n";
-    std::cerr << "    F             Toggle fullscreen mode\n";
+    std::cerr << "    F/G           Toggle fullscreen mode\n";
     std::cerr << "    M             Toggle maximize/restore (zoom)\n";
     std::cerr << "    T             Toggle frame limiter\n";
     std::cerr << "    Left/Right    Seek backward/forward 1 second\n";
@@ -599,14 +711,16 @@ class SkiaParallelRenderer {
         if (modeChanging.load()) return;
         if (mode != ParallelMode::PreBuffer || !executor) return;
 
+        // FIX: Clear old frames BEFORE requesting new ones
+        // Otherwise if buffer is at MAX_BUFFER_SIZE, new frame requests are dropped
+        // silently, causing the animation to freeze when buffered frames run out
+        clearOldFrames(currentFrame);
+
         // Request next LOOKAHEAD_FRAMES frames
         for (size_t i = 1; i <= LOOKAHEAD_FRAMES; i++) {
             size_t frameIdx = (currentFrame + i) % totalFrames;
             requestFrame(frameIdx);
         }
-
-        // Clean old frames
-        clearOldFrames(currentFrame);
     }
 
     void requestFrame(size_t frameIndex) {
@@ -629,7 +743,11 @@ class SkiaParallelRenderer {
 
         {
             std::lock_guard<std::mutex> lock(bufferMutex);
-            if (frameBuffer.size() >= MAX_BUFFER_SIZE) return;
+            if (frameBuffer.size() >= MAX_BUFFER_SIZE) {
+                // Buffer is full - this can happen during rapid seeking or loop wraparound
+                // The direct render fallback will handle this case
+                return;
+            }
             frameBuffer[frameIndex] = framePtr;
         }
 
@@ -815,6 +933,21 @@ class ThreadedRenderer {
     // Reference to parallel renderer for PreBuffer mode
     SkiaParallelRenderer* parallelRenderer{nullptr};
 
+    // Dirty region tracking for partial rendering optimization
+    svgplayer::DirtyRegionTracker dirtyTracker_;
+    std::atomic<bool> dirtyTrackingInitialized_{false};  // Atomic for thread-safe access
+
+    // Stats for benchmarking partial vs full render
+    std::atomic<uint64_t> partialRenderCount_{0};
+    std::atomic<uint64_t> fullRenderCount_{0};
+    std::atomic<double> partialRenderSavedRatio_{0.0};  // Accumulated (1 - dirty_ratio) for partial renders
+
+    // Track SVG content hash to detect changes and force DOM recreation
+    size_t lastSvgDataHash_{0};
+
+    // Frame changes from last animation update (for dirty tracking)
+    std::vector<svgplayer::AnimationFrameChange> lastFrameChanges_;
+
     ThreadedRenderer() = default;
 
     ~ThreadedRenderer() { stop(); }
@@ -827,6 +960,19 @@ class ThreadedRenderer {
         renderHeight = rh;
         svgWidth = sw;
         svgHeight = sh;
+
+        // Compute hash of SVG content to detect changes (for DOM recreation)
+        lastSvgDataHash_ = std::hash<std::string>{}(svg);
+
+        // Reset dirty tracking state for new SVG
+        // This ensures old animation bounds don't persist across hot-reloads
+        dirtyTracker_.reset();
+        dirtyTrackingInitialized_ = false;
+
+        // Reset partial render stats for new SVG
+        partialRenderCount_ = 0;
+        fullRenderCount_ = 0;
+        partialRenderSavedRatio_ = 0.0;
 
         // Allocate buffers
         size_t bufferSize = rw * rh;
@@ -846,6 +992,49 @@ class ThreadedRenderer {
         if (renderThread.joinable()) {
             renderThread.join();
         }
+    }
+
+    // Initialize dirty tracking with animation bounds from SVG content
+    void initializeDirtyTracking(const std::vector<svgplayer::SMILAnimation>& animations) {
+        std::lock_guard<std::mutex> lock(paramsMutex);
+
+        // Reset any existing state (safety measure for re-initialization)
+        dirtyTracker_.reset();
+
+        // Extract bounds for all animated elements from the SVG
+        auto bounds = svgplayer::ElementBoundsExtractor::extractAnimationBounds(svgData, animations);
+
+        // Log bounds extraction results for debugging (suppress in JSON benchmark mode)
+        if (!g_jsonOutput) {
+            std::cout << "Dirty tracking: extracted bounds for " << bounds.size()
+                      << " of " << animations.size() << " animations" << std::endl;
+        }
+
+        // Set bounds in dirty tracker
+        for (const auto& [id, rect] : bounds) {
+            dirtyTracker_.setAnimationBounds(id, rect);
+        }
+
+        // Initialize tracker with animation count
+        dirtyTracker_.initialize(animations.size());
+        dirtyTrackingInitialized_ = true;
+    }
+
+    // Get partial render statistics for benchmarking
+    void getPartialRenderStats(uint64_t& partialCount, uint64_t& fullCount, double& avgSavedRatio) const {
+        partialCount = partialRenderCount_.load();
+        fullCount = fullRenderCount_.load();
+        if (partialCount > 0) {
+            avgSavedRatio = partialRenderSavedRatio_.load() / static_cast<double>(partialCount);
+        } else {
+            avgSavedRatio = 0.0;
+        }
+    }
+
+    // Update frame changes from animation controller (call before requesting render)
+    void setFrameChanges(const std::vector<svgplayer::AnimationFrameChange>& changes) {
+        std::lock_guard<std::mutex> lock(paramsMutex);
+        lastFrameChanges_ = changes;
     }
 
     // Called from main thread - update animation states (non-blocking!)
@@ -948,7 +1137,13 @@ class ThreadedRenderer {
         sk_sp<SkSVGDOM> threadDom;
         sk_sp<SkSurface> threadSurface;
 
+        // Debug logging for render thread (enabled by RENDER_DEBUG env var)
+        static bool debugRenderLoop = (std::getenv("RENDER_DEBUG") != nullptr);
+        static uint64_t loopIterations = 0;
+        static uint64_t renderAttempts = 0;
+
         while (running) {
+            loopIterations++;
             // Wait for render request with timeout
             {
                 std::unique_lock<std::mutex> lock(renderCVMutex);
@@ -967,23 +1162,32 @@ class ThreadedRenderer {
                     // Update cached values for main thread to read without blocking
                     cachedPreBufferMode = (parallelRenderer->mode == ParallelMode::PreBuffer);
                     cachedActiveWorkers = parallelRenderer->activeWorkers.load();
-                    std::cout << "Parallel mode: " << getParallelModeName(parallelRenderer->mode);
-                    if (parallelRenderer->mode != ParallelMode::Off) {
-                        std::cout << " (" << cachedActiveWorkers.load() << " threads)";
+                    if (!g_jsonOutput) {
+                        std::cout << "Parallel mode: " << getParallelModeName(parallelRenderer->mode);
+                        if (parallelRenderer->mode != ParallelMode::Off) {
+                            std::cout << " (" << cachedActiveWorkers.load() << " threads)";
+                        }
+                        std::cout << std::endl;
                     }
-                    std::cout << std::endl;
                 }
                 continue;
             }
 
             if (!newFrameRequested) continue;
             newFrameRequested = false;
+            renderAttempts++;
+
+            if (debugRenderLoop && renderAttempts <= 5) {
+                std::cerr << "[RENDER_DEBUG] Attempt #" << renderAttempts
+                          << " (loop iter=" << loopIterations << ")" << std::endl;
+            }
 
             // Get render parameters and animation states
-            std::string localSvgData;
+            std::string localSvgData;  // Will be populated from shared svgData
             int localWidth, localHeight, localSvgW, localSvgH;
             size_t localFrameIndex;
             std::vector<AnimState> localAnimStates;
+            std::vector<svgplayer::AnimationFrameChange> localFrameChanges;
             {
                 std::lock_guard<std::mutex> lock(paramsMutex);
                 localSvgData = svgData;
@@ -993,13 +1197,27 @@ class ThreadedRenderer {
                 localSvgH = svgHeight;
                 localFrameIndex = currentFrameIndex;
                 localAnimStates = animationStates;
+                localFrameChanges = lastFrameChanges_;
             }
 
             // Integer overflow protection: validate dimensions before buffer calculations
             // Maximum dimension matches saveScreenshotPPM limit (32768x32768 = 1 gigapixel)
             constexpr int MAX_RENDER_DIM = 32768;
             if (localWidth <= 0 || localHeight <= 0 ||
-                localWidth > MAX_RENDER_DIM || localHeight > MAX_RENDER_DIM) continue;
+                localWidth > MAX_RENDER_DIM || localHeight > MAX_RENDER_DIM) {
+                if (debugRenderLoop && renderAttempts <= 5) {
+                    std::cerr << "[RENDER_DEBUG] Skip: invalid dims " << localWidth << "x" << localHeight << std::endl;
+                }
+                continue;
+            }
+
+            // Also check for empty SVG data
+            if (localSvgData.empty()) {
+                if (debugRenderLoop && renderAttempts <= 5) {
+                    std::cerr << "[RENDER_DEBUG] Skip: empty SVG data" << std::endl;
+                }
+                continue;
+            }
 
             renderInProgress = true;
             renderTimedOut = false;
@@ -1007,6 +1225,7 @@ class ThreadedRenderer {
 
             // === RENDER WITH TIMEOUT WATCHDOG ===
             bool renderSuccess = false;
+            bool usedPartialRender = false;  // Track which render path was used for stats
 
             // Try to use pre-buffered frame first (instant, no rendering needed)
             if (parallelRenderer && parallelRenderer->mode == ParallelMode::PreBuffer) {
@@ -1027,11 +1246,35 @@ class ThreadedRenderer {
                         SkImageInfo::Make(localWidth, localHeight, kBGRA_8888_SkColorType, kPremul_SkAlphaType));
                 }
 
-                // Recreate DOM if needed (or first time)
+                // Track SVG data hash for hot-reload detection
+                // Force DOM recreation when SVG content changes
+                static size_t lastLocalSvgHash = 0;
+                size_t currentSvgHash = std::hash<std::string>{}(localSvgData);
+
+                // Recreate DOM if needed (first time or SVG content changed)
                 // Use makeSVGDOMWithFontSupport to ensure SVG text elements render properly
-                if (!threadDom) {
+                // NOTE: DOM creation can take seconds for large SVGs - this is one-time cost per SVG
+                if (!threadDom || currentSvgHash != lastLocalSvgHash) {
+                    if (debugRenderLoop) {
+                        std::cerr << "[RENDER_DEBUG] Creating DOM (first time or hash changed)..." << std::endl;
+                    }
+                    auto domStart = Clock::now();
                     auto stream = SkMemoryStream::MakeDirect(localSvgData.data(), localSvgData.size());
                     threadDom = makeSVGDOMWithFontSupport(*stream);
+                    lastLocalSvgHash = currentSvgHash;
+                    auto domEnd = Clock::now();
+                    auto domMs = std::chrono::duration<double, std::milli>(domEnd - domStart).count();
+                    if (debugRenderLoop) {
+                        std::cerr << "[RENDER_DEBUG] DOM created in " << domMs << "ms" << std::endl;
+                    }
+                    // CRITICAL FIX: Reset renderStart AFTER DOM creation
+                    // DOM parsing is one-time cost and should NOT count against render timeout
+                    // Only the actual SVG rendering should be subject to the timeout
+                    renderStart = Clock::now();
+                    if (debugRenderLoop && domMs > 100) {
+                        std::cerr << "[RENDER_DEBUG] Render timer reset after DOM creation (DOM took "
+                                  << domMs << "ms)" << std::endl;
+                    }
                 }
 
                 if (threadSurface && threadDom) {
@@ -1051,20 +1294,90 @@ class ThreadedRenderer {
                         }
                     }
 
+                    // Update dirty tracker with frame changes for partial rendering
+                    if (dirtyTrackingInitialized_) {
+                        for (const auto& change : localFrameChanges) {
+                            dirtyTracker_.markDirty(change.targetId, change.currentFrame);
+                        }
+                    }
+
                     SkCanvas* canvas = threadSurface->getCanvas();
-                    canvas->clear(SK_ColorTRANSPARENT);
+
+                    // Decide partial vs full render based on dirty region analysis
+                    // Note: dirty rects are in SVG coordinate space, need scaling to render space
+                    bool usePartialRender = dirtyTrackingInitialized_ &&
+                                            !dirtyTracker_.shouldUseFullRender(
+                                                static_cast<float>(localSvgW),
+                                                static_cast<float>(localSvgH)) &&
+                                            dirtyTracker_.getDirtyCount() > 0;
+                    usedPartialRender = usePartialRender;  // Copy to outer scope for stats
+
+                    // Calculate scaling factors from SVG space to render space
+                    // This handles the case where SVG is scaled to fit the window
+                    float scaleX = (localSvgW > 0) ? static_cast<float>(localWidth) / static_cast<float>(localSvgW) : 1.0f;
+                    float scaleY = (localSvgH > 0) ? static_cast<float>(localHeight) / static_cast<float>(localSvgH) : 1.0f;
+
+                    if (usePartialRender) {
+                        // PARTIAL RENDER PATH - only clear and render dirty region
+                        auto unionRect = dirtyTracker_.getUnionDirtyRect();
+
+                        // Scale dirty rect from SVG coordinates to render coordinates
+                        // Add 1 pixel margin for rounding/anti-aliasing safety
+                        SkRect clipRect = SkRect::MakeXYWH(
+                            unionRect.x * scaleX - 1.0f,
+                            unionRect.y * scaleY - 1.0f,
+                            unionRect.width * scaleX + 2.0f,
+                            unionRect.height * scaleY + 2.0f);
+
+                        // Clamp to canvas bounds
+                        clipRect.intersect(SkRect::MakeWH(localWidth, localHeight));
+
+                        canvas->save();
+                        canvas->clipRect(clipRect);
+                        canvas->clear(SK_ColorTRANSPARENT);
+                        // partialRenderCount_ incremented in success path below
+                    } else {
+                        // FULL RENDER PATH - clear entire canvas
+                        canvas->clear(SK_ColorTRANSPARENT);
+                        // fullRenderCount_ incremented in success path below
+                    }
 
                     // Check timeout before expensive render
                     auto elapsed =
                         std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - renderStart).count();
 
+                    if (debugRenderLoop) {
+                        std::cerr << "[RENDER_DEBUG] Pre-render elapsed: " << elapsed << "ms (timeout="
+                                  << RENDER_TIMEOUT_MS << "ms)" << std::endl;
+                    }
+
                     if (elapsed < RENDER_TIMEOUT_MS) {
-                        // No manual scaling - let SVG handle aspect ratio via preserveAspectRatio
+                        // Render the SVG (partial or full depending on clipping state)
+                        auto svgRenderStart = Clock::now();
                         threadDom->render(canvas);
+                        auto svgRenderEnd = Clock::now();
                         renderSuccess = true;
+                        if (debugRenderLoop) {
+                            auto svgMs = std::chrono::duration<double, std::milli>(svgRenderEnd - svgRenderStart).count();
+                            std::cerr << "[RENDER_DEBUG] SVG render completed in " << svgMs << "ms" << std::endl;
+                        }
                     } else {
                         renderTimedOut = true;
                         timeoutCount++;
+                        if (debugRenderLoop) {
+                            std::cerr << "[RENDER_DEBUG] TIMEOUT! elapsed=" << elapsed << "ms >= "
+                                      << RENDER_TIMEOUT_MS << "ms" << std::endl;
+                        }
+                    }
+
+                    // Restore canvas state if we used partial render
+                    if (usePartialRender) {
+                        canvas->restore();
+                    }
+
+                    // Clear dirty flags for next frame
+                    if (dirtyTrackingInitialized_) {
+                        dirtyTracker_.clearDirtyFlags();
                     }
 
                     // Copy to back buffer with integer overflow protection
@@ -1099,13 +1412,31 @@ class ThreadedRenderer {
                 renderTimedOut = true;
                 timeoutCount++;
                 droppedFrames++;
+                if (debugRenderLoop) {
+                    std::cerr << "[RENDER_DEBUG] POST-render timeout! total=" << lastRenderTimeMs
+                              << "ms > " << RENDER_TIMEOUT_MS << "ms" << std::endl;
+                }
             }
 
             // Swap buffers if render succeeded
             if (renderSuccess && !renderTimedOut) {
+                // Increment render counter NOW (only for frames actually delivered)
+                if (usedPartialRender) {
+                    partialRenderCount_++;
+                } else {
+                    fullRenderCount_++;
+                }
+
                 std::lock_guard<std::mutex> lock(bufferMutex);
                 std::swap(frontBuffer, backBuffer);
                 frameReady = true;
+                if (debugRenderLoop && renderAttempts <= 5) {
+                    std::cerr << "[RENDER_DEBUG] Frame delivered! (attempt #" << renderAttempts
+                              << ") " << (usedPartialRender ? "PARTIAL" : "FULL") << std::endl;
+                }
+            } else if (debugRenderLoop && renderAttempts <= 5) {
+                std::cerr << "[RENDER_DEBUG] Frame NOT delivered: renderSuccess=" << renderSuccess
+                          << ", renderTimedOut=" << renderTimedOut << std::endl;
             }
 
             // Request pre-buffered frames for upcoming animation (render thread can safely do this)
@@ -1120,6 +1451,12 @@ class ThreadedRenderer {
             }
 
             renderInProgress = false;
+        }
+
+        // Log summary when thread exits
+        if (debugRenderLoop) {
+            std::cerr << "[RENDER_DEBUG] Thread exit: " << loopIterations << " loop iterations, "
+                      << renderAttempts << " render attempts" << std::endl;
         }
     }
 };
@@ -1138,9 +1475,22 @@ static svgplayer::SVGAnimationController g_animController;
 // Returns the modified SVG content and populates the provided map with synthetic IDs
 // NOTE: This wrapper uses the shared controller's preprocessSVG method
 std::string preprocessSVGForAnimation(const std::string& content, std::map<size_t, std::string>& syntheticIds) {
+    // DEBUG: Check signal before loadFromContent
+    static bool debugSignals = (std::getenv("RENDER_DEBUG") != nullptr);
+    if (debugSignals) {
+        std::cerr << "[PREPROCESS_DEBUG] Before loadFromContent: g_shutdownRequested="
+                  << g_shutdownRequested.load() << ", content size=" << content.size() << std::endl;
+    }
+
     // Use the shared controller to load and preprocess the content
     // The controller handles <symbol> to <g> conversion and synthetic ID injection
     g_animController.loadFromContent(content);
+
+    // DEBUG: Check signal after loadFromContent
+    if (debugSignals) {
+        std::cerr << "[PREPROCESS_DEBUG] After loadFromContent: g_shutdownRequested="
+                  << g_shutdownRequested.load() << std::endl;
+    }
 
     // Note: synthetic IDs are now managed internally by the controller
     // The map parameter is kept for API compatibility but may not be populated
@@ -1256,14 +1606,15 @@ bool saveScreenshotPPM(const std::vector<uint32_t>& pixels, int width, int heigh
     // PPM P6 header: magic number, width, height, max color value
     file << "P6\n" << width << " " << height << "\n255\n";
 
-    // Convert ARGB8888 to RGB24 and write raw bytes
-    // ARGB8888 layout: [A7-A0][R7-R0][G7-G0][B7-B0] = 32 bits per pixel
+    // Convert BGRA to RGB24 and write raw bytes
+    // ThreadedRenderer uses kBGRA_8888_SkColorType for consistent cross-platform behavior
+    // BGRA in memory: [B, G, R, A] → uint32_t on little-endian: 0xAARRGGBB
     std::vector<uint8_t> rgb(rgbBufferSize);
     for (size_t i = 0; i < pixelCount; ++i) {
         uint32_t pixel = pixels[i];
-        rgb[i * 3 + 0] = (pixel >> 16) & 0xFF;  // R
-        rgb[i * 3 + 1] = (pixel >> 8) & 0xFF;   // G
-        rgb[i * 3 + 2] = pixel & 0xFF;          // B
+        rgb[i * 3 + 0] = (pixel >> 16) & 0xFF;  // R (byte 2 in BGRA)
+        rgb[i * 3 + 1] = (pixel >> 8) & 0xFF;   // G (byte 1 in BGRA)
+        rgb[i * 3 + 2] = pixel & 0xFF;          // B (byte 0 in BGRA)
     }
 
     file.write(reinterpret_cast<const char*>(rgb.data()), rgb.size());
@@ -1417,8 +1768,25 @@ int main(int argc, char* argv[]) {
     // Install signal handlers for graceful shutdown (Ctrl+C, kill)
     installSignalHandlers();
 
-    // Print startup banner (always shown on execution)
-    std::cerr << SVGPlayerVersion::getStartupBanner() << std::endl;
+    // DEBUG: Check g_shutdownRequested immediately after signal handler install
+    bool debugSignals = (std::getenv("RENDER_DEBUG") != nullptr);
+    if (debugSignals) {
+        std::cerr << "[SIGNAL_DEBUG] After installSignalHandlers: g_shutdownRequested="
+                  << g_shutdownRequested.load() << std::endl;
+    }
+
+    // Check for --json flag early to suppress startup banner
+    for (int i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--json") == 0) {
+            g_jsonOutput = true;
+            break;
+        }
+    }
+
+    // Print startup banner (suppress in JSON benchmark mode for clean output)
+    if (!g_jsonOutput) {
+        std::cerr << SVGPlayerVersion::getStartupBanner() << std::endl;
+    }
 
     // Parse command-line arguments
     const char* inputPath = nullptr;
@@ -1428,6 +1796,14 @@ int main(int argc, char* argv[]) {
     int startPosY = SDL_WINDOWPOS_CENTERED;  // Window Y position (-1 = centered)
     int startWidth = 0;   // 0 = use SVG dimensions
     int startHeight = 0;  // 0 = use SVG dimensions
+    bool remoteControlEnabled = false;  // Enable remote control TCP server
+    int remoteControlPort = 9999;  // Default remote control port
+#ifdef __APPLE__
+    bool useMetalBackend = false;  // Use Metal GPU backend (experimental)
+#endif
+    int benchmarkDuration = 0;  // Benchmark mode: run for N seconds then exit (0 = disabled)
+    std::string screenshotPath;  // Auto-save screenshot after first frame (for benchmarks)
+    // Note: jsonOutput is now global g_jsonOutput for thread access
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
@@ -1468,6 +1844,53 @@ int main(int argc, char* argv[]) {
                 std::cerr << "Invalid size format: " << argv[i] << " (use --size=WxH)" << std::endl;
                 return 1;
             }
+        } else if (strcmp(argv[i], "--remote-control") == 0) {
+            // Enable remote control with default port
+            remoteControlEnabled = true;
+        } else if (strncmp(argv[i], "--remote-control=", 17) == 0) {
+            // Enable remote control with custom port
+            remoteControlEnabled = true;
+            int port;
+            if (sscanf(argv[i] + 17, "%d", &port) == 1 && port > 0 && port < 65536) {
+                remoteControlPort = port;
+            } else {
+                std::cerr << "Invalid port format: " << argv[i] << " (use --remote-control=PORT)" << std::endl;
+                return 1;
+            }
+        } else if (strcmp(argv[i], "--duration") == 0) {
+            // Benchmark duration (next arg is seconds)
+            if (i + 1 < argc) {
+                benchmarkDuration = atoi(argv[++i]);
+                if (benchmarkDuration <= 0) {
+                    std::cerr << "Invalid duration: " << argv[i] << " (must be positive integer)" << std::endl;
+                    return 1;
+                }
+            } else {
+                std::cerr << "--duration requires a value in seconds" << std::endl;
+                return 1;
+            }
+        } else if (strncmp(argv[i], "--duration=", 11) == 0) {
+            // Benchmark duration (inline value)
+            benchmarkDuration = atoi(argv[i] + 11);
+            if (benchmarkDuration <= 0) {
+                std::cerr << "Invalid duration: " << (argv[i] + 11) << " (must be positive integer)" << std::endl;
+                return 1;
+            }
+        } else if (strcmp(argv[i], "--json") == 0) {
+            // JSON output for benchmark results
+            g_jsonOutput = true;
+#ifdef __APPLE__
+        } else if (strcmp(argv[i], "--metal") == 0) {
+            // Enable Metal GPU backend
+            useMetalBackend = true;
+#endif
+        } else if (strncmp(argv[i], "--screenshot=", 13) == 0) {
+            // Auto-save screenshot after first frame (for benchmarks)
+            screenshotPath = argv[i] + 13;
+            if (screenshotPath.empty()) {
+                std::cerr << "--screenshot requires a file path (e.g., --screenshot=output.ppm)" << std::endl;
+                return 1;
+            }
         } else if (argv[i][0] != '-') {
             // Non-option argument is the input file
             inputPath = argv[i];
@@ -1478,6 +1901,10 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     }
+
+    // Configure animation controller verbose mode based on JSON output setting
+    // This must be done before any SVG loading/parsing to suppress console messages
+    g_animController.setVerbose(!g_jsonOutput);
 
     // Input file is required
     if (!inputPath) {
@@ -1506,6 +1933,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // DEBUG: Check before file read
+    if (debugSignals) {
+        std::cerr << "[SIGNAL_DEBUG] Before file read: g_shutdownRequested="
+                  << g_shutdownRequested.load() << std::endl;
+    }
+
     // Read the SVG file content
     std::ifstream file(inputPath);
     if (!file.is_open()) {
@@ -1517,6 +1950,12 @@ int main(int argc, char* argv[]) {
     std::string originalContent = buffer.str();
     file.close();
 
+    // DEBUG: Check after file read
+    if (debugSignals) {
+        std::cerr << "[SIGNAL_DEBUG] After file read (" << originalContent.size() << " bytes): g_shutdownRequested="
+                  << g_shutdownRequested.load() << std::endl;
+    }
+
     // Validate SVG content structure
     if (!validateSVGContent(originalContent)) {
         std::cerr << "Error: Invalid SVG file - no <svg> element found: " << inputPath << std::endl;
@@ -1525,17 +1964,31 @@ int main(int argc, char* argv[]) {
 
     // Pre-process SVG to inject IDs into <use> elements that contain <animate> but lack IDs
     // This is necessary for panther_bird.fbf.svg and similar files where <use> has no id
-    std::cout << "Parsing SMIL animations..." << std::endl;
+    if (!g_jsonOutput) std::cout << "Parsing SMIL animations..." << std::endl;
     std::map<size_t, std::string> syntheticIds;
     std::string processedContent = preprocessSVGForAnimation(originalContent, syntheticIds);
+
+    // DEBUG: Check after preprocessing
+    if (debugSignals) {
+        std::cerr << "[SIGNAL_DEBUG] After preprocessSVGForAnimation: g_shutdownRequested="
+                  << g_shutdownRequested.load() << std::endl;
+    }
 
     // Extract animations from the preprocessed content
     std::vector<SMILAnimation> animations = extractAnimationsFromContent(processedContent);
 
-    if (animations.empty()) {
-        std::cout << "No SMIL animations found - will render static SVG" << std::endl;
-    } else {
-        std::cout << "Found " << animations.size() << " animation(s)" << std::endl;
+    // DEBUG: Check after animation extraction
+    if (debugSignals) {
+        std::cerr << "[SIGNAL_DEBUG] After extractAnimationsFromContent: g_shutdownRequested="
+                  << g_shutdownRequested.load() << std::endl;
+    }
+
+    if (!g_jsonOutput) {
+        if (animations.empty()) {
+            std::cout << "No SMIL animations found - will render static SVG" << std::endl;
+        } else {
+            std::cout << "Found " << animations.size() << " animation(s)" << std::endl;
+        }
     }
 
     // Store raw SVG content for parallel renderer
@@ -1567,7 +2020,7 @@ int main(int argc, char* argv[]) {
         sk_sp<SkSVGNode>* nodePtr = svgDom->findNodeById(anim.targetId.c_str());
         if (!nodePtr || !*nodePtr) {
             std::cerr << "Warning: Cannot find animated element: " << anim.targetId << std::endl;
-        } else {
+        } else if (!g_jsonOutput) {
             std::cout << "Found target element: " << anim.targetId << std::endl;
         }
     }
@@ -1598,8 +2051,10 @@ int main(int argc, char* argv[]) {
     }
     float aspectRatio = static_cast<float>(svgWidth) / svgHeight;
 
-    std::cout << "SVG dimensions: " << svgWidth << "x" << svgHeight << std::endl;
-    std::cout << "Aspect ratio: " << aspectRatio << std::endl;
+    if (!g_jsonOutput) {
+        std::cout << "SVG dimensions: " << svgWidth << "x" << svgHeight << std::endl;
+        std::cout << "Aspect ratio: " << aspectRatio << std::endl;
+    }
 
     // Initialize SDL with hints to reduce stutters
     // Force Metal renderer on macOS for better performance
@@ -1612,10 +2067,36 @@ int main(int argc, char* argv[]) {
     // "0" = nearest, "1" = linear, "2" = best (anisotropic if available)
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
 
+    // DEBUG: Check signal before SDL_Init
+    if (debugSignals) {
+        std::cerr << "[SIGNAL_DEBUG] Before SDL_Init: g_shutdownRequested="
+                  << g_shutdownRequested.load() << std::endl;
+    }
+
+    // Let SDL handle SIGINT/SIGTERM and convert them to SDL_QUIT events
+    // Our SDL_QUIT handler sets g_shutdownRequested for proper cleanup
+    // (SDL_HINT_NO_SIGNAL_HANDLERS is NOT set, so SDL will catch signals)
+
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         std::cerr << "SDL init failed: " << SDL_GetError() << std::endl;
         return 1;
     }
+
+    // DEBUG: Check g_shutdownRequested after SDL init
+    if (debugSignals) {
+        std::cerr << "[SIGNAL_DEBUG] After SDL_Init: g_shutdownRequested="
+                  << g_shutdownRequested.load() << std::endl;
+    }
+
+    // CRITICAL: SDL_Init may overwrite signal handlers or trigger signals during init.
+    // Re-install our handlers and clear the shutdown flag if it was set spuriously.
+    if (g_shutdownRequested.load()) {
+        if (debugSignals) {
+            std::cerr << "[SIGNAL_DEBUG] WARNING: SDL_Init triggered shutdown signal! Resetting flag." << std::endl;
+        }
+        g_shutdownRequested.store(false);  // Reset the spurious signal
+    }
+    installSignalHandlers();  // Re-install our handlers after SDL
 
     // Create window at SVG native resolution (scaled to fit reasonable bounds)
     int windowWidth = svgWidth;
@@ -1647,14 +2128,23 @@ int main(int argc, char* argv[]) {
     // Get native display resolution for fullscreen mode (Retina/HiDPI aware)
     SDL_DisplayMode displayMode;
     if (SDL_GetCurrentDisplayMode(0, &displayMode) == 0) {
-        std::cout << "Native display: " << displayMode.w << "x" << displayMode.h << " @ " << displayMode.refresh_rate
-                  << "Hz" << std::endl;
+        if (!g_jsonOutput) {
+            std::cout << "Native display: " << displayMode.w << "x" << displayMode.h << " @ " << displayMode.refresh_rate
+                      << "Hz" << std::endl;
+        }
     }
 
     // Window creation with optional exclusive fullscreen
     // For fullscreen: use native display resolution
     // For windowed: use SVG-based dimensions or command-line overrides
     Uint32 windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+
+    // Add Metal flag for GPU-accelerated rendering (macOS)
+#ifdef __APPLE__
+    if (useMetalBackend) {
+        windowFlags |= SDL_WINDOW_METAL;
+    }
+#endif
 
     // Apply size override from command-line if specified
     int createWidth = (startWidth > 0) ? startWidth : windowWidth;
@@ -1690,31 +2180,71 @@ int main(int argc, char* argv[]) {
     // Apply maximize if requested (after window creation and zoom config)
     if (startMaximized && !startFullscreen) {
         toggleWindowMaximize(window);
-        std::cout << "Started maximized" << std::endl;
+        if (!g_jsonOutput) std::cout << "Started maximized" << std::endl;
     }
 
     // VSync state
     bool vsyncEnabled = false;
 
-    // Create renderer (initially without VSync)
-    SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-
-    if (!renderer) {
-        std::cerr << "Renderer creation failed: " << SDL_GetError() << std::endl;
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
+    // Create renderer (initially without VSync) - skip for Metal mode
+    SDL_Renderer* renderer = nullptr;
+#ifdef __APPLE__
+    if (!useMetalBackend) {
+#endif
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+        if (!renderer) {
+            std::cerr << "Renderer creation failed: " << SDL_GetError() << std::endl;
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
+#ifdef __APPLE__
     }
+#endif
+
+    // Metal context for GPU-accelerated rendering (macOS only, experimental)
+#ifdef __APPLE__
+    std::unique_ptr<svgplayer::MetalContext> metalContext;
+    GrMTLHandle metalDrawable = nullptr;  // Current drawable for Metal rendering
+
+    if (useMetalBackend) {
+        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_DEBUG] Before createMetalContext: g_shutdownRequested=" << g_shutdownRequested.load() << std::endl;
+        metalContext = svgplayer::createMetalContext(window);
+        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_DEBUG] After createMetalContext: g_shutdownRequested=" << g_shutdownRequested.load() << std::endl;
+        if (metalContext) {
+            // Re-install signal handlers after Metal context creation
+            // Metal/SDL may override them during CAMetalLayer setup
+            installSignalHandlers();
+            if (!g_jsonOutput) {
+                std::cout << "[Metal] GPU backend enabled - GPU-accelerated rendering active" << std::endl;
+            }
+        } else {
+            std::cerr << "[Metal] Failed to initialize Metal context, falling back to CPU rendering" << std::endl;
+            useMetalBackend = false;
+        }
+    }
+#endif
 
     // Get actual renderer output size (accounts for HiDPI/Retina)
     int rendererW, rendererH;
-    SDL_GetRendererOutputSize(renderer, &rendererW, &rendererH);
+#ifdef __APPLE__
+    if (useMetalBackend && metalContext && metalContext->isInitialized()) {
+        // Metal mode: use SDL_Metal_GetDrawableSize
+        SDL_Metal_GetDrawableSize(window, &rendererW, &rendererH);
+    } else
+#endif
+    {
+        // CPU mode: use renderer output size
+        SDL_GetRendererOutputSize(renderer, &rendererW, &rendererH);
+    }
     // HiDPI scale = renderer pixels / window logical pixels
     // For fullscreen: use createWidth/Height (native display), for windowed: use windowWidth/Height
     // Prevent division by zero (should never happen, but defensive programming)
     if (createWidth == 0) createWidth = 1;
     float hiDpiScale = static_cast<float>(rendererW) / createWidth;
-    std::cout << "HiDPI scale factor: " << std::fixed << std::setprecision(4) << hiDpiScale << std::endl;
+    if (!g_jsonOutput) {
+        std::cout << "HiDPI scale factor: " << std::fixed << std::setprecision(4) << hiDpiScale << std::endl;
+    }
 
     // Query display refresh rate for frame limiter
     int displayIndex = SDL_GetWindowDisplayIndex(window);
@@ -1723,7 +2253,9 @@ int main(int argc, char* argv[]) {
     if (SDL_GetCurrentDisplayMode(displayIndex, &refreshDisplayMode) == 0) {
         displayRefreshRate = refreshDisplayMode.refresh_rate > 0 ? refreshDisplayMode.refresh_rate : 60;
     }
-    std::cout << "Display refresh rate: " << displayRefreshRate << " Hz" << std::endl;
+    if (!g_jsonOutput) {
+        std::cout << "Display refresh rate: " << displayRefreshRate << " Hz" << std::endl;
+    }
 
     // Setup font for debug overlay (platform-specific font manager)
     sk_sp<SkFontMgr> fontMgr = createPlatformFontMgr();
@@ -1786,6 +2318,7 @@ int main(int argc, char* argv[]) {
     uint64_t displayCycles = 0;    // Total main loop iterations (display refresh attempts)
     uint64_t framesDelivered = 0;  // Frames actually received from render thread
     uint64_t frameCount = 0;
+    bool screenshotSaved = false;  // Auto-screenshot flag for benchmark mode
     auto startTime = Clock::now();
     auto lastFrameTime = Clock::now();
     auto animationStartTime = Clock::now();
@@ -1818,27 +2351,63 @@ int main(int argc, char* argv[]) {
     int renderWidth = rendererW;
     int renderHeight = rendererH;
 
-    // Create initial texture
-    SDL_Texture* texture =
-        SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, renderWidth, renderHeight);
+    // Create initial texture (only for CPU rendering mode)
+    SDL_Texture* texture = nullptr;
+#ifdef __APPLE__
+    if (!useMetalBackend) {
+#endif
+        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, renderWidth, renderHeight);
+#ifdef __APPLE__
+    }
+#endif
 
-    // Skia surface
+    // Skia surface - either CPU-backed (Raster) or GPU-backed (Metal)
     sk_sp<SkSurface> surface;
 
-    auto createSurface = [&](int w, int h) {
+    // Lambda to create/recreate the Skia surface
+    // For Metal: creates GPU-accelerated surface from CAMetalLayer
+    // For CPU: creates raster surface in system memory
+    auto createSurface = [&](int w, int h) -> bool {
+#ifdef __APPLE__
+        if (useMetalBackend && metalContext && metalContext->isInitialized()) {
+            // Metal GPU-backed surface - render directly to GPU texture
+            metalContext->updateDrawableSize(w, h);
+            surface = metalContext->createSurface(w, h, &metalDrawable);
+            if (surface) {
+                return true;
+            } else {
+                std::cerr << "[Metal] Failed to create GPU surface, falling back to CPU" << std::endl;
+                useMetalBackend = false;
+                // Fall through to CPU path
+            }
+        }
+#endif
+        // CPU raster surface - traditional path
         SkImageInfo imageInfo = SkImageInfo::MakeN32Premul(w, h);
         surface = SkSurfaces::Raster(imageInfo);
         return surface != nullptr;
     };
 
-    if (!createSurface(renderWidth, renderHeight)) {
-        std::cerr << "Failed to create Skia surface" << std::endl;
-        SDL_DestroyTexture(texture);
-        SDL_DestroyRenderer(renderer);
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
+    // For Metal backend, skip initial surface creation - Metal creates fresh surfaces each frame
+    // This avoids exhausting the CAMetalLayer drawable pool (typically 2-3 drawables)
+#ifdef __APPLE__
+    if (!useMetalBackend) {
+#endif
+        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_DEBUG] Before createSurface: g_shutdownRequested=" << g_shutdownRequested.load() << std::endl;
+        if (!createSurface(renderWidth, renderHeight)) {
+            std::cerr << "Failed to create Skia surface" << std::endl;
+            SDL_DestroyTexture(texture);
+            SDL_DestroyRenderer(renderer);
+            SDL_DestroyWindow(window);
+            SDL_Quit();
+            return 1;
+        }
+        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_DEBUG] After createSurface: g_shutdownRequested=" << g_shutdownRequested.load() << std::endl;
+#ifdef __APPLE__
+    } else {
+        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_DEBUG] Skipping initial createSurface for Metal (surfaces created per-frame)" << std::endl;
     }
+#endif
 
     bool running = true;
     bool frameLimiterEnabled = false;  // OFF by default for max FPS
@@ -1872,60 +2441,401 @@ int main(int argc, char* argv[]) {
     preBufferTotalFrames = maxFrames;
     preBufferTotalDuration = maxDuration;
 
-    // Initialize parallel renderer with SVG data, ALL animations, and timing info
-    // PreBuffer mode uses time-based frame calculation for multi-animation sync
-    parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
-                               animations, maxDuration, maxFrames);
+    // ThreadedRenderer for CPU mode - not used in Metal mode
+    // Metal renders directly on main thread with GPU acceleration
+    std::unique_ptr<ThreadedRenderer> threadedRendererPtr;
 
-    // Start parallel renderer in PreBuffer mode by default (best for animations)
-    parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+#ifdef __APPLE__
+    if (!useMetalBackend) {
+#endif
+        // Initialize parallel renderer with SVG data, ALL animations, and timing info
+        // PreBuffer mode uses time-based frame calculation for multi-animation sync
+        parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                                   animations, maxDuration, maxFrames);
 
-    // Threaded renderer keeps UI responsive by moving all rendering to background thread
-    // Main thread ONLY handles events and blits completed frames - NEVER blocks on rendering
-    ThreadedRenderer threadedRenderer;
-    threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
-    threadedRenderer.start();
+        // Start parallel renderer in PreBuffer mode by default (best for animations)
+        parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
 
-    // Initialize cached mode state to reflect PreBuffer is ON by default
-    threadedRenderer.cachedPreBufferMode = true;
-    threadedRenderer.cachedActiveWorkers = parallelRenderer.activeWorkers.load();
+        // Threaded renderer keeps UI responsive by moving all rendering to background thread
+        // Main thread ONLY handles events and blits completed frames - NEVER blocks on rendering
+        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_DEBUG] Before ThreadedRenderer: g_shutdownRequested=" << g_shutdownRequested.load() << std::endl;
+        threadedRendererPtr = std::make_unique<ThreadedRenderer>();
+        threadedRendererPtr->configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+        threadedRendererPtr->start();
+        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_DEBUG] After ThreadedRenderer.start(): g_shutdownRequested=" << g_shutdownRequested.load() << std::endl;
 
-    // Set total animation frames so PreBuffer mode can pre-render ahead
-    threadedRenderer.setTotalAnimationFrames(maxFrames);
+        // Initialize cached mode state to reflect PreBuffer is ON by default
+        threadedRendererPtr->cachedPreBufferMode = true;
+        threadedRendererPtr->cachedActiveWorkers = parallelRenderer.activeWorkers.load();
 
-    std::cout << "\nCPU cores detected: " << totalCores << std::endl;
-    std::cout << "Skia thread pool size: " << availableCores << " (1 reserved for system)" << std::endl;
-    std::cout << "PreBuffer mode: ON (default)" << std::endl;
-    std::cout << "UI thread: Non-blocking (render thread active)" << std::endl;
+        // Set total animation frames so PreBuffer mode can pre-render ahead
+        threadedRendererPtr->setTotalAnimationFrames(maxFrames);
 
-    std::cout << "\nControls:" << std::endl;
-    std::cout << "  ESC/Q - Quit" << std::endl;
-    std::cout << "  SPACE - Pause/Resume animation" << std::endl;
-    std::cout << "  D - Toggle debug info overlay" << std::endl;
-    std::cout << "  F - Toggle fullscreen mode" << std::endl;
-    std::cout << "  M - Toggle maximize/restore (zoom)" << std::endl;
-    std::cout << "  S - Toggle stress test (50ms delay per frame)" << std::endl;
-    std::cout << "  V - Toggle VSync" << std::endl;
-    std::cout << "  T - Toggle frame limiter (" << displayRefreshRate << " FPS cap)" << std::endl;
-    std::cout << "  P - Toggle parallel mode: Off <-> PreBuffer" << std::endl;
-    std::cout << "      Off: Direct single-threaded rendering" << std::endl;
-    std::cout << "      PreBuffer: Pre-render animation frames ahead using thread pool" << std::endl;
-    std::cout << "  R - Reset statistics" << std::endl;
-    std::cout << "  C - Capture screenshot (PPM format, uncompressed)" << std::endl;
-    std::cout << "  O - Open new SVG file (hot-reload)" << std::endl;
-    std::cout << "  B - Toggle folder browser (click to navigate)" << std::endl;
-    std::cout << "  Resize window to change render resolution" << std::endl;
-    std::cout << "\nSMIL Sync Guarantee:" << std::endl;
-    std::cout << "  Animation timing uses steady_clock (monotonic)" << std::endl;
-    std::cout << "  Frame shown = f(current_time), NOT f(frame_count)" << std::endl;
-    std::cout << "  If rendering is slow, frames SKIP but sync is PERFECT" << std::endl;
-    std::cout << "  Press 'S' to enable stress test and verify sync" << std::endl;
-    std::cout << "\nNote: Occasional stutters may be caused by macOS system tasks." << std::endl;
-    std::cout << "      Animation sync remains correct even during stutters." << std::endl;
-    std::cout << "\nRendering..." << std::endl;
+        // Initialize dirty region tracking for partial rendering optimization
+        // Extracts element bounds from SVG content and caches them for dirty rect calculation
+        threadedRendererPtr->initializeDirtyTracking(animations);
+#ifdef __APPLE__
+    } else {
+        if (!g_jsonOutput) {
+            std::cout << "[Metal] GPU-accelerated rendering enabled - ThreadedRenderer disabled" << std::endl;
+        }
+    }
+#endif
+
+    if (!g_jsonOutput) {
+        std::cout << "\nCPU cores detected: " << totalCores << std::endl;
+        std::cout << "Skia thread pool size: " << availableCores << " (1 reserved for system)" << std::endl;
+        std::cout << "PreBuffer mode: ON (default)" << std::endl;
+        std::cout << "UI thread: Non-blocking (render thread active)" << std::endl;
+
+        std::cout << "\nControls:" << std::endl;
+        std::cout << "  ESC/Q - Quit" << std::endl;
+        std::cout << "  SPACE - Pause/Resume animation" << std::endl;
+        std::cout << "  D - Toggle debug info overlay" << std::endl;
+        std::cout << "  F/G - Toggle fullscreen mode" << std::endl;
+        std::cout << "  M - Toggle maximize/restore (zoom)" << std::endl;
+        std::cout << "  S - Toggle stress test (50ms delay per frame)" << std::endl;
+        std::cout << "  V - Toggle VSync" << std::endl;
+        std::cout << "  T - Toggle frame limiter (" << displayRefreshRate << " FPS cap)" << std::endl;
+        std::cout << "  P - Toggle parallel mode: Off <-> PreBuffer" << std::endl;
+        std::cout << "      Off: Direct single-threaded rendering" << std::endl;
+        std::cout << "      PreBuffer: Pre-render animation frames ahead using thread pool" << std::endl;
+        std::cout << "  R - Reset statistics" << std::endl;
+        std::cout << "  C - Capture screenshot (PPM format, uncompressed)" << std::endl;
+        std::cout << "  O - Open new SVG file (hot-reload)" << std::endl;
+        std::cout << "  B - Toggle folder browser (click to navigate)" << std::endl;
+        std::cout << "  Resize window to change render resolution" << std::endl;
+        std::cout << "\nSMIL Sync Guarantee:" << std::endl;
+        std::cout << "  Animation timing uses steady_clock (monotonic)" << std::endl;
+        std::cout << "  Frame shown = f(current_time), NOT f(frame_count)" << std::endl;
+        std::cout << "  If rendering is slow, frames SKIP but sync is PERFECT" << std::endl;
+        std::cout << "  Press 'S' to enable stress test and verify sync" << std::endl;
+        std::cout << "\nNote: Occasional stutters may be caused by macOS system tasks." << std::endl;
+        std::cout << "      Animation sync remains correct even during stutters." << std::endl;
+    }
+
+    // Remote control server for programmatic control via TCP/JSON
+    std::unique_ptr<svgplayer::RemoteControlServer> remoteServer;
+    if (remoteControlEnabled) {
+        remoteServer = std::make_unique<svgplayer::RemoteControlServer>(remoteControlPort);
+
+        // Register command handlers - these capture player state by reference
+        using namespace svgplayer;
+
+        // Ping - simple health check
+        remoteServer->registerHandler(RemoteCommand::Ping, [](const std::string&) {
+            return json::success("\"pong\"");
+        });
+
+        // Play - resume animation
+        remoteServer->registerHandler(RemoteCommand::Play, [&animationPaused, &pausedTime, &animationStartTimeSteady](const std::string&) {
+            if (animationPaused) {
+                DurationSec pauseDuration(pausedTime);
+                animationStartTimeSteady = SteadyClock::now() - std::chrono::duration_cast<SteadyClock::duration>(pauseDuration);
+                animationPaused = false;
+                std::cout << "Remote: Animation resumed" << std::endl;
+            }
+            return json::success();
+        });
+
+        // Pause - pause animation
+        remoteServer->registerHandler(RemoteCommand::Pause, [&animationPaused, &pausedTime, &animationStartTimeSteady](const std::string&) {
+            if (!animationPaused) {
+                DurationSec elapsed = SteadyClock::now() - animationStartTimeSteady;
+                pausedTime = elapsed.count();
+                animationPaused = true;
+                std::cout << "Remote: Animation paused at " << pausedTime << "s" << std::endl;
+            }
+            return json::success();
+        });
+
+        // Stop - stop and reset to beginning
+        remoteServer->registerHandler(RemoteCommand::Stop, [&animationPaused, &pausedTime, &animationStartTimeSteady](const std::string&) {
+            animationPaused = true;
+            pausedTime = 0;
+            animationStartTimeSteady = SteadyClock::now();
+            std::cout << "Remote: Animation stopped" << std::endl;
+            return json::success();
+        });
+
+        // TogglePlay - toggle play/pause
+        remoteServer->registerHandler(RemoteCommand::TogglePlay, [&animationPaused, &pausedTime, &animationStartTimeSteady](const std::string&) {
+            if (animationPaused) {
+                DurationSec pauseDuration(pausedTime);
+                animationStartTimeSteady = SteadyClock::now() - std::chrono::duration_cast<SteadyClock::duration>(pauseDuration);
+                animationPaused = false;
+                std::cout << "Remote: Animation resumed" << std::endl;
+            } else {
+                DurationSec elapsed = SteadyClock::now() - animationStartTimeSteady;
+                pausedTime = elapsed.count();
+                animationPaused = true;
+                std::cout << "Remote: Animation paused at " << pausedTime << "s" << std::endl;
+            }
+            return json::success();
+        });
+
+        // Seek - seek to specific time
+        remoteServer->registerHandler(RemoteCommand::Seek, [&animationPaused, &pausedTime, &animationStartTimeSteady, &maxDuration](const std::string& params) {
+            // Parse time from JSON params
+            std::string timeStr;
+            size_t pos = params.find("\"time\"");
+            if (pos != std::string::npos) {
+                pos = params.find(':', pos);
+                if (pos != std::string::npos) {
+                    pos++;
+                    while (pos < params.size() && (params[pos] == ' ' || params[pos] == '\t')) pos++;
+                    try {
+                        double targetTime = std::stod(params.substr(pos));
+                        // Clamp to valid range
+                        if (targetTime < 0) targetTime = 0;
+                        if (targetTime > maxDuration) targetTime = maxDuration;
+
+                        if (animationPaused) {
+                            pausedTime = targetTime;
+                        } else {
+                            DurationSec seekDuration(targetTime);
+                            animationStartTimeSteady = SteadyClock::now() - std::chrono::duration_cast<SteadyClock::duration>(seekDuration);
+                        }
+                        std::cout << "Remote: Seeked to " << targetTime << "s" << std::endl;
+                        return json::success();
+                    } catch (...) {
+                        return json::error("Invalid time value");
+                    }
+                }
+            }
+            return json::error("Missing time parameter");
+        });
+
+        // Fullscreen - toggle fullscreen mode
+        remoteServer->registerHandler(RemoteCommand::Fullscreen, [&isFullscreen, window, renderer](const std::string&) {
+            // Clear screen before mode switch
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderPresent(renderer);
+
+            isFullscreen = !isFullscreen;
+            if (isFullscreen) {
+                SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
+            } else {
+                SDL_SetWindowFullscreen(window, 0);
+            }
+
+            // Clear again after mode switch
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderPresent(renderer);
+
+            std::cout << "Remote: Fullscreen " << (isFullscreen ? "ON" : "OFF") << std::endl;
+            return json::success();
+        });
+
+        // Maximize - toggle maximize/restore
+        remoteServer->registerHandler(RemoteCommand::Maximize, [window](const std::string&) {
+            bool newState = toggleWindowMaximize(window);
+            std::cout << "Remote: Window " << (newState ? "MAXIMIZED" : "RESTORED") << std::endl;
+            return json::success();
+        });
+
+        // SetPosition - set window position
+        remoteServer->registerHandler(RemoteCommand::SetPosition, [window](const std::string& params) {
+            // Parse x,y from JSON params
+            size_t xPos = params.find("\"x\"");
+            size_t yPos = params.find("\"y\"");
+            if (xPos != std::string::npos && yPos != std::string::npos) {
+                int x = 0, y = 0;
+                try {
+                    size_t colonPos = params.find(':', xPos);
+                    if (colonPos != std::string::npos) {
+                        x = std::stoi(params.substr(colonPos + 1));
+                    }
+                    colonPos = params.find(':', yPos);
+                    if (colonPos != std::string::npos) {
+                        y = std::stoi(params.substr(colonPos + 1));
+                    }
+                    SDL_SetWindowPosition(window, x, y);
+                    std::cout << "Remote: Window position set to " << x << "," << y << std::endl;
+                    return json::success();
+                } catch (...) {
+                    return json::error("Invalid position values");
+                }
+            }
+            return json::error("Missing x or y parameters");
+        });
+
+        // SetSize - set window size
+        remoteServer->registerHandler(RemoteCommand::SetSize, [window](const std::string& params) {
+            // Parse width,height from JSON params
+            size_t wPos = params.find("\"width\"");
+            size_t hPos = params.find("\"height\"");
+            if (wPos != std::string::npos && hPos != std::string::npos) {
+                int w = 0, h = 0;
+                try {
+                    size_t colonPos = params.find(':', wPos);
+                    if (colonPos != std::string::npos) {
+                        w = std::stoi(params.substr(colonPos + 1));
+                    }
+                    colonPos = params.find(':', hPos);
+                    if (colonPos != std::string::npos) {
+                        h = std::stoi(params.substr(colonPos + 1));
+                    }
+                    if (w > 0 && h > 0) {
+                        SDL_SetWindowSize(window, w, h);
+                        std::cout << "Remote: Window size set to " << w << "x" << h << std::endl;
+                        return json::success();
+                    }
+                    return json::error("Invalid size values (must be positive)");
+                } catch (...) {
+                    return json::error("Invalid size values");
+                }
+            }
+            return json::error("Missing width or height parameters");
+        });
+
+        // GetState - get current player state
+        remoteServer->registerHandler(RemoteCommand::GetState, [&animationPaused, &pausedTime, &animationStartTimeSteady,
+                                                                 &isFullscreen, window, &maxFrames, &maxDuration,
+                                                                 inputPath, &currentFrameIndex](const std::string&) {
+            PlayerState state;
+            state.playing = !animationPaused;
+            state.paused = animationPaused;
+
+            // Calculate current time
+            if (animationPaused) {
+                state.currentTime = pausedTime;
+            } else {
+                DurationSec elapsed = SteadyClock::now() - animationStartTimeSteady;
+                state.currentTime = elapsed.count();
+            }
+
+            // Check window state
+            Uint32 flags = SDL_GetWindowFlags(window);
+            state.fullscreen = (flags & SDL_WINDOW_FULLSCREEN) != 0;
+            state.maximized = (flags & SDL_WINDOW_MAXIMIZED) != 0;
+
+            // Get window position and size
+            SDL_GetWindowPosition(window, &state.windowX, &state.windowY);
+            SDL_GetWindowSize(window, &state.windowWidth, &state.windowHeight);
+
+            // Animation info
+            state.currentFrame = static_cast<int>(currentFrameIndex);
+            state.totalFrames = static_cast<int>(maxFrames);
+            state.totalDuration = maxDuration;
+            state.playbackSpeed = 1.0;  // TODO: Add playback speed support
+            state.loadedFile = inputPath ? inputPath : "";
+
+            return json::state(state);
+        });
+
+        // GetStats - get performance statistics
+        remoteServer->registerHandler(RemoteCommand::GetStats, [&frameTimes, &renderTimes, &framesDelivered,
+                                                                 &displayCycles, &renderWidth, &renderHeight](const std::string&) {
+            PlayerStats stats;
+            stats.fps = frameTimes.count() > 0 ? 1000.0 / frameTimes.average() : 0.0;
+            stats.avgFrameTime = frameTimes.average();
+            stats.avgRenderTime = renderTimes.average();
+            stats.droppedFrames = static_cast<int>(displayCycles - framesDelivered);
+            stats.memoryUsage = static_cast<size_t>(renderWidth) * renderHeight * 4;  // Approximate
+            stats.elementsRendered = 0;  // TODO: Track rendered elements
+            return json::stats(stats);
+        });
+
+        // Screenshot - capture screenshot to file
+        remoteServer->registerHandler(RemoteCommand::Screenshot, [&threadedRendererPtr, &renderWidth, &renderHeight](const std::string& params) {
+            // Parse path from JSON params
+            std::string path;
+            size_t pathPos = params.find("\"path\"");
+            if (pathPos != std::string::npos) {
+                size_t colonPos = params.find(':', pathPos);
+                if (colonPos != std::string::npos) {
+                    size_t quoteStart = params.find('"', colonPos);
+                    if (quoteStart != std::string::npos) {
+                        size_t quoteEnd = params.find('"', quoteStart + 1);
+                        if (quoteEnd != std::string::npos) {
+                            path = params.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+                        }
+                    }
+                }
+            }
+
+            // Get current frame for screenshot
+            std::vector<uint32_t> screenshotPixels;
+            int screenshotWidth, screenshotHeight;
+            if (threadedRendererPtr && threadedRendererPtr->getFrameForScreenshot(screenshotPixels, screenshotWidth, screenshotHeight)) {
+                if (path.empty()) {
+                    // Generate default filename with dimensions
+                    path = generateScreenshotFilename(screenshotWidth, screenshotHeight);
+                }
+                if (saveScreenshotPPM(screenshotPixels, screenshotWidth, screenshotHeight, path)) {
+                    std::cout << "Remote: Screenshot saved to " << path << std::endl;
+                    return json::success("\"" + path + "\"");
+                }
+            }
+            return json::error("Failed to capture screenshot (threadedRenderer unavailable in Metal mode)");
+        });
+
+        // Quit - quit the player
+        remoteServer->registerHandler(RemoteCommand::Quit, [&running](const std::string&) {
+            running = false;
+            std::cout << "Remote: Quit requested" << std::endl;
+            return json::success();
+        });
+
+        // Start the remote control server
+        if (remoteServer->start()) {
+            std::cout << "\nRemote Control: Listening on port " << remoteControlPort << std::endl;
+            std::cout << "  Use Python controller: python scripts/svg_player_controller.py --port " << remoteControlPort << std::endl;
+        } else {
+            std::cerr << "Warning: Failed to start remote control server on port " << remoteControlPort << std::endl;
+            remoteServer.reset();
+        }
+    }
+
+    // Benchmark mode: track start time for duration-based exit
+    auto benchmarkStartTime = SteadyClock::now();
+
+    if (!g_jsonOutput) {
+        std::cout << "\nRendering..." << std::endl;
+    }
+
+    // DEBUG: Check loop entry conditions
+    static bool debugMainLoop = (std::getenv("RENDER_DEBUG") != nullptr);
+    if (debugMainLoop) {
+        std::cerr << "[MAIN_DEBUG] About to enter main loop: running=" << running
+                  << ", g_shutdownRequested=" << g_shutdownRequested.load() << std::endl;
+    }
 
     // Main event loop - check both running flag and shutdown request (Ctrl+C)
     while (running && !g_shutdownRequested.load()) {
+        // Debug: periodic shutdown check for Metal mode
+        if (displayCycles % 100 == 0 && displayCycles > 0) {
+            bool shutdownVal = g_shutdownRequested.load();
+            if (shutdownVal) {
+                std::cerr << "[MAIN_DEBUG] Shutdown detected at cycle " << displayCycles << std::endl;
+            }
+        }
+        if (debugMainLoop && displayCycles == 0) {
+            std::cerr << "[MAIN_DEBUG] First main loop iteration starting" << std::endl;
+        }
+        // CRITICAL: Early ESC/Q check - ensures player is ALWAYS responsive to quit keys
+        // This runs BEFORE any potentially blocking operations for guaranteed responsiveness
+        SDL_PumpEvents();  // Update keyboard state
+        const Uint8* keyState = SDL_GetKeyboardState(nullptr);
+        if (keyState[SDL_SCANCODE_ESCAPE] || keyState[SDL_SCANCODE_Q]) {
+            if (!g_jsonOutput) {
+                std::cout << "\n[QUIT] ESC/Q key detected - exiting immediately" << std::endl;
+            }
+            running = false;
+            break;
+        }
+
+        // Benchmark mode: exit after specified duration
+        if (benchmarkDuration > 0) {
+            auto elapsed = std::chrono::duration<double>(SteadyClock::now() - benchmarkStartTime).count();
+            if (elapsed >= benchmarkDuration) {
+                running = false;
+                break;
+            }
+        }
         auto frameStart = Clock::now();
         displayCycles++;  // Count every main loop iteration (display refresh attempt)
 
@@ -1957,6 +2867,11 @@ int main(int argc, char* argv[]) {
             switch (event.type) {
                 case SDL_QUIT:
                     running = false;
+                    // Signal-like shutdown - set the flag so cleanup code runs
+                    g_shutdownRequested.store(true);
+                    if (!g_jsonOutput) {
+                        std::cerr << "[SDL_QUIT] Shutdown requested via event" << std::endl;
+                    }
                     break;
 
                 case SDL_KEYDOWN:
@@ -2005,7 +2920,9 @@ int main(int argc, char* argv[]) {
                         stressTestEnabled = !stressTestEnabled;
                         framesSkipped = 0;
                         framesRendered = 0;
-                        std::cout << "Stress test: " << (stressTestEnabled ? "ON (50ms delay)" : "OFF") << std::endl;
+                        if (!g_jsonOutput) {
+                            std::cout << "Stress test: " << (stressTestEnabled ? "ON (50ms delay)" : "OFF") << std::endl;
+                        }
                     } else if (event.key.keysym.sym == SDLK_r) {
                         eventTimes.reset();
                         animTimes.reset();
@@ -2027,33 +2944,47 @@ int main(int argc, char* argv[]) {
                         framesRendered = 0;
                         lastRenderedAnimFrame = 0;
                         skipStatsThisFrame = true;  // Don't pollute fresh stats with reset operation time
-                        std::cout << "Statistics reset" << std::endl;
+                        if (!g_jsonOutput) {
+                            std::cout << "Statistics reset" << std::endl;
+                        }
                     } else if (event.key.keysym.sym == SDLK_v) {
-                        // Toggle VSync by recreating renderer
+                        // Toggle VSync by recreating renderer (CPU mode only)
+                        // Metal mode: VSync is controlled by CAMetalLayer.displaySyncEnabled
                         vsyncEnabled = !vsyncEnabled;
 
-                        SDL_DestroyTexture(texture);
-                        SDL_DestroyRenderer(renderer);
+#ifdef __APPLE__
+                        if (!useMetalBackend) {
+#endif
+                            SDL_DestroyTexture(texture);
+                            SDL_DestroyRenderer(renderer);
 
-                        // Set VSync hint BEFORE creating renderer (critical for Metal on macOS)
-                        // This hint must be set before renderer creation to take effect
-                        SDL_SetHint(SDL_HINT_RENDER_VSYNC, vsyncEnabled ? "1" : "0");
+                            // Set VSync hint BEFORE creating renderer (critical for Metal on macOS)
+                            // This hint must be set before renderer creation to take effect
+                            SDL_SetHint(SDL_HINT_RENDER_VSYNC, vsyncEnabled ? "1" : "0");
 
-                        Uint32 flags = SDL_RENDERER_ACCELERATED;
-                        if (vsyncEnabled) {
-                            flags |= SDL_RENDERER_PRESENTVSYNC;
+                            Uint32 flags = SDL_RENDERER_ACCELERATED;
+                            if (vsyncEnabled) {
+                                flags |= SDL_RENDERER_PRESENTVSYNC;
+                            }
+
+                            renderer = SDL_CreateRenderer(window, -1, flags);
+                            if (!renderer) {
+                                std::cerr << "Failed to recreate renderer!" << std::endl;
+                                running = false;
+                                break;
+                            }
+
+                            // Recreate texture
+                            texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                                        renderWidth, renderHeight);
+#ifdef __APPLE__
+                        } else {
+                            // Metal mode: Use MetalContext VSync control
+                            if (metalContext && metalContext->isInitialized()) {
+                                metalContext->setVSyncEnabled(vsyncEnabled);
+                            }
                         }
-
-                        renderer = SDL_CreateRenderer(window, -1, flags);
-                        if (!renderer) {
-                            std::cerr << "Failed to recreate renderer!" << std::endl;
-                            running = false;
-                            break;
-                        }
-
-                        // Recreate texture
-                        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                                    renderWidth, renderHeight);
+#endif
 
                         // Reset ALL stats after VSync change (critical for accurate FPS/hit rate)
                         eventTimes.reset();
@@ -2071,7 +3002,9 @@ int main(int argc, char* argv[]) {
                         startTime = Clock::now();
                         skipStatsThisFrame = true;
 
-                        std::cout << "VSync: " << (vsyncEnabled ? "ON" : "OFF") << std::endl;
+                        if (!g_jsonOutput) {
+                            std::cout << "VSync: " << (vsyncEnabled ? "ON" : "OFF") << std::endl;
+                        }
                     } else if (event.key.keysym.sym == SDLK_t) {
                         // Toggle frame limiter (T for Timing limiter)
                         frameLimiterEnabled = !frameLimiterEnabled;
@@ -2090,14 +3023,19 @@ int main(int argc, char* argv[]) {
                         framesDelivered = 0;
                         startTime = Clock::now();
                         skipStatsThisFrame = true;
-                        std::cout << "Frame limiter: "
-                                  << (frameLimiterEnabled ? "ON (" + std::to_string(displayRefreshRate) + " FPS cap)"
-                                                          : "OFF")
-                                  << std::endl;
+                        if (!g_jsonOutput) {
+                            std::cout << "Frame limiter: "
+                                      << (frameLimiterEnabled ? "ON (" + std::to_string(displayRefreshRate) + " FPS cap)"
+                                                              : "OFF")
+                                      << std::endl;
+                        }
                     } else if (event.key.keysym.sym == SDLK_p) {
                         // Toggle parallel mode: Off <-> PreBuffer (NON-BLOCKING!)
                         // Request is queued for render thread - main thread never blocks
-                        threadedRenderer.requestModeChange();
+                        // Note: Mode toggle not available in Metal mode (GPU always active)
+                        if (threadedRendererPtr) {
+                            threadedRendererPtr->requestModeChange();
+                        }
 
                         // Reset ALL stats (critical for accurate FPS/hit rate)
                         eventTimes.reset();
@@ -2114,8 +3052,8 @@ int main(int argc, char* argv[]) {
                         framesDelivered = 0;
                         startTime = Clock::now();
                         skipStatsThisFrame = true;
-                    } else if (event.key.keysym.sym == SDLK_f) {
-                        // Toggle fullscreen mode (F for Fullscreen - exclusive, takes over display)
+                    } else if (event.key.keysym.sym == SDLK_f || event.key.keysym.sym == SDLK_g) {
+                        // Toggle fullscreen mode (F or G for Fullscreen - exclusive, takes over display)
                         // Clear screen to black BEFORE mode switch to prevent ghosting artifacts
                         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
                         SDL_RenderClear(renderer);
@@ -2137,21 +3075,27 @@ int main(int argc, char* argv[]) {
 
                         // Force resize detection on next frame
                         skipStatsThisFrame = true;
-                        std::cout << "Fullscreen: " << (isFullscreen ? "ON (exclusive)" : "OFF") << std::endl;
+                        if (!g_jsonOutput) {
+                            std::cout << "Fullscreen: " << (isFullscreen ? "ON (exclusive)" : "OFF") << std::endl;
+                        }
                     } else if (event.key.keysym.sym == SDLK_m) {
                         // Toggle maximize/zoom (M for Maximize)
                         // Only works in windowed mode, not in fullscreen
                         if (!isFullscreen) {
                             bool nowMaximized = toggleWindowMaximize(window);
-                            std::cout << "Window: " << (nowMaximized ? "MAXIMIZED" : "RESTORED") << std::endl;
+                            if (!g_jsonOutput) {
+                                std::cout << "Window: " << (nowMaximized ? "MAXIMIZED" : "RESTORED") << std::endl;
+                            }
                             skipStatsThisFrame = true;
-                        } else {
+                        } else if (!g_jsonOutput) {
                             std::cout << "Exit fullscreen first (press F)" << std::endl;
                         }
                     } else if (event.key.keysym.sym == SDLK_d) {
                         // Toggle debug overlay
                         showDebugOverlay = !showDebugOverlay;
-                        std::cout << "Debug overlay: " << (showDebugOverlay ? "ON" : "OFF") << std::endl;
+                        if (!g_jsonOutput) {
+                            std::cout << "Debug overlay: " << (showDebugOverlay ? "ON" : "OFF") << std::endl;
+                        }
                     } else if (event.key.keysym.sym == SDLK_c) {
                         // Capture screenshot - exact rendered frame at current resolution
                         std::vector<uint32_t> screenshotPixels;
@@ -2170,19 +3114,47 @@ int main(int argc, char* argv[]) {
                                        screenshotWidth * screenshotHeight * sizeof(uint32_t));
                                 screenshotSuccess = true;
                             }
+#ifdef __APPLE__
+                        } else if (useMetalBackend) {
+                            // Metal mode: read pixels from GPU surface
+                            // Need to render a frame first to get current state
+                            if (metalContext && metalContext->isInitialized() && surface) {
+                                // Metal surfaces require readPixels() instead of peekPixels()
+                                // because the texture is on GPU memory
+                                screenshotWidth = surface->width();
+                                screenshotHeight = surface->height();
+                                SkImageInfo info = SkImageInfo::Make(screenshotWidth, screenshotHeight,
+                                                                      kBGRA_8888_SkColorType, kPremul_SkAlphaType);
+                                screenshotPixels.resize(screenshotWidth * screenshotHeight);
+                                if (surface->readPixels(info, screenshotPixels.data(),
+                                                        screenshotWidth * sizeof(uint32_t), 0, 0)) {
+                                    screenshotSuccess = true;
+                                } else {
+                                    std::cerr << "[Metal] Failed to read pixels from GPU surface" << std::endl;
+                                }
+                            } else {
+                                std::cerr << "[Metal] Screenshot failed: no active surface" << std::endl;
+                            }
+#endif
                         } else {
-                            // Animation mode: capture from threaded renderer
-                            screenshotSuccess = threadedRenderer.getFrameForScreenshot(
-                                screenshotPixels, screenshotWidth, screenshotHeight);
+                            // Animation mode (CPU): capture from threaded renderer
+                            if (threadedRendererPtr) {
+                                screenshotSuccess = threadedRendererPtr->getFrameForScreenshot(
+                                    screenshotPixels, screenshotWidth, screenshotHeight);
+                            }
                         }
 
                         if (screenshotSuccess) {
                             std::string filename = generateScreenshotFilename(screenshotWidth, screenshotHeight);
                             if (saveScreenshotPPM(screenshotPixels, screenshotWidth, screenshotHeight, filename)) {
-                                std::cout << "Screenshot saved: " << filename << std::endl;
+                                if (!g_jsonOutput) {
+                                    std::cout << "Screenshot saved: " << filename << std::endl;
+                                }
                             }
                         } else {
-                            std::cerr << "Screenshot failed: no frame available" << std::endl;
+                            if (!g_jsonOutput) {
+                                std::cerr << "Screenshot failed: no frame available" << std::endl;
+                            }
                         }
                         skipStatsThisFrame = true;  // File I/O can be slow, don't pollute stats
                     } else if (event.key.keysym.sym == SDLK_o) {
@@ -2191,10 +3163,14 @@ int main(int argc, char* argv[]) {
                         static std::string currentFilePath;
                         std::string newPath = openSVGFileDialog("Open SVG File", "");
                         if (!newPath.empty() && fileExists(newPath.c_str())) {
-                            std::cout << "\n=== Loading new SVG: " << newPath << " ===" << std::endl;
+                            if (!g_jsonOutput) {
+                                std::cout << "\n=== Loading new SVG: " << newPath << " ===" << std::endl;
+                            }
 
                             // Stop renderers to safely release SVG resources
-                            threadedRenderer.stop();
+                            if (threadedRendererPtr) {
+                                threadedRendererPtr->stop();
+                            }
                             parallelRenderer.stop();
 
                             // Load new SVG file using unified loading function
@@ -2209,11 +3185,11 @@ int main(int argc, char* argv[]) {
                                     // Non-fatal validation/parse errors - restart with old content
                                     std::cerr << "SVG validation/parse error, reverting to previous content" << std::endl;
                                     parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-                                    threadedRenderer.start();
+                                    if (threadedRendererPtr) threadedRendererPtr->start();
                                 } else {
                                     // I/O errors (FileSize, FileOpen) - restart with old content
                                     parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-                                    threadedRenderer.start();
+                                    if (threadedRendererPtr) threadedRendererPtr->start();
                                 }
                             } else {
                                 // Success - reset stats and configure renderers
@@ -2223,9 +3199,12 @@ int main(int argc, char* argv[]) {
                                                           animations, preBufferTotalDuration, preBufferTotalFrames);
                                 parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
 
-                                threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
-                                threadedRenderer.setTotalAnimationFrames(preBufferTotalFrames);
-                                threadedRenderer.start();
+                                if (threadedRendererPtr) {
+                                    threadedRendererPtr->configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                    threadedRendererPtr->setTotalAnimationFrames(preBufferTotalFrames);
+                                    threadedRendererPtr->initializeDirtyTracking(animations);
+                                    threadedRendererPtr->start();
+                                }
 
                                 // Reset animation timing state
                                 animationStartTime = Clock::now();
@@ -2487,7 +3466,7 @@ int main(int argc, char* argv[]) {
                                         std::string newPath = selected->fullPath;
                                         if (!newPath.empty() && fileExists(newPath.c_str())) {
                                             // Stop renderers before loading
-                                            threadedRenderer.stop();
+                                            if (threadedRendererPtr) threadedRendererPtr->stop();
                                             parallelRenderer.stop();
 
                                             // Load SVG file using unified loading function
@@ -2504,9 +3483,12 @@ int main(int argc, char* argv[]) {
                                                                           animations, preBufferTotalDuration, preBufferTotalFrames);
                                                 parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
 
-                                                threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
-                                                threadedRenderer.setTotalAnimationFrames(preBufferTotalFrames);
-                                                threadedRenderer.start();
+                                                if (threadedRendererPtr) {
+                                                    threadedRendererPtr->configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                                    threadedRendererPtr->setTotalAnimationFrames(preBufferTotalFrames);
+                                                    threadedRendererPtr->initializeDirtyTracking(animations);
+                                                    threadedRendererPtr->start();
+                                                }
 
                                                 // Reset animation timing state
                                                 animationStartTime = Clock::now();
@@ -2532,7 +3514,7 @@ int main(int argc, char* argv[]) {
                                                 // Loading failed - restart with old content if available
                                                 if (svgDom) {
                                                     parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-                                                    threadedRenderer.start();
+                                                    if (threadedRendererPtr) threadedRendererPtr->start();
                                                 }
                                             }
                                         }
@@ -2635,7 +3617,7 @@ int main(int argc, char* argv[]) {
                                                 std::string newPath = clickedEntry->fullPath;
                                                 if (!newPath.empty() && fileExists(newPath.c_str())) {
                                                     // Stop renderers before loading
-                                                    threadedRenderer.stop();
+                                                    if (threadedRendererPtr) threadedRendererPtr->stop();
                                                     parallelRenderer.stop();
 
                                                     // Load SVG file using unified loading function
@@ -2652,9 +3634,12 @@ int main(int argc, char* argv[]) {
                                                                                   animations, preBufferTotalDuration, preBufferTotalFrames);
                                                         parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
 
-                                                        threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
-                                                        threadedRenderer.setTotalAnimationFrames(preBufferTotalFrames);
-                                                        threadedRenderer.start();
+                                                        if (threadedRendererPtr) {
+                                                            threadedRendererPtr->configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                                            threadedRendererPtr->setTotalAnimationFrames(preBufferTotalFrames);
+                                                            threadedRendererPtr->initializeDirtyTracking(animations);
+                                                            threadedRendererPtr->start();
+                                                        }
 
                                                         // Reset animation timing state
                                                         animationStartTime = Clock::now();
@@ -2680,7 +3665,7 @@ int main(int argc, char* argv[]) {
                                                         // Loading failed - restart with old content if available
                                                         if (svgDom) {
                                                             parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-                                                            threadedRenderer.start();
+                                                            if (threadedRendererPtr) threadedRendererPtr->start();
                                                         }
                                                     }
                                                 }
@@ -2705,21 +3690,37 @@ int main(int argc, char* argv[]) {
                         event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
                         // Get actual renderer output size (HiDPI aware)
                         int actualW, actualH;
-                        SDL_GetRendererOutputSize(renderer, &actualW, &actualH);
+#ifdef __APPLE__
+                        if (useMetalBackend && metalContext && metalContext->isInitialized()) {
+                            SDL_Metal_GetDrawableSize(window, &actualW, &actualH);
+                        } else
+#endif
+                        {
+                            SDL_GetRendererOutputSize(renderer, &actualW, &actualH);
+                        }
 
                         // Use full output size - SVG's preserveAspectRatio handles centering
                         // This ensures debug overlay at (0,0) is truly at top-left of window
                         renderWidth = actualW;
                         renderHeight = actualH;
 
-                        SDL_DestroyTexture(texture);
-                        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
-                                                    renderWidth, renderHeight);
+                        // Update SDL texture for CPU rendering mode
+#ifdef __APPLE__
+                        if (!useMetalBackend) {
+#endif
+                            SDL_DestroyTexture(texture);
+                            texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
+                                                        renderWidth, renderHeight);
+#ifdef __APPLE__
+                        }
+#endif
 
                         createSurface(renderWidth, renderHeight);
 
                         // Resize threaded renderer buffers (non-blocking)
-                        threadedRenderer.resize(renderWidth, renderHeight);
+                        if (threadedRendererPtr) {
+                            threadedRendererPtr->resize(renderWidth, renderHeight);
+                        }
 
                         // Resize parallel renderer - clears pre-buffered frames at old size
                         parallelRenderer.resize(renderWidth, renderHeight);
@@ -2761,7 +3762,8 @@ int main(int argc, char* argv[]) {
 
             // SMIL-compliant time-based frame calculation (consistent across modes)
             // Both PreBuffer and Direct modes use the same time-based formula
-            if (threadedRenderer.isPreBufferMode() && preBufferTotalDuration > 0) {
+            // In Metal mode, threadedRendererPtr is null - use direct mode calculation
+            if (threadedRendererPtr && threadedRendererPtr->isPreBufferMode() && preBufferTotalDuration > 0) {
                 // PreBuffer mode: calculate GLOBAL frame index from time ratio
                 // This MUST match parallelRenderer's frame calculation:
                 // framePtr->elapsedTimeSeconds = (frameIndex / totalFrameCount) * totalDuration
@@ -2800,12 +3802,69 @@ int main(int argc, char* argv[]) {
                 framesRendered++;
             }
 
+            // FREEZE DETECTION: Monitor for stuck animation
+            // Warning at 2s, FATAL EXIT at 5s with stacktrace
+            static constexpr double FREEZE_WARN_THRESHOLD = 2.0;   // Seconds before warning
+            static constexpr double FREEZE_FATAL_THRESHOLD = 5.0;  // Seconds before fatal exit
+            static size_t lastMonitoredFrameIndex = SIZE_MAX;
+            static auto lastFrameChangeTime = Clock::now();
+            static bool freezeWarningLogged = false;
+
+            if (currentFrameIndex != lastMonitoredFrameIndex) {
+                // Frame advanced - reset monitoring state
+                lastMonitoredFrameIndex = currentFrameIndex;
+                lastFrameChangeTime = Clock::now();
+                freezeWarningLogged = false;
+            } else if (!animationPaused) {
+                // Frame hasn't changed - check if stuck for too long
+                auto timeSinceChange = std::chrono::duration<double>(Clock::now() - lastFrameChangeTime).count();
+
+                // FATAL FREEZE: Exit with error and stacktrace after 5 seconds
+                // Skip freeze detection in Metal mode (no threaded renderer)
+                if (timeSinceChange > FREEZE_FATAL_THRESHOLD && threadedRendererPtr) {
+                    float pct = (preBufferTotalFrames > 0) ?
+                        (static_cast<float>(currentFrameIndex) / preBufferTotalFrames * 100.0f) : 0.0f;
+                    std::cerr << "\n[FATAL FREEZE] Animation completely stuck at frame "
+                              << currentFrameIndex << "/" << preBufferTotalFrames
+                              << " (" << std::fixed << std::setprecision(1) << pct << "%)"
+                              << " for " << std::setprecision(1) << timeSinceChange << "s"
+                              << " - PreBuffer=" << threadedRendererPtr->isPreBufferMode() << std::endl;
+                    std::cerr << "ThreadedRenderer state: running=" << threadedRendererPtr->running.load()
+                              << ", timeouts=" << threadedRendererPtr->timeoutCount.load()
+                              << ", dropped=" << threadedRendererPtr->droppedFrames.load() << std::endl;
+                    printStackTrace("FATAL FREEZE - Animation stuck");
+                    std::exit(EXIT_FAILURE);  // Exit with error code
+                }
+
+                // Warning at 2 seconds (log once)
+                if (timeSinceChange > FREEZE_WARN_THRESHOLD && !freezeWarningLogged) {
+                    freezeWarningLogged = true;
+                    float pct = (preBufferTotalFrames > 0) ?
+                        (static_cast<float>(currentFrameIndex) / preBufferTotalFrames * 100.0f) : 0.0f;
+                    std::cerr << "[FREEZE WARNING] Animation stuck at frame " << currentFrameIndex << "/" << preBufferTotalFrames
+                              << " (" << std::fixed << std::setprecision(1) << pct << "%)"
+                              << " for " << std::setprecision(1) << timeSinceChange << "s"
+                              << " - will exit in " << (FREEZE_FATAL_THRESHOLD - timeSinceChange) << "s if not resolved"
+                              << std::endl;
+                }
+            }
+
             // Update animation state in ThreadedRenderer (non-blocking)
             // Render thread will apply this to its own DOM
-            threadedRenderer.setAnimationState(anim.targetId, anim.attributeName, newValue);
+            // In Metal mode, animation state is applied directly during rendering
+            if (threadedRendererPtr) {
+                threadedRendererPtr->setAnimationState(anim.targetId, anim.attributeName, newValue);
+            }
         }
         auto animEnd = Clock::now();
         DurationMs animTime_ms = animEnd - animStart;
+
+        // Update frame tracking for dirty region optimization
+        // This tracks which animations changed frame for partial rendering
+        g_animController.updateFrameTracking(animTime);
+        if (threadedRendererPtr) {
+            threadedRendererPtr->setFrameChanges(g_animController.getFrameChanges());
+        }
 
         // === STRESS TEST: Artificial delay to prove sync works ===
         if (stressTestEnabled) {
@@ -2818,11 +3877,36 @@ int main(int argc, char* argv[]) {
         // Main thread NEVER blocks on rendering - always responsive to input
         auto fetchStart = Clock::now();
 
-        SkCanvas* canvas = surface->getCanvas();
+        // Get canvas - for Metal mode, surface is created per-frame in the render loop below
+        // For CPU mode, surface was created at startup
+        SkCanvas* canvas = nullptr;
+#ifdef __APPLE__
+        if (!useMetalBackend) {
+            canvas = surface->getCanvas();
+        }
+        // Metal mode: canvas is set after creating the per-frame surface below
+#else
+        canvas = surface->getCanvas();
+#endif
         bool gotNewFrame = false;
 
         // === BROWSER MODE: Render folder browser instead of animation ===
         if (g_browserMode) {
+#ifdef __APPLE__
+            // Metal mode: Create per-frame surface for browser rendering
+            if (useMetalBackend && metalContext && metalContext->isInitialized()) {
+                metalDrawable = nullptr;
+                surface = metalContext->createSurface(renderWidth, renderHeight, &metalDrawable);
+                if (surface && metalDrawable) {
+                    canvas = surface->getCanvas();
+                } else {
+                    // Failed to get Metal drawable, skip this frame
+                    if (!g_jsonOutput) {
+                        std::cerr << "[Metal Browser] Failed to acquire drawable" << std::endl;
+                    }
+                }
+            }
+#endif
             // Check if async scan completed - finalize results on main thread
             if (g_browserAsyncScanning && g_folderBrowser.pollScanComplete()) {
                 g_folderBrowser.finalizeScan();
@@ -2867,7 +3951,8 @@ int main(int argc, char* argv[]) {
             }
 
             // Render current DOM (may be stale if new one is parsing - that's OK!)
-            if (g_browserSvgDom) {
+            // NULL CHECK: canvas may be nullptr if Metal failed to acquire drawable
+            if (g_browserSvgDom && canvas) {
                 canvas->clear(SK_ColorBLACK);
                 SkSize browserSize = SkSize::Make(renderWidth, renderHeight);
                 g_browserSvgDom->setContainerSize(browserSize);
@@ -2906,8 +3991,9 @@ int main(int argc, char* argv[]) {
 
                 g_browserSvgDom->render(canvas);
                 gotNewFrame = true;
-            } else if (g_browserAsyncScanning || g_browserDomParsing.load()) {
+            } else if ((g_browserAsyncScanning || g_browserDomParsing.load()) && canvas) {
                 // No DOM yet but parsing - show loading placeholder with progress bar
+                // NULL CHECK: canvas may be nullptr if Metal failed to acquire drawable
                 canvas->clear(SkColorSetARGB(255, 26, 26, 46));  // Dark browser bg
 
                 // Get current progress (atomic read from scan thread)
@@ -2976,22 +4062,83 @@ int main(int argc, char* argv[]) {
                 gotNewFrame = true;
             }
         } else {
-            // Request new frame (render thread will process asynchronously)
-            // Main thread NEVER touches parallelRenderer directly - all through ThreadedRenderer
-            threadedRenderer.requestFrame(currentFrameIndex);
+            // === NORMAL SVG RENDERING MODE ===
+#ifdef __APPLE__
+            if (useMetalBackend && metalContext && metalContext->isInitialized()) {
+                // === METAL GPU RENDERING PATH ===
+                // Metal requires a fresh drawable each frame (single-use resource)
+                // GPU acceleration compensates for single-threaded rendering
+                if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Starting frame render" << std::endl;
+                metalDrawable = nullptr;  // Clear previous drawable
+                surface = metalContext->createSurface(renderWidth, renderHeight, &metalDrawable);
 
-            // Try to get rendered frame from ThreadedRenderer (non-blocking!)
-            const uint32_t* renderedPixels = threadedRenderer.getFrontBufferIfReady();
-            if (renderedPixels) {
-                // Got new frame from render thread - copy to surface
-                SkPixmap pixmap;
-                if (surface->peekPixels(&pixmap)) {
-                    memcpy(const_cast<void*>(pixmap.addr()), renderedPixels, renderWidth * renderHeight * sizeof(uint32_t));
+                if (surface && metalDrawable) {
+                    if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Got surface and drawable" << std::endl;
+                    // Set the global canvas variable so debug overlay and browser mode work
+                    canvas = surface->getCanvas();
+                    if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Got canvas" << std::endl;
+                    canvas->clear(SK_ColorBLACK);
+                    if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Cleared canvas" << std::endl;
+
+                    // Apply animation state to SVG DOM before rendering
+                    if (svgDom && !animations.empty()) {
+                        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Applying animations" << std::endl;
+                        for (const auto& anim : animations) {
+                            if (!anim.targetId.empty() && !anim.attributeName.empty() && !anim.values.empty()) {
+                                std::string value = anim.getCurrentValue(animTime);
+                                sk_sp<SkSVGNode>* nodePtr = svgDom->findNodeById(anim.targetId.c_str());
+                                if (nodePtr && *nodePtr) {
+                                    (*nodePtr)->setAttribute(anim.attributeName.c_str(), value.c_str());
+                                }
+                            }
+                        }
+                        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Animations applied" << std::endl;
+                    }
+
+                    // Render SVG directly to Metal-backed surface (GPU-accelerated)
+                    if (svgDom) {
+                        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] About to render SVG" << std::endl;
+                        SkSize containerSize = SkSize::Make(renderWidth, renderHeight);
+                        svgDom->setContainerSize(containerSize);
+                        svgDom->render(canvas);
+                        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] SVG rendered" << std::endl;
+                    }
+
                     gotNewFrame = true;
-                    framesDelivered++;  // Count frames actually received from render thread
+                    framesDelivered++;
+                    if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Frame complete" << std::endl;
+                } else {
+                    // Failed to get drawable - Metal may be busy, skip this frame
+                    if (!g_jsonOutput) {
+                        std::cerr << "[Metal] Failed to acquire drawable this frame"
+                                  << " (surface=" << (surface ? "OK" : "NULL")
+                                  << ", drawable=" << (metalDrawable ? "OK" : "NULL")
+                                  << ", renderSize=" << renderWidth << "x" << renderHeight << ")" << std::endl;
+                    }
+                }
+            } else
+#endif
+            {
+                // === CPU RENDERING PATH (ThreadedRenderer) ===
+                // Request new frame (render thread will process asynchronously)
+                // Main thread NEVER touches parallelRenderer directly - all through ThreadedRenderer
+                if (threadedRendererPtr) {
+                    threadedRendererPtr->requestFrame(currentFrameIndex);
+
+                    // Try to get rendered frame from ThreadedRenderer (non-blocking!)
+                    const uint32_t* renderedPixels = threadedRendererPtr->getFrontBufferIfReady();
+                    if (renderedPixels) {
+                        // Got new frame from render thread - copy to surface
+                        SkPixmap pixmap;
+                        if (surface->peekPixels(&pixmap)) {
+                            memcpy(const_cast<void*>(pixmap.addr()), renderedPixels, renderWidth * renderHeight * sizeof(uint32_t));
+                            gotNewFrame = true;
+                            framesDelivered++;  // Count frames actually received from render thread
+                        }
+                    }
+                    // If no new frame ready, surface keeps last frame (no blocking!)
                 }
             }
-            // If no new frame ready, surface keeps last frame (no blocking!)
         }
 
         auto fetchEnd = Clock::now();
@@ -3001,16 +4148,16 @@ int main(int argc, char* argv[]) {
         // Skip when disruptive events occurred (reset, mode change, screenshot, etc.)
         if (!skipStatsThisFrame) {
             fetchTimes.add(fetchTime.count());
-            if (gotNewFrame) {
+            if (gotNewFrame && threadedRendererPtr) {
                 // Record actual SVG render time from the render thread
-                renderTimes.add(threadedRenderer.lastRenderTimeMs.load());
+                renderTimes.add(threadedRendererPtr->lastRenderTimeMs.load());
             }
         }
 
-        // === DRAW DEBUG OVERLAY (only when we have a new frame to present) ===
-        // Consumer-producer pattern: only do expensive work when Skia delivered a new frame
+        // === DRAW DEBUG OVERLAY (always update when enabled, independent of frame delivery) ===
+        // Debug overlay shows real-time stats and must not freeze when renderer is slow
         auto overlayStart = Clock::now();
-        if (gotNewFrame && showDebugOverlay) {
+        if (showDebugOverlay) {
             // Calculate scale for display in overlay
             float scaleX = static_cast<float>(renderWidth) / svgWidth;
             float scaleY = static_cast<float>(renderHeight) / svgHeight;
@@ -3189,6 +4336,20 @@ int main(int argc, char* argv[]) {
                 oss << std::fixed << std::setprecision(2) << animations[0].duration << "s";
                 addAnim("Anim duration:", oss.str());
 
+                // Animation mode/type (Loop, PingPong, Once, Count)
+                oss.str("");
+                oss << repeatModeToString(g_animController.getRepeatMode());
+                addAnim("Anim mode:", oss.str());
+
+                // Remaining frames and time until animation cycle completes
+                size_t totalAnimFrames = animations[0].values.size();
+                size_t remainingFrames = (totalAnimFrames > currentFrameIndex)
+                    ? (totalAnimFrames - currentFrameIndex - 1) : 0;
+                double remainingTime = (remainingFrames * animations[0].duration) / totalAnimFrames;
+                oss.str("");
+                oss << remainingFrames << " frames (" << std::fixed << std::setprecision(2) << remainingTime << "s)";
+                addLine("Remaining:", oss.str());
+
                 oss.str("");
                 oss << framesRendered;
                 addLine("Frames shown:", oss.str());
@@ -3215,6 +4376,24 @@ int main(int argc, char* argv[]) {
                 oss.str("");
                 oss << std::fixed << std::setprecision(1) << animFps << " FPS";
                 addLine("Anim target:", oss.str());
+
+                addSmallGap();
+
+                // Black screen detection status - shows if content is actually being rendered
+                int nonBlackCount = g_lastNonBlackPixelCount.load();
+                int consecutiveBlack = g_consecutiveBlackFrames.load();
+                bool isBlack = g_blackScreenDetected.load();
+                oss.str("");
+                if (isBlack) {
+                    oss << "BLACK! (x" << consecutiveBlack << ")";
+                    addHighlight("Screen:", oss.str());
+                } else {
+                    // Show approximate fill percentage (sampled 1/100 pixels)
+                    int totalSampled = (renderWidth * renderHeight) / 100;
+                    double fillPercent = totalSampled > 0 ? (100.0 * nonBlackCount / totalSampled) : 0;
+                    oss << "OK (" << std::fixed << std::setprecision(0) << fillPercent << "% filled)";
+                    addLine("Screen:", oss.str());
+                }
             }
 
             addLargeGap();
@@ -3225,7 +4404,8 @@ int main(int argc, char* argv[]) {
                    "Limiter:", frameLimiterEnabled ? ("ON (" + std::to_string(displayRefreshRate) + " FPS)") : "OFF");
 
             // Parallel mode status - use cached mode from ThreadedRenderer to avoid blocking
-            std::string parallelStatus = threadedRenderer.isPreBufferMode() ? "PreBuffer" : "Off";
+            // In Metal mode (threadedRendererPtr is null), show "Metal" as the mode
+            std::string parallelStatus = threadedRendererPtr ? (threadedRendererPtr->isPreBufferMode() ? "PreBuffer" : "Off") : "Metal";
             addKey("[P]", "Mode:", parallelStatus);
 
             // Real-time CPU stats from macOS Mach APIs
@@ -3281,40 +4461,43 @@ int main(int argc, char* argv[]) {
             boxHeight += padding;
 
             // === PASS 2: Draw background then all text ===
-            canvas->drawRect(SkRect::MakeXYWH(0, 0, boxWidth, boxHeight), bgPaint);
+            // NULL CHECK: canvas may be nullptr if Metal failed to acquire drawable
+            if (canvas) {
+                canvas->drawRect(SkRect::MakeXYWH(0, 0, boxWidth, boxHeight), bgPaint);
 
-            float y = padding + lineHeight;
-            float x = padding;
+                float y = padding + lineHeight;
+                float x = padding;
 
-            for (const auto& line : lines) {
-                if (line.type == 4) {
-                    y += 6 * hiDpiScale;  // Small gap (was 4, now 6 - 40% larger)
-                } else if (line.type == 5) {
-                    y += 11 * hiDpiScale;  // Large gap (was 8, now 11 - 40% larger)
-                } else if (line.type == 6) {
-                    // Single text line
-                    canvas->drawString(line.label.c_str(), x, y, debugFont, keyPaint);
-                    y += lineHeight;
-                } else if (line.type == 3) {
-                    // Key line
-                    canvas->drawString(line.key.c_str(), x, y, debugFont, keyPaint);
-                    float keyW = debugFont.measureText(line.key.c_str(), line.key.size(), SkTextEncoding::kUTF8);
-                    canvas->drawString(line.label.c_str(), x + keyW + 7 * hiDpiScale, y, debugFont,
-                                       textPaint);  // Was 5, now 7
-                    canvas->drawString(line.value.c_str(), x + labelWidth, y, debugFont, highlightPaint);
-                    y += lineHeight;
-                } else {
-                    // Normal/highlight/anim line
-                    canvas->drawString(line.label.c_str(), x, y, debugFont, textPaint);
-                    SkPaint* valuePaint = &textPaint;
-                    if (line.type == 1)
-                        valuePaint = &highlightPaint;
-                    else if (line.type == 2)
-                        valuePaint = &animPaint;
-                    canvas->drawString(line.value.c_str(), x + labelWidth, y, debugFont, *valuePaint);
-                    y += lineHeight;
+                for (const auto& line : lines) {
+                    if (line.type == 4) {
+                        y += 6 * hiDpiScale;  // Small gap (was 4, now 6 - 40% larger)
+                    } else if (line.type == 5) {
+                        y += 11 * hiDpiScale;  // Large gap (was 8, now 11 - 40% larger)
+                    } else if (line.type == 6) {
+                        // Single text line
+                        canvas->drawString(line.label.c_str(), x, y, debugFont, keyPaint);
+                        y += lineHeight;
+                    } else if (line.type == 3) {
+                        // Key line
+                        canvas->drawString(line.key.c_str(), x, y, debugFont, keyPaint);
+                        float keyW = debugFont.measureText(line.key.c_str(), line.key.size(), SkTextEncoding::kUTF8);
+                        canvas->drawString(line.label.c_str(), x + keyW + 7 * hiDpiScale, y, debugFont,
+                                           textPaint);  // Was 5, now 7
+                        canvas->drawString(line.value.c_str(), x + labelWidth, y, debugFont, highlightPaint);
+                        y += lineHeight;
+                    } else {
+                        // Normal/highlight/anim line
+                        canvas->drawString(line.label.c_str(), x, y, debugFont, textPaint);
+                        SkPaint* valuePaint = &textPaint;
+                        if (line.type == 1)
+                            valuePaint = &highlightPaint;
+                        else if (line.type == 2)
+                            valuePaint = &animPaint;
+                        canvas->drawString(line.value.c_str(), x + labelWidth, y, debugFont, *valuePaint);
+                        y += lineHeight;
+                    }
                 }
-            }
+            }  // end canvas null check
         }  // end showDebugOverlay
         auto overlayEnd = Clock::now();
         DurationMs overlayTime = overlayEnd - overlayStart;
@@ -3329,60 +4512,166 @@ int main(int argc, char* argv[]) {
         if (gotNewFrame) {
             frameCount++;
 
-            // === COPY TO SDL TEXTURE ===
-            auto copyStart = Clock::now();
+#ifdef __APPLE__
+            if (useMetalBackend && metalContext && metalContext->isInitialized() && metalDrawable) {
+                // === METAL GPU PRESENTATION PATH ===
+                // No CPU→GPU copy needed - already rendered to GPU texture
+                if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_PRESENT_DEBUG] About to present" << std::endl;
+                auto copyStart = Clock::now();
 
-            SkPixmap pixmap;
-            if (surface->peekPixels(&pixmap)) {
-                void* pixels;
-                int pitch;
-                SDL_LockTexture(texture, nullptr, &pixels, &pitch);
+                // === PERIODIC BLACK SCREEN DETECTION FOR METAL ===
+                // GPU→CPU copies are expensive, so only check every 60 frames (once per second at 60fps)
+                // This provides debugging info without impacting performance
+                if (frameCount % 60 == 0 && surface) {
+                    SkImageInfo info = SkImageInfo::Make(renderWidth, renderHeight,
+                                                          kBGRA_8888_SkColorType, kPremul_SkAlphaType);
+                    std::vector<uint32_t> checkPixels(renderWidth * renderHeight);
+                    if (surface->readPixels(info, checkPixels.data(),
+                                            renderWidth * sizeof(uint32_t), 0, 0)) {
+                        int debugOverlayW = static_cast<int>(300 * hiDpiScale);
+                        int debugOverlayH = static_cast<int>(500 * hiDpiScale);
+                        int nonBlackPixels = countNonBlackPixels(
+                            checkPixels.data(), renderWidth, renderHeight,
+                            0, 0, debugOverlayW, debugOverlayH);
+                        g_lastNonBlackPixelCount.store(nonBlackPixels);
 
-                const uint8_t* src = static_cast<const uint8_t*>(pixmap.addr());
-                uint8_t* dst = static_cast<uint8_t*>(pixels);
-                size_t rowBytes = renderWidth * 4;
-
-                // Optimize: single memcpy if pitch matches rowBytes (common case)
-                if (pitch == static_cast<int>(pixmap.rowBytes())) {
-                    memcpy(dst, src, rowBytes * renderHeight);
-                } else {
-                    // Row-by-row copy needed when pitch differs (e.g., aligned stride)
-                    for (int row = 0; row < renderHeight; row++) {
-                        memcpy(dst + row * pitch, src + row * pixmap.rowBytes(), rowBytes);
+                        if (nonBlackPixels < 10) {
+                            g_blackScreenDetected.store(true);
+                            g_consecutiveBlackFrames.fetch_add(60);  // Assume all 60 frames were black
+                            if (!g_jsonOutput) {
+                                std::cerr << "[Metal WARNING] Black screen detected! Frame #" << frameCount << std::endl;
+                            }
+                        } else {
+                            g_blackScreenDetected.store(false);
+                            g_consecutiveBlackFrames.store(0);
+                        }
                     }
                 }
 
-                SDL_UnlockTexture(texture);
-            }
+                // Flush Skia drawing commands and present Metal drawable
+                auto presentStart = Clock::now();
+                metalContext->presentDrawable(metalDrawable);
+                presentEnd = Clock::now();
+                presentTime = presentEnd - presentStart;
+                if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_PRESENT_DEBUG] Present complete" << std::endl;
 
-            auto copyEnd = Clock::now();
-            copyTime = copyEnd - copyStart;
-            if (!skipStatsThisFrame) {
-                copyTimes.add(copyTime.count());
-            }
+                // Note: copyTime is effectively 0 for Metal (no CPU copy)
+                auto copyEnd = Clock::now();
+                copyTime = copyEnd - copyStart;
+                if (!skipStatsThisFrame) {
+                    copyTimes.add(copyTime.count());
+                }
 
-            // Clear and render to screen (pure black for exclusive fullscreen)
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
+                // Track all phase times for frames that were presented
+                if (!skipStatsThisFrame) {
+                    eventTimes.add(eventTime.count());
+                    animTimes.add(animTime_ms.count());
+                    overlayTimes.add(overlayTime.count());
+                    presentTimes.add(presentTime.count());
+                }
 
-            // Render texture at full size - no centering needed
-            // SVG's preserveAspectRatio handles centering within the texture
-            // This keeps debug overlay at true top-left corner
-            SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+                // Clear drawable for next frame
+                metalDrawable = nullptr;
+            } else
+#endif
+            {
+                // === CPU RENDERING + SDL PRESENTATION PATH ===
+                auto copyStart = Clock::now();
 
-            // Measure SDL_RenderPresent time separately (often the stutter source)
-            auto presentStart = Clock::now();
-            SDL_RenderPresent(renderer);
-            presentEnd = Clock::now();
-            presentTime = presentEnd - presentStart;
+                SkPixmap pixmap;
+                if (surface->peekPixels(&pixmap)) {
+                    void* pixels;
+                    int pitch;
+                    SDL_LockTexture(texture, nullptr, &pixels, &pitch);
 
-            // Track all phase times for frames that were presented
-            // Skip when disruptive events occurred (reset, mode change, screenshot, etc.)
-            if (!skipStatsThisFrame) {
-                eventTimes.add(eventTime.count());
-                animTimes.add(animTime_ms.count());
-                overlayTimes.add(overlayTime.count());
-                presentTimes.add(presentTime.count());
+                    const uint8_t* src = static_cast<const uint8_t*>(pixmap.addr());
+                    uint8_t* dst = static_cast<uint8_t*>(pixels);
+                    size_t rowBytes = renderWidth * 4;
+
+                    // Optimize: single memcpy if pitch matches rowBytes (common case)
+                    if (pitch == static_cast<int>(pixmap.rowBytes())) {
+                        memcpy(dst, src, rowBytes * renderHeight);
+                    } else {
+                        // Row-by-row copy needed when pitch differs (e.g., aligned stride)
+                        for (int row = 0; row < renderHeight; row++) {
+                            memcpy(dst + row * pitch, src + row * pixmap.rowBytes(), rowBytes);
+                        }
+                    }
+
+                    SDL_UnlockTexture(texture);
+
+                    // === BLACK SCREEN DETECTION ===
+                    // Check if the rendered frame contains visible content (not just black)
+                    // Exclude the debug overlay area (top-left corner) from the check
+                    // Debug overlay is approximately 300x400 pixels at HiDPI scale
+                    int debugOverlayW = static_cast<int>(300 * hiDpiScale);
+                    int debugOverlayH = static_cast<int>(500 * hiDpiScale);
+                    int nonBlackPixels = countNonBlackPixels(
+                        static_cast<const uint32_t*>(pixmap.addr()),
+                        renderWidth, renderHeight,
+                        0, 0, debugOverlayW, debugOverlayH  // Exclude debug overlay region
+                    );
+                    g_lastNonBlackPixelCount.store(nonBlackPixels);
+
+                    // Track consecutive black frames (threshold: <10 non-black pixels sampled)
+                    if (nonBlackPixels < 10) {
+                        g_blackScreenDetected.store(true);
+                        g_consecutiveBlackFrames.fetch_add(1);
+                        // Warn on first black frame or every 60 black frames (once per second at 60fps)
+                        int blackCount = g_consecutiveBlackFrames.load();
+                        if (!g_jsonOutput && (blackCount == 1 || blackCount % 60 == 0)) {
+                            std::cerr << "[WARNING] Black screen detected! Frame #" << frameCount
+                                      << ", consecutive black frames: " << blackCount << std::endl;
+                        }
+                    } else {
+                        g_blackScreenDetected.store(false);
+                        g_consecutiveBlackFrames.store(0);
+                    }
+
+                    // Auto-screenshot for benchmark mode (save first frame only)
+                    if (!screenshotPath.empty() && !screenshotSaved && frameCount == 1) {
+                        std::vector<uint32_t> screenshotPixels(renderWidth * renderHeight);
+                        memcpy(screenshotPixels.data(), pixmap.addr(),
+                               renderWidth * renderHeight * sizeof(uint32_t));
+                        if (saveScreenshotPPM(screenshotPixels, renderWidth, renderHeight, screenshotPath)) {
+                            if (!g_jsonOutput) {
+                                std::cerr << "Screenshot saved: " << screenshotPath
+                                          << " (" << renderWidth << "x" << renderHeight << ")" << std::endl;
+                            }
+                        }
+                        screenshotSaved = true;
+                    }
+                }
+
+                auto copyEnd = Clock::now();
+                copyTime = copyEnd - copyStart;
+                if (!skipStatsThisFrame) {
+                    copyTimes.add(copyTime.count());
+                }
+
+                // Clear and render to screen (pure black for exclusive fullscreen)
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                SDL_RenderClear(renderer);
+
+                // Render texture at full size - no centering needed
+                // SVG's preserveAspectRatio handles centering within the texture
+                // This keeps debug overlay at true top-left corner
+                SDL_RenderCopy(renderer, texture, nullptr, nullptr);
+
+                // Measure SDL_RenderPresent time separately (often the stutter source)
+                auto presentStart = Clock::now();
+                SDL_RenderPresent(renderer);
+                presentEnd = Clock::now();
+                presentTime = presentEnd - presentStart;
+
+                // Track all phase times for frames that were presented
+                // Skip when disruptive events occurred (reset, mode change, screenshot, etc.)
+                if (!skipStatsThisFrame) {
+                    eventTimes.add(eventTime.count());
+                    animTimes.add(animTime_ms.count());
+                    overlayTimes.add(overlayTime.count());
+                    presentTimes.add(presentTime.count());
+                }
             }
         } else {
             // No new frame - yield CPU briefly to prevent busy-spinning
@@ -3418,14 +4707,16 @@ int main(int argc, char* argv[]) {
                     culprit = "COPY";
                 else if (maxPhase == presentTime.count())
                     culprit = "PRESENT";
-                std::cerr << "STUTTER #" << stutterCount << " at " << std::fixed << std::setprecision(2) << stutterAt
-                          << "s (+" << sinceLast << "s) [" << culprit << "]: "
-                          << "event=" << eventTime.count() << "ms, "
-                          << "fetch=" << fetchTime.count() << "ms, "
-                          << "overlay=" << overlayTime.count() << "ms, "
-                          << "copy=" << copyTime.count() << "ms, "
-                          << "present=" << presentTime.count() << "ms, "
-                          << "TOTAL=" << totalFrameTime.count() << "ms" << std::endl;
+                if (!g_jsonOutput) {
+                    std::cerr << "STUTTER #" << stutterCount << " at " << std::fixed << std::setprecision(2) << stutterAt
+                              << "s (+" << sinceLast << "s) [" << culprit << "]: "
+                              << "event=" << eventTime.count() << "ms, "
+                              << "fetch=" << fetchTime.count() << "ms, "
+                              << "overlay=" << overlayTime.count() << "ms, "
+                              << "copy=" << copyTime.count() << "ms, "
+                              << "present=" << presentTime.count() << "ms, "
+                              << "TOTAL=" << totalFrameTime.count() << "ms" << std::endl;
+                }
                 lastStutterTime = stutterAt;
             }
 
@@ -3449,68 +4740,122 @@ int main(int argc, char* argv[]) {
     double totalAvg = frameTimes.average();
     auto pctFinal = [totalAvg](double v) -> double { return totalAvg > 0 ? (v / totalAvg * 100.0) : 0.0; };
 
-    std::cout << "\n=== Final Statistics ===" << std::endl;
-    std::cout << "Display cycles: " << displayCycles << std::endl;
-    std::cout << "Frames delivered: " << framesDelivered << std::endl;
+    // Get dirty region stats for both output modes
+    uint64_t partialCount = 0, fullCount = 0;
+    double avgSavedRatio = 0.0;
+    if (threadedRendererPtr) {
+        threadedRendererPtr->getPartialRenderStats(partialCount, fullCount, avgSavedRatio);
+    }
+    uint64_t totalRenders = partialCount + fullCount;
     double finalHitRate = displayCycles > 0 ? (100.0 * framesDelivered / displayCycles) : 0.0;
-    std::cout << "Frame hit rate: " << std::fixed << std::setprecision(1) << finalHitRate << "%" << std::endl;
-    std::cout << "Total time: " << std::setprecision(2) << totalElapsed << "s" << std::endl;
-    std::cout << "Display FPS: " << std::setprecision(2) << (displayCycles / totalElapsed) << " (main loop rate)"
-              << std::endl;
-    std::cout << "Skia FPS: " << std::setprecision(2) << (framesDelivered / totalElapsed)
-              << " (frames from Skia worker)" << std::endl;
-    std::cout << "Average frame time: " << std::setprecision(2) << frameTimes.average() << "ms" << std::endl;
 
-    std::cout << "\n--- Pipeline Timing (average) ---" << std::endl;
-    std::cout << "Event:      " << std::setprecision(2) << eventTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(eventTimes.average()) << "%)" << std::endl;
-    std::cout << "Anim:       " << std::setprecision(2) << animTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(animTimes.average()) << "%)" << std::endl;
-    std::cout << "Fetch:      " << std::setprecision(2) << fetchTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(fetchTimes.average()) << "%)" << std::endl;
-    std::cout << "Wait Skia:  " << std::setprecision(2) << idleTimes.average() << "ms (" << std::setprecision(1)
-              << (100.0 - finalHitRate) << "% idle)" << std::endl;
-    std::cout << "Overlay:    " << std::setprecision(2) << overlayTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(overlayTimes.average()) << "%)" << std::endl;
-    std::cout << "Copy:       " << std::setprecision(2) << copyTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(copyTimes.average()) << "%)" << std::endl;
-    std::cout << "Present:    " << std::setprecision(2) << presentTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(presentTimes.average()) << "%)" << std::endl;
-    std::cout << "Skia work:  " << std::setprecision(2) << renderTimes.average()
-              << "ms (worker, min=" << renderTimes.min() << ", max=" << renderTimes.max() << ")" << std::endl;
-    double sumPhases = eventTimes.average() + animTimes.average() + fetchTimes.average() + overlayTimes.average() +
-                       copyTimes.average() + presentTimes.average();
-    std::cout << "Active:     " << std::setprecision(2) << sumPhases << "ms (" << std::setprecision(1)
-              << pctFinal(sumPhases) << "%)" << std::endl;
+    if (g_jsonOutput) {
+        // JSON output for benchmark scripts
+        double avgFps = totalElapsed > 0 ? (framesDelivered / totalElapsed) : 0;
+        double minFps = frameTimes.max() > 0 ? (1000.0 / frameTimes.max()) : 0;
+        double maxFps = frameTimes.min() > 0 ? (1000.0 / frameTimes.min()) : 0;
+
+        std::cout << "{";
+        std::cout << "\"player\":\"fbfsvg-player\",";
+        std::cout << "\"file\":\"" << inputPath << "\",";
+        std::cout << "\"duration_seconds\":" << std::fixed << std::setprecision(2) << totalElapsed << ",";
+        std::cout << "\"total_frames\":" << framesDelivered << ",";
+        std::cout << "\"avg_fps\":" << std::setprecision(2) << avgFps << ",";
+        std::cout << "\"avg_frame_time_ms\":" << std::setprecision(3) << frameTimes.average() << ",";
+        std::cout << "\"min_fps\":" << std::setprecision(2) << minFps << ",";
+        std::cout << "\"max_fps\":" << std::setprecision(2) << maxFps << ",";
+        std::cout << "\"partial_renders\":" << partialCount << ",";
+        std::cout << "\"full_renders\":" << fullCount;
+        std::cout << "}" << std::endl;
+    } else {
+        // Normal text output
+        std::cout << "\n=== Final Statistics ===" << std::endl;
+        std::cout << "Display cycles: " << displayCycles << std::endl;
+        std::cout << "Frames delivered: " << framesDelivered << std::endl;
+        std::cout << "Frame hit rate: " << std::fixed << std::setprecision(1) << finalHitRate << "%" << std::endl;
+        std::cout << "Total time: " << std::setprecision(2) << totalElapsed << "s" << std::endl;
+        std::cout << "Display FPS: " << std::setprecision(2) << (displayCycles / totalElapsed) << " (main loop rate)"
+                  << std::endl;
+        std::cout << "Skia FPS: " << std::setprecision(2) << (framesDelivered / totalElapsed)
+                  << " (frames from Skia worker)" << std::endl;
+        std::cout << "Average frame time: " << std::setprecision(2) << frameTimes.average() << "ms" << std::endl;
+
+        std::cout << "\n--- Pipeline Timing (average) ---" << std::endl;
+        std::cout << "Event:      " << std::setprecision(2) << eventTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(eventTimes.average()) << "%)" << std::endl;
+        std::cout << "Anim:       " << std::setprecision(2) << animTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(animTimes.average()) << "%)" << std::endl;
+        std::cout << "Fetch:      " << std::setprecision(2) << fetchTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(fetchTimes.average()) << "%)" << std::endl;
+        std::cout << "Wait Skia:  " << std::setprecision(2) << idleTimes.average() << "ms (" << std::setprecision(1)
+                  << (100.0 - finalHitRate) << "% idle)" << std::endl;
+        std::cout << "Overlay:    " << std::setprecision(2) << overlayTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(overlayTimes.average()) << "%)" << std::endl;
+        std::cout << "Copy:       " << std::setprecision(2) << copyTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(copyTimes.average()) << "%)" << std::endl;
+        std::cout << "Present:    " << std::setprecision(2) << presentTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(presentTimes.average()) << "%)" << std::endl;
+        std::cout << "Skia work:  " << std::setprecision(2) << renderTimes.average()
+                  << "ms (worker, min=" << renderTimes.min() << ", max=" << renderTimes.max() << ")" << std::endl;
+        double sumPhases = eventTimes.average() + animTimes.average() + fetchTimes.average() + overlayTimes.average() +
+                           copyTimes.average() + presentTimes.average();
+        std::cout << "Active:     " << std::setprecision(2) << sumPhases << "ms (" << std::setprecision(1)
+                  << pctFinal(sumPhases) << "%)" << std::endl;
+
+        // Dirty region tracking statistics
+        std::cout << "\n--- Dirty Region Tracking ---" << std::endl;
+        if (totalRenders > 0) {
+            double partialPct = (100.0 * partialCount) / totalRenders;
+            std::cout << "Partial renders: " << partialCount << " (" << std::setprecision(1) << partialPct << "%)" << std::endl;
+            std::cout << "Full renders:    " << fullCount << " (" << std::setprecision(1) << (100.0 - partialPct) << "%)" << std::endl;
+            if (partialCount > 0) {
+                std::cout << "Avg area saved:  " << std::setprecision(1) << (avgSavedRatio * 100.0) << "% (per partial render)" << std::endl;
+                double overallSaved = (partialCount * avgSavedRatio) / totalRenders * 100.0;
+                std::cout << "Overall savings: " << std::setprecision(1) << overallSaved << "% render area reduction" << std::endl;
+            }
+        } else {
+            std::cout << "No frames rendered (animation not started)" << std::endl;
+        }
+    }
 
     // Stop all background threads BEFORE static objects are destroyed
     // Order matters: DOM parse -> scan -> thumbnail loader -> renderers
 
     // 1. Stop async DOM parsing thread (may be accessing g_folderBrowser)
-    std::cout << "\nStopping browser DOM parse thread..." << std::endl;
+    if (!g_jsonOutput) std::cout << "\nStopping browser DOM parse thread..." << std::endl;
     stopAsyncBrowserDomParse();
-    std::cout << "DOM parse thread stopped." << std::endl;
+    if (!g_jsonOutput) std::cout << "DOM parse thread stopped." << std::endl;
 
     // 2. Cancel folder browser scan thread
-    std::cout << "Cancelling browser scan..." << std::endl;
+    if (!g_jsonOutput) std::cout << "Cancelling browser scan..." << std::endl;
     g_folderBrowser.cancelScan();
-    std::cout << "Browser scan cancelled." << std::endl;
+    if (!g_jsonOutput) std::cout << "Browser scan cancelled." << std::endl;
 
     // 3. Stop thumbnail loader thread
-    std::cout << "Stopping thumbnail loader..." << std::endl;
+    if (!g_jsonOutput) std::cout << "Stopping thumbnail loader..." << std::endl;
     g_folderBrowser.stopThumbnailLoader();
-    std::cout << "Thumbnail loader stopped." << std::endl;
+    if (!g_jsonOutput) std::cout << "Thumbnail loader stopped." << std::endl;
+
+    // Stop remote control server first (if running)
+    if (remoteServer) {
+        if (!g_jsonOutput) std::cout << "Stopping remote control server..." << std::endl;
+        remoteServer->stop();
+        remoteServer.reset();
+        if (!g_jsonOutput) std::cout << "Remote control server stopped." << std::endl;
+    }
 
     // Stop threaded renderer first (must stop before parallel renderer)
-    std::cout << "Stopping render thread..." << std::endl;
-    threadedRenderer.stop();
-    std::cout << "Render thread stopped." << std::endl;
+    if (threadedRendererPtr) {
+        if (!g_jsonOutput) std::cout << "Stopping render thread..." << std::endl;
+        threadedRendererPtr->stop();
+        if (!g_jsonOutput) std::cout << "Render thread stopped." << std::endl;
+    }
 
     // Stop parallel renderer if running
     if (parallelRenderer.isEnabled()) {
-        std::cout << "Stopping parallel render threads..." << std::endl;
+        if (!g_jsonOutput) std::cout << "Stopping parallel render threads..." << std::endl;
         parallelRenderer.stop();
-        std::cout << "Parallel renderer stopped." << std::endl;
+        if (!g_jsonOutput) std::cout << "Parallel renderer stopped." << std::endl;
     }
 
     SDL_DestroyTexture(texture);
