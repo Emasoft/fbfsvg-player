@@ -61,6 +61,7 @@ bool MetalContext::initialize(SDL_Window* window) {
     impl_->queue = [impl_->device newCommandQueue];
     if (!impl_->queue) {
         fprintf(stderr, "[Metal] Error: Failed to create command queue\n");
+        destroy();  // Clean up device before returning
         return false;
     }
 
@@ -68,6 +69,7 @@ bool MetalContext::initialize(SDL_Window* window) {
     impl_->metalView = SDL_Metal_CreateView(window);
     if (!impl_->metalView) {
         fprintf(stderr, "[Metal] Error: Failed to create SDL Metal view: %s\n", SDL_GetError());
+        destroy();  // Clean up device and queue before returning
         return false;
     }
 
@@ -75,6 +77,7 @@ bool MetalContext::initialize(SDL_Window* window) {
     void* layerPtr = SDL_Metal_GetLayer(impl_->metalView);
     if (!layerPtr) {
         fprintf(stderr, "[Metal] Error: Failed to get Metal layer\n");
+        destroy();  // Clean up all allocated resources before returning
         return false;
     }
     impl_->metalLayer = (__bridge CAMetalLayer*)layerPtr;
@@ -83,7 +86,11 @@ bool MetalContext::initialize(SDL_Window* window) {
     impl_->metalLayer.device = impl_->device;
     impl_->metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     impl_->metalLayer.framebufferOnly = NO;  // Skia needs to read from the texture
-    impl_->metalLayer.contentsScale = [[NSScreen mainScreen] backingScaleFactor];
+
+    // Handle potential nil NSScreen (headless environments or early startup)
+    NSScreen* mainScreen = [NSScreen mainScreen];
+    CGFloat contentsScale = mainScreen ? [mainScreen backingScaleFactor] : 2.0;  // Default to Retina
+    impl_->metalLayer.contentsScale = contentsScale;
 
     // Allow nextDrawable to timeout (default 1 second) instead of blocking indefinitely
     // This prevents the main loop from freezing if all drawables are in use
@@ -111,12 +118,11 @@ bool MetalContext::initialize(SDL_Window* window) {
         impl_->metalLayer.drawableSize = CGSizeMake(drawableW, drawableH);
         printf("[Metal] Initial drawable size: %dx%d\n", drawableW, drawableH);
     } else {
-        // Fallback to window size
+        // Fallback to window size (reuse contentsScale already computed above)
         int windowW, windowH;
         SDL_GetWindowSize(window, &windowW, &windowH);
-        float scale = [[NSScreen mainScreen] backingScaleFactor];
-        impl_->metalLayer.drawableSize = CGSizeMake(windowW * scale, windowH * scale);
-        printf("[Metal] Using window size * scale: %dx%d\n", (int)(windowW * scale), (int)(windowH * scale));
+        impl_->metalLayer.drawableSize = CGSizeMake(windowW * contentsScale, windowH * contentsScale);
+        printf("[Metal] Using window size * scale: %dx%d\n", (int)(windowW * contentsScale), (int)(windowH * contentsScale));
     }
 
     // Create Skia GPU context with Metal backend
@@ -128,6 +134,7 @@ bool MetalContext::initialize(SDL_Window* window) {
     impl_->skiaContext = GrDirectContexts::MakeMetal(backendContext);
     if (!impl_->skiaContext) {
         fprintf(stderr, "[Metal] Error: Failed to create Skia GPU context\n");
+        destroy();  // Clean up all Metal resources before returning
         return false;
     }
 
@@ -160,6 +167,9 @@ bool MetalContext::isInitialized() const {
 
 void MetalContext::updateDrawableSize(int width, int height) {
     if (!impl_->initialized || !impl_->metalLayer) return;
+
+    // Validate dimensions to prevent Metal validation errors
+    if (width <= 0 || height <= 0) return;
 
     impl_->metalLayer.drawableSize = CGSizeMake(width, height);
 }
@@ -227,14 +237,9 @@ sk_sp<SkSurface> MetalContext::createSurface(int width, int height, GrMTLHandle*
     }
 
     if (!surface) {
-        // Try to get more diagnostic info
-        id<CAMetalDrawable> testDrawable = [impl_->metalLayer nextDrawable];
-        if (!testDrawable) {
-            fprintf(stderr, "[Metal] createSurface: CAMetalLayer.nextDrawable returned nil (layer size: %.0fx%.0f)\n",
-                    actualSize.width, actualSize.height);
-        } else {
-            fprintf(stderr, "[Metal] createSurface: Skia WrapCAMetalLayer failed (drawable available, Skia context may be stale)\n");
-        }
+        // Log diagnostic info without acquiring a drawable (which would exhaust the pool)
+        fprintf(stderr, "[Metal] createSurface: Skia WrapCAMetalLayer failed (layer size: %.0fx%.0f)\n",
+                actualSize.width, actualSize.height);
     }
 
     return surface;
@@ -243,13 +248,23 @@ sk_sp<SkSurface> MetalContext::createSurface(int width, int height, GrMTLHandle*
 void MetalContext::presentDrawable(GrMTLHandle drawable) {
     if (!impl_->initialized || !drawable) return;
 
-    // Flush Skia GPU work
-    impl_->skiaContext->flushAndSubmit();
+    @try {
+        // Flush Skia GPU work
+        impl_->skiaContext->flushAndSubmit();
 
-    // Present the drawable
-    id<MTLCommandBuffer> commandBuffer = [impl_->queue commandBuffer];
-    [commandBuffer presentDrawable:(__bridge id<CAMetalDrawable>)drawable];
-    [commandBuffer commit];
+        // Present the drawable
+        id<MTLCommandBuffer> commandBuffer = [impl_->queue commandBuffer];
+        if (!commandBuffer) {
+            fprintf(stderr, "[Metal] Error: Failed to create command buffer for presentation\n");
+            return;
+        }
+        [commandBuffer presentDrawable:(__bridge id<CAMetalDrawable>)drawable];
+        [commandBuffer commit];
+    } @catch (NSException *exception) {
+        fprintf(stderr, "[Metal] Exception during present: %s - %s\n",
+                [[exception name] UTF8String],
+                [[exception reason] UTF8String]);
+    }
 }
 
 void MetalContext::flush() {

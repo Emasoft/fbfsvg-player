@@ -2875,6 +2875,15 @@ int main(int argc, char* argv[]) {
                     break;
 
                 case SDL_KEYDOWN:
+                    // Filter out key repeats for toggle keys to prevent rapid on/off cycling
+                    if (event.key.repeat) {
+                        SDL_Keycode sym = event.key.keysym.sym;
+                        // Allow repeats only for non-toggle keys (navigation, quit)
+                        if (sym != SDLK_ESCAPE && sym != SDLK_q && sym != SDLK_SPACE &&
+                            sym != SDLK_LEFT && sym != SDLK_RIGHT && sym != SDLK_UP && sym != SDLK_DOWN) {
+                            break;  // Skip repeat events for toggle keys
+                        }
+                    }
                     if (event.key.keysym.sym == SDLK_ESCAPE) {
                         if (g_browserMode) {
                             // Exit browser mode - proper cleanup matching 'B' key toggle
@@ -3119,6 +3128,11 @@ int main(int argc, char* argv[]) {
                             // Metal mode: read pixels from GPU surface
                             // Need to render a frame first to get current state
                             if (metalContext && metalContext->isInitialized() && surface) {
+                                // CRITICAL: Flush GPU work before reading pixels
+                                // readPixels performs a GPU-to-CPU transfer which requires
+                                // all pending GPU commands to complete first
+                                metalContext->flush();
+
                                 // Metal surfaces require readPixels() instead of peekPixels()
                                 // because the texture is on GPU memory
                                 screenshotWidth = surface->width();
@@ -4857,6 +4871,16 @@ int main(int argc, char* argv[]) {
         parallelRenderer.stop();
         if (!g_jsonOutput) std::cout << "Parallel renderer stopped." << std::endl;
     }
+
+    // CRITICAL: Destroy Metal context BEFORE SDL cleanup
+    // The Metal context holds SDL_MetalView which requires SDL to be active
+#ifdef __APPLE__
+    if (metalContext) {
+        if (!g_jsonOutput) std::cout << "Destroying Metal context..." << std::endl;
+        metalContext.reset();
+        if (!g_jsonOutput) std::cout << "Metal context destroyed." << std::endl;
+    }
+#endif
 
     SDL_DestroyTexture(texture);
     SDL_DestroyRenderer(renderer);
