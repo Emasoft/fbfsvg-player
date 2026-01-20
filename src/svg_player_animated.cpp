@@ -32,6 +32,9 @@
 #include <fcntl.h>   // For O_CREAT, O_WRONLY, O_TRUNC in signal handler
 #include <limits.h>
 #include <vector>
+#include <algorithm>   // For std::sort
+#include <dirent.h>    // For directory scanning
+#include <regex>       // For frame number extraction
 #include <execinfo.h>  // For backtrace() on macOS/Linux
 
 #include "modules/skshaper/include/SkShaper_factory.h"
@@ -70,6 +73,7 @@
 // Metal GPU backend for macOS (optional, enabled with --metal flag)
 #ifdef __APPLE__
 #include "metal_context.h"
+#include "graphite_context.h"  // Graphite next-gen GPU backend (--graphite flag)
 #endif
 
 // =============================================================================
@@ -404,6 +408,12 @@ bool fileExists(const char* path) {
     return stat(path, &st) == 0 && S_ISREG(st.st_mode);
 }
 
+// Check if path is a directory
+bool isDirectory(const char* path) {
+    struct stat st;
+    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
+}
+
 // Get file size in bytes
 size_t getFileSize(const char* path) {
     struct stat st;
@@ -434,15 +444,85 @@ bool validateSVGContent(const std::string& content) {
     return pos != std::string::npos;
 }
 
+// =============================================================================
+// SVG Image Sequence (folder of individual SVG frames) support
+// =============================================================================
+
+// Extract frame number from filename (e.g., "frame_0001.svg" -> 1)
+int extractFrameNumber(const std::string& filename) {
+    // Try pattern: name_NNNN.svg (underscore before number)
+    std::regex pattern("_(\\d+)\\.svg$", std::regex::icase);
+    std::smatch match;
+    if (std::regex_search(filename, match, pattern)) {
+        return std::stoi(match[1].str());
+    }
+    // Try fallback: NNNN.svg (just number before extension)
+    std::regex fallback("(\\d+)\\.svg$", std::regex::icase);
+    if (std::regex_search(filename, match, fallback)) {
+        return std::stoi(match[1].str());
+    }
+    return -1;  // No number found
+}
+
+// Scan folder for SVG files and return sorted list of paths
+std::vector<std::string> scanFolderForSVGSequence(const std::string& folderPath) {
+    std::vector<std::pair<int, std::string>> frameFiles;
+
+    DIR* dir = opendir(folderPath.c_str());
+    if (!dir) {
+        std::cerr << "Error: Cannot open folder: " << folderPath << std::endl;
+        return {};
+    }
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        std::string name = entry->d_name;
+        // Check for .svg extension (case-insensitive)
+        if (name.size() > 4) {
+            std::string ext = name.substr(name.size() - 4);
+            if (ext == ".svg" || ext == ".SVG") {
+                int frameNum = extractFrameNumber(name);
+                std::string fullPath = folderPath + "/" + name;
+                frameFiles.push_back({frameNum, fullPath});
+            }
+        }
+    }
+    closedir(dir);
+
+    if (frameFiles.empty()) {
+        std::cerr << "Error: No SVG files found in folder: " << folderPath << std::endl;
+        return {};
+    }
+
+    // Sort by frame number (files without numbers sorted alphabetically at end)
+    std::sort(frameFiles.begin(), frameFiles.end(), [](const auto& a, const auto& b) {
+        if (a.first == -1 && b.first == -1) return a.second < b.second;  // Both no number: alphabetical
+        if (a.first == -1) return false;  // No number goes after numbered
+        if (b.first == -1) return true;   // Numbered goes before no number
+        return a.first < b.first;         // Both numbered: sort by number
+    });
+
+    // Extract sorted paths
+    std::vector<std::string> result;
+    result.reserve(frameFiles.size());
+    for (const auto& f : frameFiles) {
+        result.push_back(f.second);
+    }
+
+    std::cerr << "Found " << result.size() << " SVG frames in sequence" << std::endl;
+    return result;
+}
+
 // Print extensive help screen
 void printHelp(const char* programName) {
     std::cerr << SVGPlayerVersion::getVersionBanner() << "\n\n";
     std::cerr << "USAGE:\n";
-    std::cerr << "    " << programName << " <input.svg> [OPTIONS]\n\n";
+    std::cerr << "    " << programName << " <input.svg|folder> [OPTIONS]\n\n";
     std::cerr << "DESCRIPTION:\n";
     std::cerr << "    Real-time SVG renderer with SMIL animation support.\n";
     std::cerr << "    Plays animated SVG files with discrete frame animations\n";
-    std::cerr << "    (xlink:href switching) using hardware-accelerated rendering.\n\n";
+    std::cerr << "    (xlink:href switching) using hardware-accelerated rendering.\n";
+    std::cerr << "    Can also play a folder of individual SVG files as an image sequence.\n\n";
     std::cerr << "OPTIONS:\n";
     std::cerr << "    -h, --help        Show this help message and exit\n";
     std::cerr << "    -v, --version     Show version information and exit\n";
@@ -451,11 +531,15 @@ void printHelp(const char* programName) {
     std::cerr << "    -m, --maximize    Start in maximized (zoomed) windowed mode\n";
     std::cerr << "    --pos=X,Y         Set initial window position (e.g., --pos=100,200)\n";
     std::cerr << "    --size=WxH        Set initial window size (e.g., --size=800x600)\n";
+    std::cerr << "    --sequential      Sequential frame mode: render frames 0,1,2,3... as fast\n";
+    std::cerr << "                      as possible, ignoring SMIL wall-clock timing. Useful for\n";
+    std::cerr << "                      benchmarking raw rendering throughput.\n";
     std::cerr << "    --remote-control[=PORT]  Enable remote control server (default port: 9999)\n";
     std::cerr << "    --duration=SECS   Benchmark mode: run for N seconds then exit\n";
     std::cerr << "    --json            Output benchmark stats as JSON (for scripting)\n";
 #ifdef __APPLE__
-    std::cerr << "    --metal           Enable Metal GPU backend (experimental)\n";
+    std::cerr << "    --metal           Enable Metal GPU backend (Ganesh)\n";
+    std::cerr << "    --graphite        Enable Graphite GPU backend (next-gen, Metal)\n";
 #endif
     std::cerr << "\n";
     std::cerr << "KEYBOARD CONTROLS:\n";
@@ -473,10 +557,13 @@ void printHelp(const char* programName) {
     std::cerr << "SUPPORTED FORMATS:\n";
     std::cerr << "    - SVG 1.1 with SMIL animations\n";
     std::cerr << "    - Discrete frame animations via xlink:href\n";
-    std::cerr << "    - FBF (Frame-by-Frame) SVG format\n\n";
+    std::cerr << "    - FBF (Frame-by-Frame) SVG format\n";
+    std::cerr << "    - Folder of numbered SVG files (image sequence)\n\n";
     std::cerr << "EXAMPLES:\n";
     std::cerr << "    " << programName << " animation.svg              # Starts in fullscreen (default)\n";
     std::cerr << "    " << programName << " animation.svg --windowed   # Starts in a window\n";
+    std::cerr << "    " << programName << " ./frames/                  # Play SVG image sequence from folder\n";
+    std::cerr << "    " << programName << " animation.svg --sequential # Benchmark: ignore SMIL timing\n";
     std::cerr << "    " << programName << " --version\n\n";
     std::cerr << "TIPS:\n";
     std::cerr << "    Assign player to a specific Desktop (macOS):\n";
@@ -1799,11 +1886,16 @@ int main(int argc, char* argv[]) {
     bool remoteControlEnabled = false;  // Enable remote control TCP server
     int remoteControlPort = 9999;  // Default remote control port
 #ifdef __APPLE__
-    bool useMetalBackend = false;  // Use Metal GPU backend (experimental)
+    bool useMetalBackend = false;  // Use Metal GPU backend (Ganesh)
+    bool useGraphiteBackend = false;  // Use Graphite GPU backend (next-gen)
 #endif
     int benchmarkDuration = 0;  // Benchmark mode: run for N seconds then exit (0 = disabled)
     std::string screenshotPath;  // Auto-save screenshot after first frame (for benchmarks)
     // Note: jsonOutput is now global g_jsonOutput for thread access
+    bool sequentialMode = false;  // Sequential frame mode: render 0,1,2,3... ignoring SMIL timing
+    bool isImageSequence = false;  // Playing from folder of individual SVG files
+    std::vector<std::string> sequenceFiles;  // List of SVG files for image sequence mode
+    std::vector<std::string> sequenceSvgContents;  // Pre-loaded SVG contents for image sequence mode
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
@@ -1881,8 +1973,11 @@ int main(int argc, char* argv[]) {
             g_jsonOutput = true;
 #ifdef __APPLE__
         } else if (strcmp(argv[i], "--metal") == 0) {
-            // Enable Metal GPU backend
+            // Enable Metal GPU backend (Ganesh)
             useMetalBackend = true;
+        } else if (strcmp(argv[i], "--graphite") == 0) {
+            // Enable Graphite GPU backend (next-gen Metal)
+            useGraphiteBackend = true;
 #endif
         } else if (strncmp(argv[i], "--screenshot=", 13) == 0) {
             // Auto-save screenshot after first frame (for benchmarks)
@@ -1891,6 +1986,9 @@ int main(int argc, char* argv[]) {
                 std::cerr << "--screenshot requires a file path (e.g., --screenshot=output.ppm)" << std::endl;
                 return 1;
             }
+        } else if (strcmp(argv[i], "--sequential") == 0) {
+            // Sequential frame mode: render frames 0,1,2,3... ignoring SMIL timing
+            sequentialMode = true;
         } else if (argv[i][0] != '-') {
             // Non-option argument is the input file
             inputPath = argv[i];
@@ -1906,15 +2004,52 @@ int main(int argc, char* argv[]) {
     // This must be done before any SVG loading/parsing to suppress console messages
     g_animController.setVerbose(!g_jsonOutput);
 
-    // Input file is required
+    // Input file/folder is required
     if (!inputPath) {
-        std::cerr << "Error: No input file specified.\n" << std::endl;
+        std::cerr << "Error: No input file or folder specified.\n" << std::endl;
         printHelp(argv[0]);
         return 1;
     }
 
     // Initialize font support for SVG text rendering (must be done before any SVG parsing)
     initializeFontSupport();
+
+    // Check if input is a directory (image sequence mode)
+    if (isDirectory(inputPath)) {
+        isImageSequence = true;
+        sequentialMode = true;  // Image sequences always use sequential mode
+        sequenceFiles = scanFolderForSVGSequence(inputPath);
+        if (sequenceFiles.empty()) {
+            std::cerr << "Error: No SVG files found in folder: " << inputPath << std::endl;
+            return 1;
+        }
+        // Use first file for initial loading (for dimensions and window setup)
+        inputPath = sequenceFiles[0].c_str();
+        if (!g_jsonOutput) {
+            std::cerr << "Image sequence mode: " << sequenceFiles.size() << " frames from folder" << std::endl;
+            std::cerr << "Sequential rendering mode enabled (ignoring SMIL timing)" << std::endl;
+            std::cerr << "Pre-loading all SVG frames..." << std::endl;
+        }
+        // Pre-load all SVG file contents for image sequence mode
+        // This allows fast frame switching without file I/O during playback
+        sequenceSvgContents.reserve(sequenceFiles.size());
+        for (const auto& filePath : sequenceFiles) {
+            std::ifstream file(filePath);
+            if (!file) {
+                std::cerr << "Error: Cannot read SVG file: " << filePath << std::endl;
+                return 1;
+            }
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            sequenceSvgContents.push_back(buffer.str());
+        }
+        if (!g_jsonOutput) {
+            std::cerr << "Pre-loaded " << sequenceSvgContents.size() << " SVG frames into memory" << std::endl;
+        }
+    } else if (sequentialMode && !g_jsonOutput) {
+        // Single FBF file with sequential mode enabled via --sequential flag
+        std::cerr << "Sequential rendering mode enabled (ignoring SMIL timing)" << std::endl;
+    }
 
     // Validate input file before loading
     if (!fileExists(inputPath)) {
@@ -2202,11 +2337,36 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    // Metal context for GPU-accelerated rendering (macOS only, experimental)
+    // Metal context for GPU-accelerated rendering (macOS only)
 #ifdef __APPLE__
     std::unique_ptr<svgplayer::MetalContext> metalContext;
-    GrMTLHandle metalDrawable = nullptr;  // Current drawable for Metal rendering
+    GrMTLHandle metalDrawable = nullptr;  // Current drawable for Metal rendering (Ganesh)
 
+    // Graphite context for next-gen GPU rendering (macOS only)
+    std::unique_ptr<svgplayer::GraphiteContext> graphiteContext;
+
+    // Graphite initialization (with Metal Ganesh fallback)
+    if (useGraphiteBackend) {
+        if (std::getenv("RENDER_DEBUG")) std::cerr << "[GRAPHITE_DEBUG] Before createGraphiteContext" << std::endl;
+        graphiteContext = svgplayer::createGraphiteContext(window);
+        if (std::getenv("RENDER_DEBUG")) std::cerr << "[GRAPHITE_DEBUG] After createGraphiteContext" << std::endl;
+        if (graphiteContext && graphiteContext->isInitialized()) {
+            installSignalHandlers();
+            // Sync VSync state with player's default (off for benchmarking)
+            graphiteContext->setVSyncEnabled(vsyncEnabled);
+            if (!g_jsonOutput) {
+                std::cout << "[Graphite] Next-gen GPU backend enabled - "
+                          << graphiteContext->getBackendName() << " rendering active" << std::endl;
+                std::cout << "[Graphite] VSync: " << (vsyncEnabled ? "ON" : "OFF") << std::endl;
+            }
+        } else {
+            std::cerr << "[Graphite] Failed to initialize Graphite context, falling back to Metal (Ganesh)" << std::endl;
+            useGraphiteBackend = false;
+            useMetalBackend = true;  // Fallback to Metal Ganesh
+        }
+    }
+
+    // Metal (Ganesh) initialization
     if (useMetalBackend) {
         if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_DEBUG] Before createMetalContext: g_shutdownRequested=" << g_shutdownRequested.load() << std::endl;
         metalContext = svgplayer::createMetalContext(window);
@@ -2216,7 +2376,7 @@ int main(int argc, char* argv[]) {
             // Metal/SDL may override them during CAMetalLayer setup
             installSignalHandlers();
             if (!g_jsonOutput) {
-                std::cout << "[Metal] GPU backend enabled - GPU-accelerated rendering active" << std::endl;
+                std::cout << "[Metal] GPU backend (Ganesh) enabled - GPU-accelerated rendering active" << std::endl;
             }
         } else {
             std::cerr << "[Metal] Failed to initialize Metal context, falling back to CPU rendering" << std::endl;
@@ -2228,7 +2388,10 @@ int main(int argc, char* argv[]) {
     // Get actual renderer output size (accounts for HiDPI/Retina)
     int rendererW, rendererH;
 #ifdef __APPLE__
-    if (useMetalBackend && metalContext && metalContext->isInitialized()) {
+    if (useGraphiteBackend && graphiteContext && graphiteContext->isInitialized()) {
+        // Graphite mode: use SDL_Metal_GetDrawableSize
+        SDL_Metal_GetDrawableSize(window, &rendererW, &rendererH);
+    } else if (useMetalBackend && metalContext && metalContext->isInitialized()) {
         // Metal mode: use SDL_Metal_GetDrawableSize
         SDL_Metal_GetDrawableSize(window, &rendererW, &rendererH);
     } else
@@ -2329,6 +2492,10 @@ int main(int argc, char* argv[]) {
     size_t lastFrameIndex = 0;
     size_t currentFrameIndex = 0;
     std::string lastFrameValue;
+
+    // Sequential frame mode counter - increments each cycle instead of using wall-clock time
+    // When sequentialMode is true, frames are rendered 0,1,2,3... as fast as possible
+    size_t sequentialFrameCounter = 0;
 
     // PreBuffer mode timing parameters (for global frame index calculation)
     // These MUST match what was passed to parallelRenderer.configure()
@@ -2987,6 +3154,9 @@ int main(int argc, char* argv[]) {
                             texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
                                                         renderWidth, renderHeight);
 #ifdef __APPLE__
+                        } else if (useGraphiteBackend && graphiteContext && graphiteContext->isInitialized()) {
+                            // Graphite mode: Use GraphiteContext VSync control
+                            graphiteContext->setVSyncEnabled(vsyncEnabled);
                         } else {
                             // Metal mode: Use MetalContext VSync control
                             if (metalContext && metalContext->isInitialized()) {
@@ -3705,7 +3875,11 @@ int main(int argc, char* argv[]) {
                         // Get actual renderer output size (HiDPI aware)
                         int actualW, actualH;
 #ifdef __APPLE__
-                        if (useMetalBackend && metalContext && metalContext->isInitialized()) {
+                        if (useGraphiteBackend && graphiteContext && graphiteContext->isInitialized()) {
+                            // Graphite mode: use SDL_Metal_GetDrawableSize for HiDPI
+                            SDL_Metal_GetDrawableSize(window, &actualW, &actualH);
+                        } else if (useMetalBackend && metalContext && metalContext->isInitialized()) {
+                            // Ganesh Metal mode: use SDL_Metal_GetDrawableSize for HiDPI
                             SDL_Metal_GetDrawableSize(window, &actualW, &actualH);
                         } else
 #endif
@@ -3718,9 +3892,10 @@ int main(int argc, char* argv[]) {
                         renderWidth = actualW;
                         renderHeight = actualH;
 
-                        // Update SDL texture for CPU rendering mode
+                        // Update SDL texture for CPU rendering mode only
+                        // GPU backends (Graphite, Metal Ganesh) manage their own surfaces
 #ifdef __APPLE__
-                        if (!useMetalBackend) {
+                        if (!useGraphiteBackend && !useMetalBackend) {
 #endif
                             SDL_DestroyTexture(texture);
                             texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
@@ -3729,7 +3904,17 @@ int main(int argc, char* argv[]) {
                         }
 #endif
 
-                        createSurface(renderWidth, renderHeight);
+                        // Update GPU backend drawable sizes
+#ifdef __APPLE__
+                        if (useGraphiteBackend && graphiteContext && graphiteContext->isInitialized()) {
+                            graphiteContext->updateDrawableSize(renderWidth, renderHeight);
+                        } else if (useMetalBackend && metalContext && metalContext->isInitialized()) {
+                            metalContext->updateDrawableSize(renderWidth, renderHeight);
+                        } else
+#endif
+                        {
+                            createSurface(renderWidth, renderHeight);
+                        }
 
                         // Resize threaded renderer buffers (non-blocking)
                         if (threadedRendererPtr) {
@@ -3771,13 +3956,43 @@ int main(int argc, char* argv[]) {
         // The animation frame is determined SOLELY by the current time
         // This guarantees perfect sync even if rendering is slow
         auto animStart = Clock::now();
+
+        // IMAGE SEQUENCE MODE: Calculate frame index before animations loop
+        // Image sequences don't have SMIL animations, so we handle them separately
+        if (isImageSequence && !sequenceSvgContents.empty()) {
+            // Image sequence mode: use sequential counter-based frame index
+            size_t totalFrames = sequenceSvgContents.size();
+            currentFrameIndex = sequentialFrameCounter % totalFrames;
+            sequentialFrameCounter++;
+            // Update frame tracking for stats
+            if (currentFrameIndex != lastRenderedAnimFrame) {
+                lastRenderedAnimFrame = currentFrameIndex;
+                framesRendered++;
+            }
+        }
+
         for (const auto& anim : animations) {
             std::string newValue = anim.getCurrentValue(animTime);
 
             // SMIL-compliant time-based frame calculation (consistent across modes)
             // Both PreBuffer and Direct modes use the same time-based formula
             // In Metal mode, threadedRendererPtr is null - use direct mode calculation
-            if (threadedRendererPtr && threadedRendererPtr->isPreBufferMode() && preBufferTotalDuration > 0) {
+            //
+            // SEQUENTIAL MODE: When enabled, ignore wall-clock timing entirely.
+            // Instead, advance frames 0,1,2,3... as fast as possible for benchmarking.
+            // Skip if image sequence mode (already handled above)
+            if (isImageSequence) {
+                // Skip SMIL animation processing for image sequences
+                continue;
+            }
+            if (sequentialMode) {
+                // Sequential mode: use counter-based frame index (ignores SMIL timing)
+                // This renders frames in order as fast as the renderer can go
+                size_t totalFrames = preBufferTotalFrames > 0 ? preBufferTotalFrames : anim.values.size();
+                currentFrameIndex = sequentialFrameCounter % totalFrames;
+                // Increment counter for next cycle (wraps around automatically via modulo)
+                sequentialFrameCounter++;
+            } else if (threadedRendererPtr && threadedRendererPtr->isPreBufferMode() && preBufferTotalDuration > 0) {
                 // PreBuffer mode: calculate GLOBAL frame index from time ratio
                 // This MUST match parallelRenderer's frame calculation:
                 // framePtr->elapsedTimeSeconds = (frameIndex / totalFrameCount) * totalDuration
@@ -4078,8 +4293,103 @@ int main(int argc, char* argv[]) {
         } else {
             // === NORMAL SVG RENDERING MODE ===
 #ifdef __APPLE__
-            if (useMetalBackend && metalContext && metalContext->isInitialized()) {
-                // === METAL GPU RENDERING PATH ===
+            if (useGraphiteBackend && graphiteContext && graphiteContext->isInitialized()) {
+                // === GRAPHITE GPU RENDERING PATH (Next-gen) ===
+                // Graphite uses Recorder/Recording model - simpler than Ganesh
+                if (std::getenv("RENDER_DEBUG")) {
+                    std::cerr << "[GRAPHITE_RENDER_DEBUG] Starting frame render" << std::endl;
+                    std::cerr << "[GRAPHITE_RENDER_DEBUG] renderWidth=" << renderWidth << ", renderHeight=" << renderHeight << std::endl;
+                }
+                surface = graphiteContext->createSurface(renderWidth, renderHeight);
+
+                if (surface) {
+                    // DIAGNOSTIC: Verify surface dimensions match render dimensions
+                    int surfaceW = surface->width();
+                    int surfaceH = surface->height();
+                    if (surfaceW != renderWidth || surfaceH != renderHeight) {
+                        std::cerr << "[Graphite] CRITICAL: Surface dimensions mismatch!" << std::endl;
+                        std::cerr << "[Graphite]   Expected: " << renderWidth << "x" << renderHeight << std::endl;
+                        std::cerr << "[Graphite]   Actual:   " << surfaceW << "x" << surfaceH << std::endl;
+                        std::cerr << "[Graphite]   This causes 1/4 screen rendering!" << std::endl;
+                        // Force exit to alert user of the bug
+                        exit(1);
+                    }
+
+                    canvas = surface->getCanvas();
+                    canvas->clear(SK_ColorBLACK);
+
+                    // Calculate scale to fit SVG in render area (same as Linux player)
+                    // This ensures SVG content fills the full HiDPI resolution
+                    float scale = std::min(static_cast<float>(renderWidth) / svgWidth,
+                                          static_cast<float>(renderHeight) / svgHeight);
+                    float offsetX = (renderWidth - svgWidth * scale) / 2.0f;
+                    float offsetY = (renderHeight - svgHeight * scale) / 2.0f;
+
+                    if (std::getenv("RENDER_DEBUG")) {
+                        std::cerr << "[GRAPHITE_RENDER_DEBUG] Scale=" << scale
+                                  << ", offset=(" << offsetX << "," << offsetY << ")"
+                                  << ", svgSize=" << svgWidth << "x" << svgHeight << std::endl;
+                    }
+
+                    // IMAGE SEQUENCE MODE: Parse and render different SVG files per frame
+                    if (isImageSequence && !sequenceSvgContents.empty()) {
+                        size_t frameIdx = currentFrameIndex % sequenceSvgContents.size();
+                        const std::string& svgContent = sequenceSvgContents[frameIdx];
+
+                        sk_sp<SkData> frameData = SkData::MakeWithCopy(svgContent.data(), svgContent.size());
+                        auto frameStream = SkMemoryStream::Make(frameData);
+                        if (frameStream) {
+                            sk_sp<SkSVGDOM> frameDom = makeSVGDOMWithFontSupport(*frameStream);
+                            if (frameDom) {
+                                // Apply scale transform to fill HiDPI canvas
+                                canvas->save();
+                                canvas->translate(offsetX, offsetY);
+                                canvas->scale(scale, scale);
+                                SkSize containerSize = SkSize::Make(svgWidth, svgHeight);
+                                frameDom->setContainerSize(containerSize);
+                                frameDom->render(canvas);
+                                canvas->restore();
+                            }
+                        }
+                    } else {
+                        // FBF.SVG MODE: Apply SMIL animations to single DOM
+                        if (svgDom && !animations.empty()) {
+                            for (const auto& anim : animations) {
+                                if (!anim.targetId.empty() && !anim.attributeName.empty() && !anim.values.empty()) {
+                                    std::string value = anim.getCurrentValue(animTime);
+                                    sk_sp<SkSVGNode>* nodePtr = svgDom->findNodeById(anim.targetId.c_str());
+                                    if (nodePtr && *nodePtr) {
+                                        (*nodePtr)->setAttribute(anim.attributeName.c_str(), value.c_str());
+                                    }
+                                }
+                            }
+                        }
+
+                        // Render SVG directly to Graphite-backed surface
+                        // Apply scale transform to fill HiDPI canvas
+                        if (svgDom) {
+                            canvas->save();
+                            canvas->translate(offsetX, offsetY);
+                            canvas->scale(scale, scale);
+                            SkSize containerSize = SkSize::Make(svgWidth, svgHeight);
+                            svgDom->setContainerSize(containerSize);
+                            svgDom->render(canvas);
+                            canvas->restore();
+                        }
+                    }
+
+                    // Submit and present via Graphite
+                    graphiteContext->submitFrame();
+                    gotNewFrame = true;
+                    framesDelivered++;
+                    if (std::getenv("RENDER_DEBUG")) std::cerr << "[GRAPHITE_RENDER_DEBUG] Frame complete" << std::endl;
+                } else {
+                    if (!g_jsonOutput) {
+                        std::cerr << "[Graphite] Failed to create surface this frame" << std::endl;
+                    }
+                }
+            } else if (useMetalBackend && metalContext && metalContext->isInitialized()) {
+                // === METAL GPU RENDERING PATH (Ganesh) ===
                 // Metal requires a fresh drawable each frame (single-use resource)
                 // GPU acceleration compensates for single-threaded rendering
                 if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Starting frame render" << std::endl;
@@ -4094,28 +4404,76 @@ int main(int argc, char* argv[]) {
                     canvas->clear(SK_ColorBLACK);
                     if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Cleared canvas" << std::endl;
 
-                    // Apply animation state to SVG DOM before rendering
-                    if (svgDom && !animations.empty()) {
-                        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Applying animations" << std::endl;
-                        for (const auto& anim : animations) {
-                            if (!anim.targetId.empty() && !anim.attributeName.empty() && !anim.values.empty()) {
-                                std::string value = anim.getCurrentValue(animTime);
-                                sk_sp<SkSVGNode>* nodePtr = svgDom->findNodeById(anim.targetId.c_str());
-                                if (nodePtr && *nodePtr) {
-                                    (*nodePtr)->setAttribute(anim.attributeName.c_str(), value.c_str());
+                    // Calculate scale to fit SVG in render area (same as Linux player)
+                    // This ensures SVG content fills the full HiDPI resolution
+                    float scale = std::min(static_cast<float>(renderWidth) / svgWidth,
+                                          static_cast<float>(renderHeight) / svgHeight);
+                    float offsetX = (renderWidth - svgWidth * scale) / 2.0f;
+                    float offsetY = (renderHeight - svgHeight * scale) / 2.0f;
+
+                    if (std::getenv("RENDER_DEBUG")) {
+                        std::cerr << "[METAL_RENDER_DEBUG] Scale=" << scale
+                                  << ", offset=(" << offsetX << "," << offsetY << ")"
+                                  << ", svgSize=" << svgWidth << "x" << svgHeight << std::endl;
+                    }
+
+                    // IMAGE SEQUENCE MODE: Parse and render different SVG files per frame
+                    // For image sequences, each frame is a separate SVG file, not SMIL animation
+                    if (isImageSequence && !sequenceSvgContents.empty()) {
+                        // Get the current frame's SVG content from pre-loaded data
+                        size_t frameIdx = currentFrameIndex % sequenceSvgContents.size();
+                        const std::string& svgContent = sequenceSvgContents[frameIdx];
+
+                        // Parse this frame's SVG (re-parse each frame since they are different files)
+                        sk_sp<SkData> frameData = SkData::MakeWithCopy(svgContent.data(), svgContent.size());
+                        auto frameStream = SkMemoryStream::Make(frameData);
+                        if (frameStream) {
+                            sk_sp<SkSVGDOM> frameDom = makeSVGDOMWithFontSupport(*frameStream);
+                            if (frameDom) {
+                                // Apply scale transform to fill HiDPI canvas
+                                canvas->save();
+                                canvas->translate(offsetX, offsetY);
+                                canvas->scale(scale, scale);
+                                SkSize containerSize = SkSize::Make(svgWidth, svgHeight);
+                                frameDom->setContainerSize(containerSize);
+                                frameDom->render(canvas);
+                                canvas->restore();
+                                if (std::getenv("RENDER_DEBUG")) {
+                                    std::cerr << "[METAL_RENDER_DEBUG] Rendered image sequence frame "
+                                              << frameIdx << "/" << sequenceSvgContents.size() << std::endl;
                                 }
                             }
                         }
-                        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Animations applied" << std::endl;
-                    }
+                    } else {
+                        // FBF.SVG MODE: Apply SMIL animations to single DOM
+                        // Apply animation state to SVG DOM before rendering
+                        if (svgDom && !animations.empty()) {
+                            if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Applying animations" << std::endl;
+                            for (const auto& anim : animations) {
+                                if (!anim.targetId.empty() && !anim.attributeName.empty() && !anim.values.empty()) {
+                                    std::string value = anim.getCurrentValue(animTime);
+                                    sk_sp<SkSVGNode>* nodePtr = svgDom->findNodeById(anim.targetId.c_str());
+                                    if (nodePtr && *nodePtr) {
+                                        (*nodePtr)->setAttribute(anim.attributeName.c_str(), value.c_str());
+                                    }
+                                }
+                            }
+                            if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] Animations applied" << std::endl;
+                        }
 
-                    // Render SVG directly to Metal-backed surface (GPU-accelerated)
-                    if (svgDom) {
-                        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] About to render SVG" << std::endl;
-                        SkSize containerSize = SkSize::Make(renderWidth, renderHeight);
-                        svgDom->setContainerSize(containerSize);
-                        svgDom->render(canvas);
-                        if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] SVG rendered" << std::endl;
+                        // Render SVG directly to Metal-backed surface (GPU-accelerated)
+                        // Apply scale transform to fill HiDPI canvas
+                        if (svgDom) {
+                            if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] About to render SVG" << std::endl;
+                            canvas->save();
+                            canvas->translate(offsetX, offsetY);
+                            canvas->scale(scale, scale);
+                            SkSize containerSize = SkSize::Make(svgWidth, svgHeight);
+                            svgDom->setContainerSize(containerSize);
+                            svgDom->render(canvas);
+                            canvas->restore();
+                            if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_RENDER_DEBUG] SVG rendered" << std::endl;
+                        }
                     }
 
                     gotNewFrame = true;
@@ -4133,10 +4491,37 @@ int main(int argc, char* argv[]) {
             } else
 #endif
             {
-                // === CPU RENDERING PATH (ThreadedRenderer) ===
-                // Request new frame (render thread will process asynchronously)
-                // Main thread NEVER touches parallelRenderer directly - all through ThreadedRenderer
-                if (threadedRendererPtr) {
+                // === CPU RENDERING PATH ===
+                // For image sequence mode: use direct rendering (parse + render each frame)
+                // For FBF.SVG mode: use ThreadedRenderer for async pre-buffered rendering
+                if (isImageSequence && !sequenceSvgContents.empty()) {
+                    // IMAGE SEQUENCE MODE (CPU): Direct rendering of separate SVG files
+                    // We need a surface to render to - reuse the existing surface from SDL texture
+                    size_t frameIdx = currentFrameIndex % sequenceSvgContents.size();
+                    const std::string& svgContent = sequenceSvgContents[frameIdx];
+
+                    // Parse this frame's SVG
+                    sk_sp<SkData> frameData = SkData::MakeWithCopy(svgContent.data(), svgContent.size());
+                    auto frameStream = SkMemoryStream::Make(frameData);
+                    if (frameStream) {
+                        sk_sp<SkSVGDOM> frameDom = makeSVGDOMWithFontSupport(*frameStream);
+                        if (frameDom) {
+                            // Render to the existing surface
+                            SkCanvas* surfaceCanvas = surface->getCanvas();
+                            if (surfaceCanvas) {
+                                surfaceCanvas->clear(SK_ColorBLACK);
+                                SkSize containerSize = SkSize::Make(renderWidth, renderHeight);
+                                frameDom->setContainerSize(containerSize);
+                                frameDom->render(surfaceCanvas);
+                                gotNewFrame = true;
+                                framesDelivered++;
+                            }
+                        }
+                    }
+                } else if (threadedRendererPtr) {
+                    // FBF.SVG MODE (CPU): Use ThreadedRenderer for async pre-buffered rendering
+                    // Request new frame (render thread will process asynchronously)
+                    // Main thread NEVER touches parallelRenderer directly - all through ThreadedRenderer
                     threadedRendererPtr->requestFrame(currentFrameIndex);
 
                     // Try to get rendered frame from ThreadedRenderer (non-blocking!)
@@ -4527,8 +4912,57 @@ int main(int argc, char* argv[]) {
             frameCount++;
 
 #ifdef __APPLE__
-            if (useMetalBackend && metalContext && metalContext->isInitialized() && metalDrawable) {
-                // === METAL GPU PRESENTATION PATH ===
+            if (useGraphiteBackend && graphiteContext && graphiteContext->isInitialized()) {
+                // === GRAPHITE GPU PRESENTATION PATH ===
+                // Frame was already submitted in render loop, just present and track timing
+                if (std::getenv("RENDER_DEBUG")) std::cerr << "[GRAPHITE_PRESENT_DEBUG] About to present" << std::endl;
+                auto copyStart = Clock::now();
+
+                // Periodic black screen detection (same pattern as Metal)
+                if (frameCount % 60 == 0 && surface) {
+                    SkImageInfo info = SkImageInfo::Make(renderWidth, renderHeight,
+                                                          kBGRA_8888_SkColorType, kPremul_SkAlphaType);
+                    std::vector<uint32_t> checkPixels(renderWidth * renderHeight);
+                    if (surface->readPixels(info, checkPixels.data(),
+                                            renderWidth * sizeof(uint32_t), 0, 0)) {
+                        int debugOverlayW = static_cast<int>(300 * hiDpiScale);
+                        int debugOverlayH = static_cast<int>(500 * hiDpiScale);
+                        int nonBlackPixels = countNonBlackPixels(
+                            checkPixels.data(), renderWidth, renderHeight,
+                            0, 0, debugOverlayW, debugOverlayH);
+                        g_lastNonBlackPixelCount.store(nonBlackPixels);
+
+                        if (nonBlackPixels < 10) {
+                            g_blackScreenDetected.store(true);
+                            g_consecutiveBlackFrames.fetch_add(60);
+                            if (!g_jsonOutput) {
+                                std::cerr << "[Graphite WARNING] Black screen detected! Frame #" << frameCount << std::endl;
+                            }
+                        } else {
+                            g_blackScreenDetected.store(false);
+                            g_consecutiveBlackFrames.store(0);
+                        }
+                    }
+                }
+
+                // Present the frame via Graphite
+                auto presentStart = Clock::now();
+                graphiteContext->present();
+                presentEnd = Clock::now();
+                presentTime = presentEnd - presentStart;
+                if (std::getenv("RENDER_DEBUG")) std::cerr << "[GRAPHITE_PRESENT_DEBUG] Present complete" << std::endl;
+
+                auto copyEnd = Clock::now();
+                copyTime = copyEnd - copyStart;
+                if (!skipStatsThisFrame) {
+                    copyTimes.add(copyTime.count());
+                    eventTimes.add(eventTime.count());
+                    animTimes.add(animTime_ms.count());
+                    overlayTimes.add(overlayTime.count());
+                    presentTimes.add(presentTime.count());
+                }
+            } else if (useMetalBackend && metalContext && metalContext->isInitialized() && metalDrawable) {
+                // === METAL GPU PRESENTATION PATH (Ganesh) ===
                 // No CPU→GPU copy needed - already rendered to GPU texture
                 if (std::getenv("RENDER_DEBUG")) std::cerr << "[METAL_PRESENT_DEBUG] About to present" << std::endl;
                 auto copyStart = Clock::now();
@@ -4872,9 +5306,17 @@ int main(int argc, char* argv[]) {
         if (!g_jsonOutput) std::cout << "Parallel renderer stopped." << std::endl;
     }
 
-    // CRITICAL: Destroy Metal context BEFORE SDL cleanup
-    // The Metal context holds SDL_MetalView which requires SDL to be active
+    // CRITICAL: Destroy GPU contexts BEFORE SDL cleanup
+    // These contexts hold SDL resources which require SDL to be active
 #ifdef __APPLE__
+    // Destroy Graphite context first (if using next-gen backend)
+    if (graphiteContext) {
+        if (!g_jsonOutput) std::cout << "Destroying Graphite context..." << std::endl;
+        graphiteContext.reset();
+        if (!g_jsonOutput) std::cout << "Graphite context destroyed." << std::endl;
+    }
+
+    // Destroy Metal (Ganesh) context
     if (metalContext) {
         if (!g_jsonOutput) std::cout << "Destroying Metal context..." << std::endl;
         metalContext.reset();
