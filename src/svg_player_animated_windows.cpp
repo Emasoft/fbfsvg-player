@@ -2030,8 +2030,8 @@ int main(int argc, char* argv[]) {
                         skipStatsThisFrame = true;
 
                         std::cout << "VSync: " << (vsyncEnabled ? "ON" : "OFF") << std::endl;
-                    } else if (event.key.keysym.sym == SDLK_f) {
-                        // Toggle frame limiter
+                    } else if (event.key.keysym.sym == SDLK_l) {
+                        // Toggle frame limiter (L key)
                         frameLimiterEnabled = !frameLimiterEnabled;
                         // Reset ALL stats (critical for accurate FPS/hit rate)
                         eventTimes.reset();
@@ -2072,8 +2072,8 @@ int main(int argc, char* argv[]) {
                         framesDelivered = 0;
                         startTime = Clock::now();
                         skipStatsThisFrame = true;
-                    } else if (event.key.keysym.sym == SDLK_g) {
-                        // Toggle fullscreen mode (exclusive fullscreen - takes over display)
+                    } else if (event.key.keysym.sym == SDLK_f || event.key.keysym.sym == SDLK_g) {
+                        // Toggle fullscreen mode (F or G key - exclusive fullscreen)
                         isFullscreen = !isFullscreen;
                         if (isFullscreen) {
                             // Use SDL_WINDOW_FULLSCREEN for exclusive fullscreen (no compositor, direct display)
@@ -2686,6 +2686,18 @@ int main(int argc, char* argv[]) {
                                 }  // end if clickedEntry
                                 break;
 
+                            case svgplayer::HitTestResult::PlayArrowEntry:
+                                // Play arrow clicked on a FrameFolder - play it as image sequence
+                                // Note: Windows player doesn't support image sequence mode yet
+                                if (clickedEntry && clickedEntry->type == svgplayer::BrowserEntryType::FrameFolder) {
+                                    std::cout << "[Windows Player] Frame sequence playback not yet supported. Use macOS player." << std::endl;
+                                    std::cout << "  Folder: " << clickedEntry->fullPath << std::endl;
+                                    // Select the folder to provide visual feedback
+                                    g_folderBrowser.selectEntry(clickedEntry->gridIndex);
+                                    refreshBrowserSVG();
+                                }
+                                break;
+
                             case svgplayer::HitTestResult::None:
                                 // Clicked on empty space - clear selection
                                 g_folderBrowser.clearSelection();
@@ -2703,15 +2715,11 @@ int main(int argc, char* argv[]) {
                         int actualW, actualH;
                         SDL_GetRendererOutputSize(renderer, &actualW, &actualH);
 
-                        float windowAspect = static_cast<float>(actualW) / actualH;
-
-                        if (windowAspect > aspectRatio) {
-                            renderHeight = actualH;
-                            renderWidth = static_cast<int>(actualH * aspectRatio);
-                        } else {
-                            renderWidth = actualW;
-                            renderHeight = static_cast<int>(actualW / aspectRatio);
-                        }
+                        // Use full output size - letterboxing is handled by rendering code
+                        // This matches macOS behavior and avoids double-letterboxing bug
+                        // (SVG's preserveAspectRatio handles centering with black bars)
+                        renderWidth = actualW;
+                        renderHeight = actualH;
 
                         SDL_DestroyTexture(texture);
                         texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING,
@@ -3414,6 +3422,33 @@ int main(int argc, char* argv[]) {
             auto idleEnd = Clock::now();
             DurationMs idleTime = idleEnd - idleStart;
             idleTimes.add(idleTime.count());
+        }
+
+        // === UPDATE WINDOW TITLE WITH FPS (every 500ms) ===
+        // Always visible even when debug overlay is off
+        // Uses instantaneous FPS (rolling average) instead of cumulative to respond immediately to limiter changes
+        {
+            static auto lastTitleUpdate = Clock::now();
+            auto now = Clock::now();
+            auto timeSinceUpdate = std::chrono::duration<double>(now - lastTitleUpdate).count();
+            if (timeSinceUpdate >= 0.5) {  // Update every 500ms
+                // Use rolling average of recent frame times for instantaneous FPS
+                // This responds immediately when frame limiter is toggled (unlike cumulative average)
+                double avgFrameTime = frameTimes.average();
+                double currentFps = avgFrameTime > 0 ? (1000.0 / avgFrameTime) : 0.0;
+
+                // Extract filename from path
+                std::string pathStr(inputPath);
+                size_t lastSlash = pathStr.find_last_of("/\\");
+                std::string filename = (lastSlash != std::string::npos) ? pathStr.substr(lastSlash + 1) : pathStr;
+
+                // Build title: "filename - XX.X FPS - SVG Player"
+                std::ostringstream titleStream;
+                titleStream << filename << " - " << std::fixed << std::setprecision(1) << currentFps << " FPS - SVG Player";
+                SDL_SetWindowTitle(window, titleStream.str().c_str());
+
+                lastTitleUpdate = now;
+            }
         }
 
         // Detect and log stutters (frame time > 30ms) - only when we presented

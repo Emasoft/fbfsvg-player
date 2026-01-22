@@ -4025,6 +4025,75 @@ int main(int argc, char* argv[]) {
                                 }  // end if clickedEntry
                                 break;
 
+                            case svgplayer::HitTestResult::PlayArrowEntry:
+                                // Play arrow clicked on a FrameFolder - play it as image sequence
+                                if (clickedEntry && clickedEntry->type == svgplayer::BrowserEntryType::FrameFolder) {
+                                    std::cout << "\n=== Playing frame sequence (play arrow): " << clickedEntry->fullPath << " ===" << std::endl;
+
+                                    // Proper browser cleanup before loading
+                                    g_folderBrowser.stopThumbnailLoader();
+                                    stopAsyncBrowserDomParse();
+                                    g_folderBrowser.cancelScan();
+                                    g_browserAsyncScanning = false;
+                                    g_browserMode = false;
+                                    g_browserSvgDom = nullptr;
+                                    clearBrowserAnimations();
+
+                                    // Stop FBF.SVG renderers before switching to image sequence mode
+                                    if (threadedRendererPtr) threadedRendererPtr->stop();
+                                    parallelRenderer.stop();
+
+                                    // Clear FBF.SVG mode state
+                                    rawSvgContent.clear();
+                                    animations.clear();
+                                    svgDom = nullptr;
+
+                                    // Enable image sequence mode
+                                    isImageSequence = true;
+                                    sequentialMode = true;
+
+                                    // Scan folder for SVG frames
+                                    sequenceFiles = scanFolderForSVGSequence(clickedEntry->fullPath.c_str());
+                                    if (sequenceFiles.empty()) {
+                                        std::cerr << "Error: No SVG files found in folder: " << clickedEntry->fullPath << std::endl;
+                                        isImageSequence = false;
+                                    } else {
+                                        // Pre-load all SVG file contents for fast frame switching
+                                        sequenceSvgContents.clear();
+                                        sequenceSvgContents.reserve(sequenceFiles.size());
+                                        for (const auto& filePath : sequenceFiles) {
+                                            std::ifstream file(filePath);
+                                            if (file) {
+                                                std::stringstream buffer;
+                                                buffer << file.rdbuf();
+                                                sequenceSvgContents.push_back(buffer.str());
+                                            }
+                                        }
+                                        std::cout << "Pre-loaded " << sequenceSvgContents.size() << " SVG frames into memory" << std::endl;
+
+                                        // Reset animation timing state for new sequence
+                                        animationStartTime = Clock::now();
+                                        animationStartTimeSteady = SteadyClock::now();
+                                        pausedTime = 0;
+                                        lastRenderedAnimFrame = 0;
+                                        displayCycles = 0;
+                                        framesDelivered = 0;
+                                        framesSkipped = 0;
+                                        framesRendered = 0;
+                                        animationPaused = false;
+
+                                        // Update window title
+                                        size_t lastSlash = clickedEntry->fullPath.find_last_of("/\\");
+                                        std::string folderName = (lastSlash != std::string::npos) ?
+                                            clickedEntry->fullPath.substr(lastSlash + 1) : clickedEntry->fullPath;
+                                        std::string windowTitle = "SVG Player - " + folderName + " (frames)";
+                                        SDL_SetWindowTitle(window, windowTitle.c_str());
+
+                                        std::cout << "Loaded frame sequence: " << clickedEntry->fullPath << std::endl;
+                                    }
+                                }
+                                break;
+
                             case svgplayer::HitTestResult::None:
                                 // Clicked on empty space - clear selection
                                 g_folderBrowser.clearSelection();
@@ -5309,6 +5378,33 @@ int main(int argc, char* argv[]) {
             auto idleEnd = Clock::now();
             DurationMs idleTime = idleEnd - idleStart;
             idleTimes.add(idleTime.count());
+        }
+
+        // === UPDATE WINDOW TITLE WITH FPS (every 500ms) ===
+        // Always visible even when debug overlay is off
+        // Uses instantaneous FPS (rolling average) instead of cumulative to respond immediately to limiter changes
+        {
+            static auto lastTitleUpdate = Clock::now();
+            auto now = Clock::now();
+            auto timeSinceUpdate = std::chrono::duration<double>(now - lastTitleUpdate).count();
+            if (timeSinceUpdate >= 0.5) {  // Update every 500ms
+                // Use rolling average of recent frame times for instantaneous FPS
+                // This responds immediately when frame limiter is toggled (unlike cumulative average)
+                double avgFrameTime = frameTimes.average();
+                double currentFps = avgFrameTime > 0 ? (1000.0 / avgFrameTime) : 0.0;
+
+                // Extract filename from path
+                std::string pathStr(inputPath);
+                size_t lastSlash = pathStr.find_last_of("/\\");
+                std::string filename = (lastSlash != std::string::npos) ? pathStr.substr(lastSlash + 1) : pathStr;
+
+                // Build title: "filename - XX.X FPS - SVG Player"
+                std::ostringstream titleStream;
+                titleStream << filename << " - " << std::fixed << std::setprecision(1) << currentFps << " FPS - SVG Player";
+                SDL_SetWindowTitle(window, titleStream.str().c_str());
+
+                lastTitleUpdate = now;
+            }
         }
 
         // Detect and log stutters (frame time > 30ms) - only when we presented
