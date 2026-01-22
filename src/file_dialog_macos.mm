@@ -176,10 +176,25 @@ bool toggleWindowMaximize(SDL_Window* window) {
         if (SDL_GetWindowWMInfo(window, &wmInfo)) {
             NSWindow* nsWindow = wmInfo.info.cocoa.window;
             if (nsWindow) {
-                // Toggle zoom state using macOS native zoom
-                [nsWindow zoom:nil];
-                // Return the new zoom state
-                return [nsWindow isZoomed];
+                __block BOOL result = NO;
+
+                // macOS UI operations must run on the main thread
+                // Use dispatch_sync to wait for completion and get result
+                void (^zoomBlock)(void) = ^{
+                    // Toggle zoom state using macOS native zoom
+                    [nsWindow zoom:nil];
+                    // Get the new zoom state
+                    result = [nsWindow isZoomed];
+                };
+
+                // Check if we're already on the main thread to avoid deadlock
+                if ([NSThread isMainThread]) {
+                    zoomBlock();
+                } else {
+                    dispatch_sync(dispatch_get_main_queue(), zoomBlock);
+                }
+
+                return result;
             }
         }
         return false;
@@ -194,7 +209,21 @@ bool isWindowMaximized(SDL_Window* window) {
         if (SDL_GetWindowWMInfo(window, &wmInfo)) {
             NSWindow* nsWindow = wmInfo.info.cocoa.window;
             if (nsWindow) {
-                return [nsWindow isZoomed];
+                __block BOOL result = NO;
+
+                // macOS UI operations must run on the main thread
+                void (^checkBlock)(void) = ^{
+                    result = [nsWindow isZoomed];
+                };
+
+                // Check if we're already on the main thread to avoid deadlock
+                if ([NSThread isMainThread]) {
+                    checkBlock();
+                } else {
+                    dispatch_sync(dispatch_get_main_queue(), checkBlock);
+                }
+
+                return result;
             }
         }
         return false;

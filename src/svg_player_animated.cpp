@@ -921,11 +921,6 @@ class SkiaParallelRenderer {
             if (!cache->surface) return;
         }
 
-        // Set container size to render dimensions (Chrome-like behavior)
-        // This makes percentage dimensions resolve to render window size,
-        // so background rects fill the entire window with no letterboxing
-        cache->dom->setContainerSize(SkSize::Make(renderWidth, renderHeight));
-
         // Apply ALL animation states for this specific time point
         // Each animation calculates its own frame based on elapsed time, not frame index
         // This correctly handles animations with different durations and frame counts
@@ -941,11 +936,24 @@ class SkiaParallelRenderer {
         }
 
         SkCanvas* canvas = cache->surface->getCanvas();
-        canvas->clear(SK_ColorTRANSPARENT);
+        canvas->clear(SK_ColorBLACK);
 
-        // No manual scaling - let the SVG handle aspect ratio via preserveAspectRatio
-        // Container size is set to render dimensions, so percentages resolve correctly
+        // Calculate scale to fit SVG in render area while preserving aspect ratio
+        // This matches the GPU rendering paths (Graphite and Ganesh Metal)
+        int effectiveSvgW = (svgWidth > 0) ? svgWidth : renderWidth;
+        int effectiveSvgH = (svgHeight > 0) ? svgHeight : renderHeight;
+        float scale = std::min(static_cast<float>(renderWidth) / effectiveSvgW,
+                              static_cast<float>(renderHeight) / effectiveSvgH);
+        float offsetX = (renderWidth - effectiveSvgW * scale) / 2.0f;
+        float offsetY = (renderHeight - effectiveSvgH * scale) / 2.0f;
+
+        // Apply transform to preserve aspect ratio and center content
+        canvas->save();
+        canvas->translate(offsetX, offsetY);
+        canvas->scale(scale, scale);
+        cache->dom->setContainerSize(SkSize::Make(effectiveSvgW, effectiveSvgH));
         cache->dom->render(canvas);
+        canvas->restore();
 
         SkPixmap pixmap;
         if (cache->surface->peekPixels(&pixmap)) {
@@ -1365,10 +1373,6 @@ class ThreadedRenderer {
                 }
 
                 if (threadSurface && threadDom) {
-                    // Set container size to render dimensions (Chrome-like behavior)
-                    // This makes percentage dimensions resolve to render window size
-                    threadDom->setContainerSize(SkSize::Make(localWidth, localHeight));
-
                     // Apply ALL animation states to render thread's DOM (sync with main thread)
                     // This ensures multiple simultaneous animations are rendered correctly
                     for (const auto& animState : localAnimStates) {
@@ -1390,42 +1394,47 @@ class ThreadedRenderer {
 
                     SkCanvas* canvas = threadSurface->getCanvas();
 
+                    // Calculate uniform scale to fit SVG in render area while preserving aspect ratio
+                    // This matches the GPU rendering paths (Graphite and Ganesh Metal)
+                    int effectiveSvgW = (localSvgW > 0) ? localSvgW : localWidth;
+                    int effectiveSvgH = (localSvgH > 0) ? localSvgH : localHeight;
+                    float uniformScale = std::min(static_cast<float>(localWidth) / effectiveSvgW,
+                                                  static_cast<float>(localHeight) / effectiveSvgH);
+                    float offsetX = (localWidth - effectiveSvgW * uniformScale) / 2.0f;
+                    float offsetY = (localHeight - effectiveSvgH * uniformScale) / 2.0f;
+
                     // Decide partial vs full render based on dirty region analysis
                     // Note: dirty rects are in SVG coordinate space, need scaling to render space
                     bool usePartialRender = dirtyTrackingInitialized_ &&
                                             !dirtyTracker_.shouldUseFullRender(
-                                                static_cast<float>(localSvgW),
-                                                static_cast<float>(localSvgH)) &&
+                                                static_cast<float>(effectiveSvgW),
+                                                static_cast<float>(effectiveSvgH)) &&
                                             dirtyTracker_.getDirtyCount() > 0;
                     usedPartialRender = usePartialRender;  // Copy to outer scope for stats
-
-                    // Calculate scaling factors from SVG space to render space
-                    // This handles the case where SVG is scaled to fit the window
-                    float scaleX = (localSvgW > 0) ? static_cast<float>(localWidth) / static_cast<float>(localSvgW) : 1.0f;
-                    float scaleY = (localSvgH > 0) ? static_cast<float>(localHeight) / static_cast<float>(localSvgH) : 1.0f;
 
                     if (usePartialRender) {
                         // PARTIAL RENDER PATH - only clear and render dirty region
                         auto unionRect = dirtyTracker_.getUnionDirtyRect();
 
                         // Scale dirty rect from SVG coordinates to render coordinates
+                        // Apply uniform scale and offset for aspect-ratio preserving transform
                         // Add 1 pixel margin for rounding/anti-aliasing safety
                         SkRect clipRect = SkRect::MakeXYWH(
-                            unionRect.x * scaleX - 1.0f,
-                            unionRect.y * scaleY - 1.0f,
-                            unionRect.width * scaleX + 2.0f,
-                            unionRect.height * scaleY + 2.0f);
+                            offsetX + unionRect.x * uniformScale - 1.0f,
+                            offsetY + unionRect.y * uniformScale - 1.0f,
+                            unionRect.width * uniformScale + 2.0f,
+                            unionRect.height * uniformScale + 2.0f);
 
                         // Clamp to canvas bounds
                         clipRect.intersect(SkRect::MakeWH(localWidth, localHeight));
 
                         canvas->save();
                         canvas->clipRect(clipRect);
-                        canvas->clear(SK_ColorTRANSPARENT);
+                        canvas->clear(SK_ColorBLACK);
                         // partialRenderCount_ incremented in success path below
                     } else {
                         // FULL RENDER PATH - clear entire canvas
-                        canvas->clear(SK_ColorTRANSPARENT);
+                        canvas->clear(SK_ColorBLACK);
                         // fullRenderCount_ incremented in success path below
                     }
 
@@ -1439,9 +1448,14 @@ class ThreadedRenderer {
                     }
 
                     if (elapsed < RENDER_TIMEOUT_MS) {
-                        // Render the SVG (partial or full depending on clipping state)
+                        // Render the SVG with aspect-ratio preserving transform
                         auto svgRenderStart = Clock::now();
+                        canvas->save();
+                        canvas->translate(offsetX, offsetY);
+                        canvas->scale(uniformScale, uniformScale);
+                        threadDom->setContainerSize(SkSize::Make(effectiveSvgW, effectiveSvgH));
                         threadDom->render(canvas);
+                        canvas->restore();
                         auto svgRenderEnd = Clock::now();
                         renderSuccess = true;
                         if (debugRenderLoop) {
@@ -3632,49 +3646,53 @@ int main(int argc, char* argv[]) {
                                 break;
 
                             case svgplayer::HitTestResult::LoadButton:
-                                // Load button loads selected SVG (if one is selected)
+                                // Load button loads selected entry (SVG file or frame folder)
                                 if (g_folderBrowser.canLoad()) {
                                     std::optional<svgplayer::BrowserEntry> selected = g_folderBrowser.getSelectedEntry();
-                                    if (selected.has_value() && selected->type == svgplayer::BrowserEntryType::SVGFile) {
-                                        std::cout << "\n=== Loading from browser (Load button): " << selected->fullPath << " ===" << std::endl;
-                                        // Proper browser cleanup before loading
-                                        g_folderBrowser.stopThumbnailLoader();
-                                        stopAsyncBrowserDomParse();
-                                        g_folderBrowser.cancelScan();
-                                        g_browserAsyncScanning = false;
-                                        g_browserMode = false;
-                                        g_browserSvgDom = nullptr;
-                                        clearBrowserAnimations();
+                                    if (selected.has_value()) {
+                                        // Handle different loadable types
+                                        if (selected->type == svgplayer::BrowserEntryType::FrameFolder) {
+                                            // Load frame sequence folder
+                                            std::cout << "\n=== Loading frame sequence (Load button): " << selected->fullPath << " ===" << std::endl;
+                                            g_folderBrowser.stopThumbnailLoader();
+                                            stopAsyncBrowserDomParse();
+                                            g_folderBrowser.cancelScan();
+                                            g_browserAsyncScanning = false;
+                                            g_browserMode = false;
+                                            g_browserSvgDom = nullptr;
+                                            clearBrowserAnimations();
 
-                                        static std::string currentFilePathLoad;
-                                        std::string newPath = selected->fullPath;
-                                        if (!newPath.empty() && fileExists(newPath.c_str())) {
-                                            // Stop renderers before loading
+                                            // Stop FBF.SVG renderers before switching to image sequence mode
                                             if (threadedRendererPtr) threadedRendererPtr->stop();
                                             parallelRenderer.stop();
+                                            rawSvgContent.clear();
+                                            animations.clear();
+                                            svgDom = nullptr;
 
-                                            // Load SVG file using unified loading function
-                                            SVGLoadError error = loadSVGFile(newPath, inputPath, rawSvgContent, animations, svgDom,
-                                                                            svgWidth, svgHeight, aspectRatio,
-                                                                            preBufferTotalDuration, preBufferTotalFrames,
-                                                                            currentFilePathLoad);
+                                            // Enable image sequence mode
+                                            isImageSequence = true;
+                                            sequentialMode = true;
 
-                                            if (error == SVGLoadError::Success) {
-                                                // Success - reset stats and configure renderers
-                                                g_animController.resetStats();
-
-                                                parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
-                                                                          animations, preBufferTotalDuration, preBufferTotalFrames);
-                                                parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-
-                                                if (threadedRendererPtr) {
-                                                    threadedRendererPtr->configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
-                                                    threadedRendererPtr->setTotalAnimationFrames(preBufferTotalFrames);
-                                                    threadedRendererPtr->initializeDirtyTracking(animations);
-                                                    threadedRendererPtr->start();
+                                            // Scan folder for SVG frames
+                                            sequenceFiles = scanFolderForSVGSequence(selected->fullPath.c_str());
+                                            if (sequenceFiles.empty()) {
+                                                std::cerr << "Error: No SVG files found in folder: " << selected->fullPath << std::endl;
+                                                isImageSequence = false;
+                                            } else {
+                                                // Pre-load all SVG file contents for fast frame switching
+                                                sequenceSvgContents.clear();
+                                                sequenceSvgContents.reserve(sequenceFiles.size());
+                                                for (const auto& filePath : sequenceFiles) {
+                                                    std::ifstream file(filePath);
+                                                    if (file) {
+                                                        std::stringstream buffer;
+                                                        buffer << file.rdbuf();
+                                                        sequenceSvgContents.push_back(buffer.str());
+                                                    }
                                                 }
+                                                std::cout << "Pre-loaded " << sequenceSvgContents.size() << " SVG frames into memory" << std::endl;
 
-                                                // Reset animation timing state
+                                                // Reset animation timing state for new sequence
                                                 animationStartTime = Clock::now();
                                                 animationStartTimeSteady = SteadyClock::now();
                                                 pausedTime = 0;
@@ -3686,19 +3704,79 @@ int main(int argc, char* argv[]) {
                                                 animationPaused = false;
 
                                                 // Update window title
-                                                size_t lastSlash = newPath.find_last_of("/\\");
-                                                std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
-                                                std::string windowTitle = "SVG Player - " + filename;
+                                                size_t lastSlash = selected->fullPath.find_last_of("/\\");
+                                                std::string folderName = (lastSlash != std::string::npos) ?
+                                                    selected->fullPath.substr(lastSlash + 1) : selected->fullPath;
+                                                std::string windowTitle = "SVG Player - " + folderName + " (frames)";
                                                 SDL_SetWindowTitle(window, windowTitle.c_str());
+                                                std::cout << "Loaded frame sequence: " << selected->fullPath << std::endl;
+                                            }
+                                        } else if (selected->type == svgplayer::BrowserEntryType::SVGFile ||
+                                                   selected->type == svgplayer::BrowserEntryType::FBFSVGFile) {
+                                            // Load SVG file (static or animated FBF.SVG)
+                                            std::cout << "\n=== Loading from browser (Load button): " << selected->fullPath << " ===" << std::endl;
+                                            g_folderBrowser.stopThumbnailLoader();
+                                            stopAsyncBrowserDomParse();
+                                            g_folderBrowser.cancelScan();
+                                            g_browserAsyncScanning = false;
+                                            g_browserMode = false;
+                                            g_browserSvgDom = nullptr;
+                                            clearBrowserAnimations();
 
-                                                std::cout << "Loaded: " << newPath << std::endl;
-                                                std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
-                                                std::cout << "  Animations: " << animations.size() << std::endl;
-                                            } else {
-                                                // Loading failed - restart with old content if available
-                                                if (svgDom) {
+                                            static std::string currentFilePathLoad;
+                                            std::string newPath = selected->fullPath;
+                                            if (!newPath.empty() && fileExists(newPath.c_str())) {
+                                                // Stop renderers before loading
+                                                if (threadedRendererPtr) threadedRendererPtr->stop();
+                                                parallelRenderer.stop();
+
+                                                // Load SVG file using unified loading function
+                                                SVGLoadError error = loadSVGFile(newPath, inputPath, rawSvgContent, animations, svgDom,
+                                                                                svgWidth, svgHeight, aspectRatio,
+                                                                                preBufferTotalDuration, preBufferTotalFrames,
+                                                                                currentFilePathLoad);
+
+                                                if (error == SVGLoadError::Success) {
+                                                    // Success - reset stats and configure renderers
+                                                    g_animController.resetStats();
+
+                                                    parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                                                                              animations, preBufferTotalDuration, preBufferTotalFrames);
                                                     parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-                                                    if (threadedRendererPtr) threadedRendererPtr->start();
+
+                                                    if (threadedRendererPtr) {
+                                                        threadedRendererPtr->configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                                        threadedRendererPtr->setTotalAnimationFrames(preBufferTotalFrames);
+                                                        threadedRendererPtr->initializeDirtyTracking(animations);
+                                                        threadedRendererPtr->start();
+                                                    }
+
+                                                    // Reset animation timing state
+                                                    animationStartTime = Clock::now();
+                                                    animationStartTimeSteady = SteadyClock::now();
+                                                    pausedTime = 0;
+                                                    lastRenderedAnimFrame = 0;
+                                                    displayCycles = 0;
+                                                    framesDelivered = 0;
+                                                    framesSkipped = 0;
+                                                    framesRendered = 0;
+                                                    animationPaused = false;
+
+                                                    // Update window title
+                                                    size_t lastSlash = newPath.find_last_of("/\\");
+                                                    std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
+                                                    std::string windowTitle = "SVG Player - " + filename;
+                                                    SDL_SetWindowTitle(window, windowTitle.c_str());
+
+                                                    std::cout << "Loaded: " << newPath << std::endl;
+                                                    std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
+                                                    std::cout << "  Animations: " << animations.size() << std::endl;
+                                                } else {
+                                                    // Loading failed - restart with old content if available
+                                                    if (svgDom) {
+                                                        parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                                        if (threadedRendererPtr) threadedRendererPtr->start();
+                                                    }
                                                 }
                                             }
                                         }
@@ -3774,6 +3852,94 @@ int main(int argc, char* argv[]) {
                                                 refreshBrowserSVG();
                                             }
                                             break;
+
+                                        case svgplayer::BrowserEntryType::FrameFolder:
+                                            if (isDoubleClick) {
+                                                // Double-click loads the frame sequence folder
+                                                std::cout << "\n=== Loading frame sequence from browser: " << clickedEntry->fullPath << " ===" << std::endl;
+                                            } else {
+                                                // Single click selects the frame folder
+                                                g_folderBrowser.selectEntry(clickedEntry->gridIndex);
+                                                refreshBrowserSVG();
+                                                break;
+                                            }
+                                            // Load the frame folder as image sequence (reached via double-click fall-through)
+                                            {
+                                                // Proper browser cleanup before loading
+                                                g_folderBrowser.stopThumbnailLoader();
+                                                stopAsyncBrowserDomParse();
+                                                g_folderBrowser.cancelScan();
+                                                g_browserAsyncScanning = false;
+                                                g_browserMode = false;
+                                                g_browserSvgDom = nullptr;
+                                                clearBrowserAnimations();
+
+                                                // Stop FBF.SVG renderers before switching to image sequence mode
+                                                if (threadedRendererPtr) threadedRendererPtr->stop();
+                                                parallelRenderer.stop();
+
+                                                // Clear FBF.SVG mode state
+                                                rawSvgContent.clear();
+                                                animations.clear();
+                                                svgDom = nullptr;
+
+                                                // Enable image sequence mode
+                                                isImageSequence = true;
+                                                sequentialMode = true;
+
+                                                // Scan folder for SVG frames
+                                                sequenceFiles = scanFolderForSVGSequence(clickedEntry->fullPath.c_str());
+                                                if (sequenceFiles.empty()) {
+                                                    std::cerr << "Error: No SVG files found in folder: " << clickedEntry->fullPath << std::endl;
+                                                    isImageSequence = false;
+                                                } else {
+                                                    // Pre-load all SVG file contents for fast frame switching
+                                                    sequenceSvgContents.clear();
+                                                    sequenceSvgContents.reserve(sequenceFiles.size());
+                                                    for (const auto& filePath : sequenceFiles) {
+                                                        std::ifstream file(filePath);
+                                                        if (file) {
+                                                            std::stringstream buffer;
+                                                            buffer << file.rdbuf();
+                                                            sequenceSvgContents.push_back(buffer.str());
+                                                        }
+                                                    }
+                                                    std::cout << "Pre-loaded " << sequenceSvgContents.size() << " SVG frames into memory" << std::endl;
+
+                                                    // Reset animation timing state for new sequence
+                                                    animationStartTime = Clock::now();
+                                                    animationStartTimeSteady = SteadyClock::now();
+                                                    pausedTime = 0;
+                                                    lastRenderedAnimFrame = 0;
+                                                    displayCycles = 0;
+                                                    framesDelivered = 0;
+                                                    framesSkipped = 0;
+                                                    framesRendered = 0;
+                                                    animationPaused = false;
+
+                                                    // Update window title
+                                                    size_t lastSlash = clickedEntry->fullPath.find_last_of("/\\");
+                                                    std::string folderName = (lastSlash != std::string::npos) ?
+                                                        clickedEntry->fullPath.substr(lastSlash + 1) : clickedEntry->fullPath;
+                                                    std::string windowTitle = "SVG Player - " + folderName + " (frames)";
+                                                    SDL_SetWindowTitle(window, windowTitle.c_str());
+
+                                                    std::cout << "Loaded frame sequence: " << clickedEntry->fullPath << std::endl;
+                                                }
+                                            }
+                                            break;
+
+                                        case svgplayer::BrowserEntryType::FBFSVGFile:
+                                            // FBFSVGFile behaves same as SVGFile (animated FBF.SVG)
+                                            if (isDoubleClick) {
+                                                std::cout << "\n=== Loading FBF.SVG from browser: " << clickedEntry->fullPath << " ===" << std::endl;
+                                            } else {
+                                                g_folderBrowser.selectEntry(clickedEntry->gridIndex);
+                                                refreshBrowserSVG();
+                                                break;
+                                            }
+                                            // Fall through to SVGFile loading code
+                                            [[fallthrough]];
 
                                         case svgplayer::BrowserEntryType::SVGFile:
                                             if (isDoubleClick) {
@@ -4510,9 +4676,23 @@ int main(int argc, char* argv[]) {
                             SkCanvas* surfaceCanvas = surface->getCanvas();
                             if (surfaceCanvas) {
                                 surfaceCanvas->clear(SK_ColorBLACK);
-                                SkSize containerSize = SkSize::Make(renderWidth, renderHeight);
+
+                                // Calculate scale to fit SVG in render area while preserving aspect ratio
+                                // This matches the GPU rendering paths (Graphite and Ganesh Metal)
+                                float scale = std::min(static_cast<float>(renderWidth) / svgWidth,
+                                                      static_cast<float>(renderHeight) / svgHeight);
+                                float offsetX = (renderWidth - svgWidth * scale) / 2.0f;
+                                float offsetY = (renderHeight - svgHeight * scale) / 2.0f;
+
+                                // Apply transform to preserve aspect ratio and center content
+                                surfaceCanvas->save();
+                                surfaceCanvas->translate(offsetX, offsetY);
+                                surfaceCanvas->scale(scale, scale);
+                                SkSize containerSize = SkSize::Make(svgWidth, svgHeight);
                                 frameDom->setContainerSize(containerSize);
                                 frameDom->render(surfaceCanvas);
+                                surfaceCanvas->restore();
+
                                 gotNewFrame = true;
                                 framesDelivered++;
                             }

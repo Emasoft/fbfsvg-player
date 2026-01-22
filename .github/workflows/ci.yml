@@ -181,16 +181,16 @@ jobs:
           ls -la build/
 
           echo "Verifying Mach-O format..."
-          file build/svg_player_animated
+          file build/fbfsvg-player
 
           echo "Checking dependencies..."
-          otool -L build/svg_player_animated | head -10
+          otool -L build/fbfsvg-player | head -10
 
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-player
-          path: build/svg_player_animated
+          path: build/fbfsvg-player
 
   # ==========================================================================
   # iOS Build
@@ -407,7 +407,7 @@ jobs:
 
           Write-Host ""
           Write-Host "Verifying PE format..."
-          $exe = "build\windows\svg_player_animated.exe"
+          $exe = "build\windows\fbfsvg-player.exe"
           if (Test-Path $exe) {
             $fileInfo = Get-Item $exe
             Write-Host "File: $($fileInfo.Name)"
@@ -432,7 +432,7 @@ jobs:
         with:
           name: windows-player
           path: |
-            build/windows/svg_player_animated.exe
+            build/windows/fbfsvg-player.exe
             build/windows/SDL2.dll
 
   # ==========================================================================

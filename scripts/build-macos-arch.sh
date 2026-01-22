@@ -163,7 +163,7 @@ BUILD_DIR="$PROJECT_ROOT/build"
 mkdir -p "$BUILD_DIR"
 
 # Output binary name
-TARGET="$BUILD_DIR/svg_player_animated-macos-$arch"
+TARGET="$BUILD_DIR/fbfsvg-player-macos-$arch"
 
 # Include paths (includes shared/ for SVGAnimationController)
 INCLUDES="-I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules -I$PROJECT_ROOT $(pkg-config --cflags sdl2)"
@@ -205,20 +205,30 @@ log_info "Sources: $SRC_DIR/svg_player_animated.cpp"
 log_info "         $SHARED_DIR/SVGAnimationController.cpp"
 log_info "         $SHARED_DIR/SVGGridCompositor.cpp"
 log_info "         $SHARED_DIR/svg_instrumentation.cpp"
+log_info "         $SHARED_DIR/DirtyRegionTracker.cpp"
+log_info "         $SHARED_DIR/ElementBoundsExtractor.cpp"
 log_info "         $SRC_DIR/file_dialog_macos.mm"
+log_info "         $SRC_DIR/metal_context.mm"
+log_info "         $SRC_DIR/graphite_context_metal.mm"
 log_info "         $SRC_DIR/folder_browser.cpp"
 log_info "         $SRC_DIR/thumbnail_cache.cpp"
+log_info "         $SRC_DIR/remote_control.cpp"
 log_info "Target: $TARGET"
 
-# Build command - includes shared animation controller, grid compositor, instrumentation, Obj-C++ file dialog, folder browser, and thumbnail cache
+# Build command - includes shared animation controller, grid compositor, instrumentation, dirty region tracker, bounds extractor, Obj-C++ files (file dialog, Metal context), folder browser, thumbnail cache, and remote control
 $CXX $CXXFLAGS $ARCH_FLAG $INCLUDES \
     "$SRC_DIR/svg_player_animated.cpp" \
     "$SHARED_DIR/SVGAnimationController.cpp" \
     "$SHARED_DIR/SVGGridCompositor.cpp" \
     "$SHARED_DIR/svg_instrumentation.cpp" \
+    "$SHARED_DIR/DirtyRegionTracker.cpp" \
+    "$SHARED_DIR/ElementBoundsExtractor.cpp" \
     "$SRC_DIR/file_dialog_macos.mm" \
+    "$SRC_DIR/metal_context.mm" \
+    "$SRC_DIR/graphite_context_metal.mm" \
     "$SRC_DIR/folder_browser.cpp" \
     "$SRC_DIR/thumbnail_cache.cpp" \
+    "$SRC_DIR/remote_control.cpp" \
     -o "$TARGET" \
     $SKIA_LIBS \
     $LDFLAGS \

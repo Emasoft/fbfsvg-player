@@ -16,9 +16,11 @@
 languages:
 - bash
 - cpp
-
-# the encoding used by text files in the project
-# For a list of possible encodings, see https://docs.python.org/3.11/library/codecs.html#standard-encodings
+- python
+- csharp
+- swift
+- typescript
+- rust
 encoding: "utf-8"
 
 # whether to use the project's gitignore file to ignore files
@@ -83,3 +85,4 @@ initial_prompt: ""
 
 project_name: "SKIA-BUILD-ARM64"
 included_optional_tools: []
+fixed_tools: []

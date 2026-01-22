@@ -113,15 +113,16 @@ void ThumbnailCache::processLoadRequest(const ThumbnailLoadRequest& req) {
 
     std::cout << "[ThumbnailCache] Processing: " << filename << std::endl;
 
-    // Check if already loaded or loading
+    // Check if already loaded or currently loading (but NOT if Pending - we need to process those!)
     {
         std::lock_guard<std::mutex> lock(cacheMutex_);
         auto it = cache_.find(req.filePath);
         if (it != cache_.end() &&
             (it->second.state == ThumbnailState::Ready ||
-             it->second.state == ThumbnailState::Loading ||
-             it->second.state == ThumbnailState::Pending)) {
-            return;  // Already processed or being processed
+             it->second.state == ThumbnailState::Loading)) {
+            // Note: We intentionally do NOT skip Pending state - that's what we're here to process!
+            // Pending means "queued but not yet started" - exactly what processLoadRequest handles.
+            return;  // Already completed or another thread is loading
         }
 
         // Mark as loading

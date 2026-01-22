@@ -15,7 +15,7 @@
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
-PLAYER="$PROJECT_ROOT/build/svg_player_animated"
+PLAYER="$PROJECT_ROOT/build/fbfsvg-player"
 SVG_FILE="$PROJECT_ROOT/svg_input_samples/panther_bird.fbf.svg"
 
 # Maximum runtime for entire test suite (seconds)
@@ -35,7 +35,7 @@ cleanup() {
         wait "$pid" 2>/dev/null || true
     done
     # Kill any stray player processes from this test run
-    pkill -f "svg_player_animated.*panther_bird" 2>/dev/null || true
+    pkill -f "fbfsvg-player.*panther_bird" 2>/dev/null || true
     exit $exit_code
 }
 

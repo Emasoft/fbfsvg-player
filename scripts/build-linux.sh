@@ -100,6 +100,31 @@ check_gl_dependencies() {
     fi
 }
 
+# Check for Vulkan dependencies (for Graphite backend)
+check_vulkan_dependencies() {
+    log_info "Checking for Vulkan dependencies..."
+
+    local vulkan_found=false
+
+    # Check for Vulkan headers and library
+    if pkg-config --exists vulkan 2>/dev/null; then
+        vulkan_found=true
+        vulkan_version=$(pkg-config --modversion vulkan 2>/dev/null)
+        log_info "Vulkan found via pkg-config (version: $vulkan_version)"
+    elif [ -f /usr/include/vulkan/vulkan.h ] && [ -f /usr/lib/libvulkan.so -o -f /usr/lib/x86_64-linux-gnu/libvulkan.so.1 ]; then
+        vulkan_found=true
+        log_info "Vulkan found in system paths"
+    fi
+
+    if [ "$vulkan_found" = false ]; then
+        log_warn "Vulkan not found - Graphite backend will not be available"
+        log_info "To install Vulkan: sudo apt-get install libvulkan-dev vulkan-tools"
+        return 1
+    fi
+
+    return 0
+}
+
 # Check for system library dependencies
 check_system_dependencies() {
     log_info "Checking for system library dependencies..."
@@ -279,6 +304,13 @@ if ! check_skia; then
 fi
 
 echo ""
+# Check for Vulkan (optional, for Graphite backend)
+VULKAN_AVAILABLE=false
+if check_vulkan_dependencies; then
+    VULKAN_AVAILABLE=true
+fi
+
+echo ""
 log_info "All required dependencies found. Proceeding with build..."
 echo ""
 
@@ -305,7 +337,7 @@ BUILD_DIR="$PROJECT_ROOT/build"
 mkdir -p "$BUILD_DIR"
 
 # Output binary name (includes architecture suffix for multi-arch support)
-TARGET="$BUILD_DIR/svg_player_animated_linux_$target_cpu"
+TARGET="$BUILD_DIR/fbfsvg-player-linux-$target_cpu"
 
 # Include paths (includes shared/ for SVGAnimationController)
 INCLUDES="-I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules -I$PROJECT_ROOT $(pkg-config --cflags sdl2) $ICU_CFLAGS"
@@ -337,26 +369,57 @@ ICU_LINK_FLAGS="$ICU_LIBS"
 # Linux-specific libraries
 LINUX_LIBS="-lGL -lEGL -lX11 -lXext -lpthread -ldl -lm -lfontconfig -lfreetype"
 
+# Vulkan library for Graphite backend (if available)
+VULKAN_LIBS=""
+if [ "$VULKAN_AVAILABLE" = true ]; then
+    VULKAN_LIBS="-lvulkan"
+    log_info "Vulkan Graphite backend will be available"
+fi
+
 log_info "Compiling SVG player with shared animation controller..."
 log_info "Sources: $SRC_DIR/svg_player_animated_linux.cpp"
+log_info "         $SRC_DIR/folder_browser.cpp"
+log_info "         $SRC_DIR/file_dialog_linux.cpp"
+log_info "         $SRC_DIR/thumbnail_cache.cpp"
+log_info "         $SRC_DIR/remote_control.cpp"
+if [ "$VULKAN_AVAILABLE" = true ]; then
+log_info "         $SRC_DIR/graphite_context_vulkan.cpp"
+fi
 log_info "         $SHARED_DIR/SVGAnimationController.cpp"
 log_info "         $SHARED_DIR/SVGGridCompositor.cpp"
 log_info "         $SHARED_DIR/svg_instrumentation.cpp"
+log_info "         $SHARED_DIR/DirtyRegionTracker.cpp"
+log_info "         $SHARED_DIR/ElementBoundsExtractor.cpp"
 log_info "Compiler: $CXX"
 log_info "Target: $TARGET"
 
-# Build command - use Linux-specific source file with shared animation controller, grid compositor, and instrumentation
+# Build command - use Linux-specific source file with shared animation controller, grid compositor, instrumentation, dirty region tracker, and bounds extractor
+# Includes folder browser, file dialog, thumbnail cache, and remote control for browser mode
 # Link order: source -> Skia modules -> Skia core -> Skia deps -> ICU -> system libs
+# Conditionally include Graphite Vulkan context if Vulkan is available
+GRAPHITE_SOURCE=""
+if [ "$VULKAN_AVAILABLE" = true ]; then
+    GRAPHITE_SOURCE="$SRC_DIR/graphite_context_vulkan.cpp"
+fi
+
 $CXX $CXXFLAGS $INCLUDES \
     "$SRC_DIR/svg_player_animated_linux.cpp" \
+    "$SRC_DIR/folder_browser.cpp" \
+    "$SRC_DIR/file_dialog_linux.cpp" \
+    "$SRC_DIR/thumbnail_cache.cpp" \
+    "$SRC_DIR/remote_control.cpp" \
+    $GRAPHITE_SOURCE \
     "$SHARED_DIR/SVGAnimationController.cpp" \
     "$SHARED_DIR/SVGGridCompositor.cpp" \
     "$SHARED_DIR/svg_instrumentation.cpp" \
+    "$SHARED_DIR/DirtyRegionTracker.cpp" \
+    "$SHARED_DIR/ElementBoundsExtractor.cpp" \
     -o "$TARGET" \
     $SKIA_LIBS \
     $ICU_LINK_FLAGS \
     $LDFLAGS \
-    $LINUX_LIBS
+    $LINUX_LIBS \
+    $VULKAN_LIBS
 
 if [ $? -eq 0 ]; then
     echo ""

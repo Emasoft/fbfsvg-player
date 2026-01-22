@@ -12,6 +12,9 @@
 #include <iomanip>
 #include <iostream>
 #include <cmath>
+#include <regex>
+#include <set>
+#include <climits>
 
 namespace fs = std::filesystem;
 
@@ -71,6 +74,71 @@ static float scaleFont(float baseSize, int containerWidth, float minScale = 0.6f
     float scale = static_cast<float>(containerWidth) / refWidth;
     float clampedScale = std::max(minScale, std::min(maxScale, scale));
     return baseSize * clampedScale;
+}
+
+// Helper function to check if a folder contains numbered SVG frames (e.g., frame_001.svg, 001.svg)
+// Returns true if folder has at least 2 sequentially numbered SVG files
+static bool isFrameSequenceFolder(const std::string& folderPath) {
+    namespace fs = std::filesystem;
+    std::regex framePattern(R"(^(?:frame_)?(\d{1,5})\.svg$)", std::regex::icase);
+    std::set<int> frameNumbers;
+
+    try {
+        for (const auto& entry : fs::directory_iterator(folderPath)) {
+            if (!entry.is_regular_file()) continue;
+            std::string filename = entry.path().filename().string();
+            std::smatch match;
+            if (std::regex_match(filename, match, framePattern)) {
+                frameNumbers.insert(std::stoi(match[1].str()));
+            }
+            // Early exit if we found enough frames (optimization)
+            if (frameNumbers.size() >= 2) {
+                // Verify they are sequential (at least 2 consecutive numbers)
+                auto it = frameNumbers.begin();
+                int prev = *it++;
+                while (it != frameNumbers.end()) {
+                    if (*it == prev + 1) return true;  // Found consecutive frames
+                    prev = *it++;
+                }
+            }
+        }
+    } catch (...) {
+        // If folder can't be scanned, treat as regular folder
+    }
+    return false;
+}
+
+// Helper function to check if an SVG file is an FBF.SVG (contains SMIL animation frames)
+// FBF.SVG files have SMIL animation with frame IDs like "frame_001", "frame_002", etc.
+// Uses fast partial read - only checks first 64KB for performance
+static bool isFBFSVGFile(const std::string& svgPath) {
+    // Read first 64KB of file (enough to detect SMIL animation patterns)
+    constexpr size_t PEEK_SIZE = 65536;
+    std::ifstream file(svgPath, std::ios::binary);
+    if (!file) return false;
+
+    std::string content(PEEK_SIZE, '\0');
+    file.read(&content[0], PEEK_SIZE);
+    size_t bytesRead = file.gcount();
+    content.resize(bytesRead);
+
+    // Look for SMIL animation elements (animate, animateTransform, animateMotion)
+    // combined with frame ID pattern (frame_001, frame_002, etc.)
+    bool hasSmilAnimation =
+        content.find("<animate") != std::string::npos ||
+        content.find("<animateTransform") != std::string::npos ||
+        content.find("<animateMotion") != std::string::npos ||
+        content.find("<set") != std::string::npos;
+
+    if (!hasSmilAnimation) return false;
+
+    // Also check for frame IDs or values pattern typical of FBF.SVG
+    // Pattern: values="#frame_001;#frame_002" or begin/end timing with frame IDs
+    std::regex frameValuesPattern(R"(values\s*=\s*["'][^"']*#frame_\d+)", std::regex::icase);
+    std::regex frameIdPattern(R"(id\s*=\s*["']frame_\d+["'])", std::regex::icase);
+
+    return std::regex_search(content, frameValuesPattern) ||
+           std::regex_search(content, frameIdPattern);
 }
 
 void FolderBrowser::setConfig(const BrowserConfig& config) {
@@ -402,12 +470,22 @@ void FolderBrowser::setDirectoryAsync(const std::string& path, ProgressCallback 
                     }
 
                     if (entry.is_directory()) {
-                        browserEntry.type = BrowserEntryType::Folder;
+                        // Check if folder contains numbered SVG frames (FrameFolder)
+                        if (isFrameSequenceFolder(entry.path().string())) {
+                            browserEntry.type = BrowserEntryType::FrameFolder;
+                        } else {
+                            browserEntry.type = BrowserEntryType::Folder;
+                        }
                     } else if (entry.is_regular_file()) {
                         std::string ext = entry.path().extension().string();
                         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
                         if (ext == ".svg") {
-                            browserEntry.type = BrowserEntryType::SVGFile;
+                            // Check if SVG contains SMIL animation (FBF.SVG format)
+                            if (isFBFSVGFile(entry.path().string())) {
+                                browserEntry.type = BrowserEntryType::FBFSVGFile;
+                            } else {
+                                browserEntry.type = BrowserEntryType::SVGFile;
+                            }
                         } else {
                             continue;  // Skip non-SVG files
                         }
@@ -726,7 +804,11 @@ std::optional<BrowserEntry> FolderBrowser::getSelectedEntry() const {
 
 bool FolderBrowser::canLoad() const {
     std::optional<BrowserEntry> selected = getSelectedEntry();
-    return selected.has_value() && selected->type == BrowserEntryType::SVGFile;
+    if (!selected.has_value()) return false;
+    // Allow loading: SVGFile (static), FBFSVGFile (animated), FrameFolder (image sequence)
+    return selected->type == BrowserEntryType::SVGFile ||
+           selected->type == BrowserEntryType::FBFSVGFile ||
+           selected->type == BrowserEntryType::FrameFolder;
 }
 
 void FolderBrowser::scanDirectory() {
@@ -850,7 +932,12 @@ void FolderBrowser::scanDirectory() {
 
             if (entry.is_directory()) {
                 BrowserEntry folderEntry;
-                folderEntry.type = BrowserEntryType::Folder;
+                // Check if folder contains numbered SVG frames (FrameFolder)
+                if (isFrameSequenceFolder(entry.path().string())) {
+                    folderEntry.type = BrowserEntryType::FrameFolder;
+                } else {
+                    folderEntry.type = BrowserEntryType::Folder;
+                }
                 folderEntry.name = name;
                 folderEntry.fullPath = entry.path().string();
                 folderEntry.modifiedTime = modTime;
@@ -861,7 +948,12 @@ void FolderBrowser::scanDirectory() {
                 std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
                 if (ext == ".svg") {
                     BrowserEntry fileEntry;
-                    fileEntry.type = BrowserEntryType::SVGFile;
+                    // Check if SVG contains SMIL animation (FBF.SVG format)
+                    if (isFBFSVGFile(entry.path().string())) {
+                        fileEntry.type = BrowserEntryType::FBFSVGFile;
+                    } else {
+                        fileEntry.type = BrowserEntryType::SVGFile;
+                    }
                     fileEntry.name = name;
                     fileEntry.fullPath = entry.path().string();
                     fileEntry.modifiedTime = modTime;
@@ -895,6 +987,11 @@ void FolderBrowser::sortEntries() {
     std::vector<BrowserEntry> toSort;
     std::vector<BrowserEntry> fixed;  // ParentDir and Volume entries stay at top
 
+    // Helper: returns true if entry is a folder-like type (Folder or FrameFolder)
+    auto isFolderType = [](BrowserEntryType t) {
+        return t == BrowserEntryType::Folder || t == BrowserEntryType::FrameFolder;
+    };
+
     for (auto& entry : allEntries_) {
         if (entry.type == BrowserEntryType::ParentDir || entry.type == BrowserEntryType::Volume) {
             fixed.push_back(entry);
@@ -907,19 +1004,23 @@ void FolderBrowser::sortEntries() {
     bool ascending = (config_.sortDirection == BrowserSortDirection::Ascending);
 
     if (config_.sortMode == BrowserSortMode::Alphabetical) {
-        std::sort(toSort.begin(), toSort.end(), [ascending](const BrowserEntry& a, const BrowserEntry& b) {
-            // Folders before files, then alphabetical within each group
-            if (a.type == BrowserEntryType::Folder && b.type != BrowserEntryType::Folder) return true;
-            if (a.type != BrowserEntryType::Folder && b.type == BrowserEntryType::Folder) return false;
+        std::sort(toSort.begin(), toSort.end(), [ascending, isFolderType](const BrowserEntry& a, const BrowserEntry& b) {
+            // Folders (including FrameFolders) before files, then alphabetical within each group
+            bool aIsFolder = isFolderType(a.type);
+            bool bIsFolder = isFolderType(b.type);
+            if (aIsFolder && !bIsFolder) return true;
+            if (!aIsFolder && bIsFolder) return false;
             // Ascending: A-Z, Descending: Z-A
             return ascending ? (a.name < b.name) : (a.name > b.name);
         });
     } else {
         // Sort by modified time
-        std::sort(toSort.begin(), toSort.end(), [ascending](const BrowserEntry& a, const BrowserEntry& b) {
-            // Folders before files, then by modified time within each group
-            if (a.type == BrowserEntryType::Folder && b.type != BrowserEntryType::Folder) return true;
-            if (a.type != BrowserEntryType::Folder && b.type == BrowserEntryType::Folder) return false;
+        std::sort(toSort.begin(), toSort.end(), [ascending, isFolderType](const BrowserEntry& a, const BrowserEntry& b) {
+            // Folders (including FrameFolders) before files, then by modified time within each group
+            bool aIsFolder = isFolderType(a.type);
+            bool bIsFolder = isFolderType(b.type);
+            if (aIsFolder && !bIsFolder) return true;
+            if (!aIsFolder && bIsFolder) return false;
             // Ascending: oldest first, Descending: newest first
             return ascending ? (a.modifiedTime < b.modifiedTime) : (a.modifiedTime > b.modifiedTime);
         });
@@ -1778,9 +1879,9 @@ std::string FolderBrowser::generateBrowserSVG() {
         float iconX = cell.x + (cell.width - iconSize) / 2;
         float iconY = cell.y + (cell.height - iconSize) / 2;
 
-        // For SVG thumbnails, use clipPath to ensure content doesn't overflow cell bounds
+        // For SVG thumbnails (both static and animated), use clipPath to ensure content doesn't overflow cell bounds
         // Skia's SVG renderer doesn't reliably honor overflow="hidden" on nested SVGs
-        if (entry.type == BrowserEntryType::SVGFile) {
+        if (entry.type == BrowserEntryType::SVGFile || entry.type == BrowserEntryType::FBFSVGFile) {
             // Define unique clipPath for this cell
             std::string clipId = "cell_clip_" + std::to_string(cell.index);
             svg << R"(<defs><clipPath id=")" << clipId << R"(">)"
@@ -1794,6 +1895,55 @@ std::string FolderBrowser::generateBrowserSVG() {
             // Pass cell.index for deterministic placeholder IDs (fixes race condition regression)
             svg << generateSVGThumbnail(entry.fullPath, iconSize, iconSize, cell.index);
             svg << R"(</g></g>)";
+        } else if (entry.type == BrowserEntryType::FrameFolder) {
+            // FrameFolder: Show thumbnail from first frame in sequence
+            // Find first numbered SVG in folder to use as preview
+            std::string firstFramePath;
+            try {
+                std::regex framePattern(R"(^(?:frame_)?(\d{1,5})\.svg$)", std::regex::icase);
+                int lowestFrame = INT_MAX;
+                for (const auto& fe : fs::directory_iterator(entry.fullPath)) {
+                    if (!fe.is_regular_file()) continue;
+                    std::string filename = fe.path().filename().string();
+                    std::smatch match;
+                    if (std::regex_match(filename, match, framePattern)) {
+                        int frameNum = std::stoi(match[1].str());
+                        if (frameNum < lowestFrame) {
+                            lowestFrame = frameNum;
+                            firstFramePath = fe.path().string();
+                        }
+                    }
+                }
+            } catch (...) {}
+
+            if (!firstFramePath.empty()) {
+                // Show first frame as thumbnail with film reel overlay
+                std::string clipId = "cell_clip_" + std::to_string(cell.index);
+                svg << R"(<defs><clipPath id=")" << clipId << R"(">)"
+                    << R"(<rect x=")" << iconX << R"(" y=")" << iconY
+                    << R"(" width=")" << iconSize << R"(" height=")" << iconSize << R"(" rx="4"/>)"
+                    << R"(</clipPath></defs>)";
+
+                svg << "<g clip-path=\"url(#" << clipId << ")\">";
+                svg << "<g transform=\"translate(" << iconX << "," << iconY << ")\">";
+                svg << generateSVGThumbnail(firstFramePath, iconSize, iconSize, cell.index);
+                svg << R"(</g></g>)";
+
+                // Film reel overlay badge in corner to indicate sequence
+                float badgeSize = iconSize * 0.25f;
+                float badgeX = iconX + iconSize - badgeSize - 4;
+                float badgeY = iconY + iconSize - badgeSize - 4;
+                svg << R"(<circle cx=")" << (badgeX + badgeSize/2) << R"(" cy=")" << (badgeY + badgeSize/2)
+                    << R"(" r=")" << (badgeSize/2) << R"(" fill="#e74c3c" opacity="0.9"/>)"
+                    << R"(<text x=")" << (badgeX + badgeSize/2) << R"(" y=")" << (badgeY + badgeSize/2 + 3)
+                    << R"(" fill="white" text-anchor="middle" font-size=")" << (badgeSize * 0.6f)
+                    << R"(" font-weight="bold">&#9658;</text>)";  // Play symbol
+            } else {
+                // Fallback to folder icon if no frames found
+                svg << "<g transform=\"translate(" << iconX << "," << iconY << ")\">";
+                svg << generateFolderIconSVG(iconSize);
+                svg << R"(</g>)";
+            }
         } else {
             // Non-SVG icons don't need clipping
             svg << "<g transform=\"translate(" << iconX << "," << iconY << ")\">";

@@ -92,9 +92,9 @@ if [ "$build_universal" = true ]; then
     # Create universal binary using lipo
     log_step "Creating universal binary..."
 
-    X64_BIN="$BUILD_DIR/svg_player_animated-macos-x64"
-    ARM64_BIN="$BUILD_DIR/svg_player_animated-macos-arm64"
-    UNIVERSAL_BIN="$BUILD_DIR/svg_player_animated"
+    X64_BIN="$BUILD_DIR/fbfsvg-player-macos-x64"
+    ARM64_BIN="$BUILD_DIR/fbfsvg-player-macos-arm64"
+    UNIVERSAL_BIN="$BUILD_DIR/fbfsvg-player"
 
     if [ -f "$X64_BIN" ] && [ -f "$ARM64_BIN" ]; then
         lipo -create "$X64_BIN" "$ARM64_BIN" -output "$UNIVERSAL_BIN"
@@ -122,8 +122,8 @@ else
     "$SCRIPT_DIR/build-macos-arch.sh" "$current_arch" "$build_type"
 
     # Copy to generic name
-    ARCH_BIN="$BUILD_DIR/svg_player_animated-macos-$current_arch"
-    GENERIC_BIN="$BUILD_DIR/svg_player_animated"
+    ARCH_BIN="$BUILD_DIR/fbfsvg-player-macos-$current_arch"
+    GENERIC_BIN="$BUILD_DIR/fbfsvg-player"
 
     if [ -f "$ARCH_BIN" ]; then
         cp "$ARCH_BIN" "$GENERIC_BIN"
@@ -147,6 +147,6 @@ else
     log_info "Architecture: $current_arch"
 fi
 log_info "Build type: $build_type"
-log_info "Output: $BUILD_DIR/svg_player_animated"
+log_info "Output: $BUILD_DIR/fbfsvg-player"
 echo ""
-log_info "Run with: $BUILD_DIR/svg_player_animated <svg_file>"
+log_info "Run with: $BUILD_DIR/fbfsvg-player <svg_file>"

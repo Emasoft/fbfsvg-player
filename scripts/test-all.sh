@@ -192,18 +192,18 @@ if [ "$TEST_MACOS" = true ]; then
     section_header "Test: macOS Build Verification"
 
     # Check if macOS build exists
-    if [ -f "$PROJECT_ROOT/build/svg_player_animated" ]; then
+    if [ -f "$PROJECT_ROOT/build/fbfsvg-player" ]; then
         log_info "Found macOS desktop player binary"
 
         # Verify binary is valid
-        if file "$PROJECT_ROOT/build/svg_player_animated" | grep -q "Mach-O"; then
+        if file "$PROJECT_ROOT/build/fbfsvg-player" | grep -q "Mach-O"; then
             log_success "macOS binary is valid Mach-O executable"
             record_result "macos_binary_valid" true
 
             # Test binary runs (just check --help or version if supported)
-            if "$PROJECT_ROOT/build/svg_player_animated" --help 2>/dev/null || \
-               "$PROJECT_ROOT/build/svg_player_animated" --version 2>/dev/null || \
-               timeout 2 "$PROJECT_ROOT/build/svg_player_animated" 2>/dev/null; then
+            if "$PROJECT_ROOT/build/fbfsvg-player" --help 2>/dev/null || \
+               "$PROJECT_ROOT/build/fbfsvg-player" --version 2>/dev/null || \
+               timeout 2 "$PROJECT_ROOT/build/fbfsvg-player" 2>/dev/null; then
                 log_success "macOS binary executes"
                 record_result "macos_binary_runs" true
             else

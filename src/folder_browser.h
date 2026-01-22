@@ -22,8 +22,10 @@ class ThumbnailCache;
 enum class BrowserEntryType {
     ParentDir,      // ".." navigation
     Volume,         // Root volume/mount point
-    Folder,         // Subdirectory
-    SVGFile         // SVG file (animated thumbnail)
+    Folder,         // Subdirectory (regular folder)
+    FrameFolder,    // Folder containing numbered SVG frames (frame_001.svg, frame_002.svg, ...)
+    SVGFile,        // Static SVG file (no SMIL animation)
+    FBFSVGFile      // Animated FBF.SVG file (contains SMIL frames with IDs like frame_001, frame_002)
 };
 
 // Sort mode for entries

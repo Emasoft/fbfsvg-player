@@ -24,7 +24,7 @@ CXX ?= clang++
 MAIN_SRC := $(SRC_DIR)/svg_player_animated.cpp
 
 # Output binary (platform-specific)
-TARGET := $(BUILD_DIR)/svg_player_animated
+TARGET := $(BUILD_DIR)/fbfsvg-player
 
 #==============================================================================
 # Platform Detection
@@ -77,7 +77,7 @@ ifeq ($(PLATFORM),macos)
 	@echo "[3/3] Build complete!"
 	@echo ""
 	@echo "Outputs:"
-	@echo "  macOS: $(BUILD_DIR)/svg_player_animated"
+	@echo "  macOS: $(BUILD_DIR)/fbfsvg-player"
 	@echo "  iOS:   $(BUILD_DIR)/SVGPlayer.xcframework/"
 else
 	@echo "Error: Apple platform builds require macOS host"
@@ -97,7 +97,7 @@ ifeq ($(PLATFORM),linux)
 	@./$(SCRIPTS_DIR)/build-linux-sdk.sh -y
 	@echo ""
 	@echo "Outputs:"
-	@echo "  Desktop: $(BUILD_DIR)/svg_player_animated"
+	@echo "  Desktop: $(BUILD_DIR)/fbfsvg-player"
 	@echo "  SDK:     $(BUILD_DIR)/linux/libsvgplayer.so"
 else
 	@echo "Linux builds require Linux host. Use Docker:"
@@ -446,7 +446,7 @@ run-fullscreen: all
 .PHONY: run-debug
 run-debug:
 	@./$(SCRIPTS_DIR)/build.sh --debug
-	@$(BUILD_DIR)/svg_player_animated svg_input_samples/girl_hair.fbf.svg
+	@$(BUILD_DIR)/fbfsvg-player svg_input_samples/girl_hair.fbf.svg
 
 #==============================================================================
 # Information

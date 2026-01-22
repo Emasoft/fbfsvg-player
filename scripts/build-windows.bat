@@ -138,6 +138,34 @@ if "%SDL2_DIR%"=="" (
 
 echo [INFO] Found SDL2 at %SDL2_DIR%
 
+rem Check for Vulkan SDK (required for Graphite backend)
+echo [INFO] Checking for Vulkan SDK...
+set "VULKAN_SDK_DIR="
+if defined VULKAN_SDK (
+    if exist "%VULKAN_SDK%\Include\vulkan\vulkan.h" (
+        set "VULKAN_SDK_DIR=%VULKAN_SDK%"
+        goto :found_vulkan
+    )
+)
+rem Try common Vulkan SDK locations
+for %%D in ("C:\VulkanSDK\*" "%LOCALAPPDATA%\VulkanSDK\*") do (
+    if exist "%%~D\Include\vulkan\vulkan.h" (
+        set "VULKAN_SDK_DIR=%%~D"
+        goto :found_vulkan
+    )
+)
+
+:found_vulkan
+if "%VULKAN_SDK_DIR%"=="" (
+    echo [WARN] Vulkan SDK not found - Graphite GPU backend will not be available.
+    echo        Download from: https://vulkan.lunarg.com/
+    echo        Set VULKAN_SDK environment variable after installation.
+    set "VULKAN_AVAILABLE=false"
+) else (
+    echo [INFO] Found Vulkan SDK at %VULKAN_SDK_DIR%
+    set "VULKAN_AVAILABLE=true"
+)
+
 rem Create build directory
 set "BUILD_DIR=%PROJECT_ROOT%\build\windows"
 if not exist "%BUILD_DIR%" mkdir "%BUILD_DIR%"
@@ -147,6 +175,14 @@ set "CXXFLAGS=/std:c++17 /EHsc /W3 /DWIN32 /D_WINDOWS /DUNICODE /D_UNICODE /DNOM
 set "INCLUDES=/I"%PROJECT_ROOT%" /I"%SKIA_DIR%" /I"%SKIA_DIR%\include" /I"%SKIA_DIR%\src" /I"%SDL2_DIR%\include" /I"%PROJECT_ROOT%\src" /I"%PROJECT_ROOT%\shared""
 set "LIBPATHS=/LIBPATH:"%SKIA_OUT%" /LIBPATH:"%SDL2_DIR%\lib\x64""
 set "LIBS=skia.lib svg.lib skshaper.lib skresources.lib skunicode_core.lib skunicode_icu.lib SDL2.lib SDL2main.lib opengl32.lib user32.lib gdi32.lib shell32.lib comdlg32.lib ole32.lib shlwapi.lib advapi32.lib dwrite.lib"
+
+rem Add Vulkan include/lib paths if Vulkan SDK is available (for Graphite backend)
+if "%VULKAN_AVAILABLE%"=="true" (
+    set "INCLUDES=%INCLUDES% /I"%VULKAN_SDK_DIR%\Include""
+    set "LIBPATHS=%LIBPATHS% /LIBPATH:"%VULKAN_SDK_DIR%\Lib""
+    set "LIBS=%LIBS% vulkan-1.lib"
+    echo [INFO] Vulkan Graphite backend will be available
+)
 
 if "%BUILD_TYPE%"=="debug" (
     set "CXXFLAGS=%CXXFLAGS% /Od /Zi /DEBUG"
@@ -162,15 +198,24 @@ set "SOURCES=%SOURCES% "%PROJECT_ROOT%\src\svg_player_animated_windows.cpp""
 set "SOURCES=%SOURCES% "%PROJECT_ROOT%\src\file_dialog_windows.cpp""
 set "SOURCES=%SOURCES% "%PROJECT_ROOT%\src\folder_browser.cpp""
 set "SOURCES=%SOURCES% "%PROJECT_ROOT%\src\thumbnail_cache.cpp""
+set "SOURCES=%SOURCES% "%PROJECT_ROOT%\src\remote_control.cpp""
 set "SOURCES=%SOURCES% "%PROJECT_ROOT%\shared\SVGAnimationController.cpp""
 set "SOURCES=%SOURCES% "%PROJECT_ROOT%\shared\SVGGridCompositor.cpp""
+set "SOURCES=%SOURCES% "%PROJECT_ROOT%\shared\svg_instrumentation.cpp""
+set "SOURCES=%SOURCES% "%PROJECT_ROOT%\shared\DirtyRegionTracker.cpp""
+set "SOURCES=%SOURCES% "%PROJECT_ROOT%\shared\ElementBoundsExtractor.cpp""
+
+rem Add Graphite Vulkan context if Vulkan SDK is available
+if "%VULKAN_AVAILABLE%"=="true" (
+    set "SOURCES=%SOURCES% "%PROJECT_ROOT%\src\graphite_context_vulkan.cpp""
+)
 
 echo.
 echo [STEP] Compiling SVG Player for Windows (%BUILD_TYPE%)...
 echo.
 
 rem Compile
-cl.exe %CXXFLAGS% %INCLUDES% %SOURCES% /Fe:"%BUILD_DIR%\svg_player_animated.exe" /link %LIBPATHS% %LIBS% %LDFLAGS% /SUBSYSTEM:CONSOLE
+cl.exe %CXXFLAGS% %INCLUDES% %SOURCES% /Fe:"%BUILD_DIR%\fbfsvg-player.exe" /link %LIBPATHS% %LIBS% %LDFLAGS% /SUBSYSTEM:CONSOLE
 
 if errorlevel 1 (
     echo.
@@ -189,9 +234,9 @@ echo ===================================================
 echo  Build Successful!
 echo ===================================================
 echo.
-echo Output: %BUILD_DIR%\svg_player_animated.exe
+echo Output: %BUILD_DIR%\fbfsvg-player.exe
 echo.
-echo Usage: svg_player_animated.exe ^<input.svg^>
+echo Usage: fbfsvg-player.exe ^<input.svg^>
 echo.
 
 exit /b 0

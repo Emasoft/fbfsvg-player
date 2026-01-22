@@ -61,6 +61,9 @@
 // Thumbnail cache for background-threaded SVG thumbnail loading
 #include "thumbnail_cache.h"
 
+// Graphite next-gen GPU backend (Vulkan on Windows, enabled with --graphite flag)
+#include "graphite_context.h"
+
 // Windows PATH_MAX equivalent
 #ifndef PATH_MAX
 #define PATH_MAX MAX_PATH
@@ -356,7 +359,8 @@ void printHelp(const char* programName) {
     std::cerr << "OPTIONS:\n";
     std::cerr << "    -h, --help        Show this help message and exit\n";
     std::cerr << "    -v, --version     Show version information and exit\n";
-    std::cerr << "    -f, --fullscreen  Start in fullscreen mode\n\n";
+    std::cerr << "    -f, --fullscreen  Start in fullscreen mode\n";
+    std::cerr << "    --graphite        Enable Graphite GPU backend (next-gen, Vulkan)\n\n";
     std::cerr << "KEYBOARD CONTROLS:\n";
     std::cerr << "    Space         Play/Pause animation\n";
     std::cerr << "    R             Restart animation from beginning\n";
@@ -1280,14 +1284,15 @@ bool saveScreenshotPPM(const std::vector<uint32_t>& pixels, int width, int heigh
     // PPM P6 header: magic number, width, height, max color value
     file << "P6\n" << width << " " << height << "\n255\n";
 
-    // Convert ARGB8888 to RGB24 and write raw bytes
-    // ARGB8888 layout: [A7-A0][R7-R0][G7-G0][B7-B0] = 32 bits per pixel
+    // Convert BGRA to RGB24 and write raw bytes
+    // ThreadedRenderer uses kBGRA_8888_SkColorType for consistent cross-platform behavior
+    // BGRA in memory: [B, G, R, A] → uint32_t on little-endian: 0xAARRGGBB
     std::vector<uint8_t> rgb(rgbBufferSize);
     for (size_t i = 0; i < pixelCount; ++i) {
         uint32_t pixel = pixels[i];
-        rgb[i * 3 + 0] = (pixel >> 16) & 0xFF;  // R
-        rgb[i * 3 + 1] = (pixel >> 8) & 0xFF;   // G
-        rgb[i * 3 + 2] = pixel & 0xFF;          // B
+        rgb[i * 3 + 0] = (pixel >> 16) & 0xFF;  // R (byte 2 in BGRA)
+        rgb[i * 3 + 1] = (pixel >> 8) & 0xFF;   // G (byte 1 in BGRA)
+        rgb[i * 3 + 2] = pixel & 0xFF;          // B (byte 0 in BGRA)
     }
 
     file.write(reinterpret_cast<const char*>(rgb.data()), rgb.size());
@@ -1444,6 +1449,7 @@ int main(int argc, char* argv[]) {
     // Parse command-line arguments
     const char* inputPath = nullptr;
     bool startFullscreen = false;
+    bool useGraphiteBackend = false;  // Graphite GPU backend (Vulkan on Windows)
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
@@ -1459,6 +1465,9 @@ int main(int argc, char* argv[]) {
         }
         if (strcmp(argv[i], "--fullscreen") == 0 || strcmp(argv[i], "-f") == 0) {
             startFullscreen = true;
+        } else if (strcmp(argv[i], "--graphite") == 0) {
+            // Enable Graphite GPU backend (Vulkan on Windows)
+            useGraphiteBackend = true;
         } else if (argv[i][0] != '-') {
             // Non-option argument is the input file
             inputPath = argv[i];
@@ -1664,6 +1673,21 @@ int main(int argc, char* argv[]) {
     }
     std::cout << "Display refresh rate: " << displayRefreshRate << " Hz" << std::endl;
 
+    // Graphite context for next-gen GPU rendering (Vulkan on Windows)
+    std::unique_ptr<svgplayer::GraphiteContext> graphiteContext;
+
+    // Initialize Graphite if requested (with CPU fallback)
+    if (useGraphiteBackend) {
+        graphiteContext = svgplayer::createGraphiteContext(window);
+        if (graphiteContext && graphiteContext->isInitialized()) {
+            std::cout << "[Graphite] Next-gen GPU backend enabled - "
+                      << graphiteContext->getBackendName() << " rendering active" << std::endl;
+        } else {
+            std::cerr << "[Graphite] Failed to initialize Graphite context (Vulkan), falling back to CPU raster" << std::endl;
+            useGraphiteBackend = false;
+        }
+    }
+
     // Setup font for debug overlay (platform-specific font manager)
     sk_sp<SkFontMgr> fontMgr = createPlatformFontMgr();
     // Try common monospace fonts available on Windows
@@ -1765,9 +1789,16 @@ int main(int argc, char* argv[]) {
     // Skia surface
     sk_sp<SkSurface> surface;
 
+    // Surface creation lambda (uses Graphite or CPU raster)
     auto createSurface = [&](int w, int h) {
-        SkImageInfo imageInfo = SkImageInfo::MakeN32Premul(w, h);
-        surface = SkSurfaces::Raster(imageInfo);
+        if (useGraphiteBackend && graphiteContext && graphiteContext->isInitialized()) {
+            // Graphite creates its own surfaces
+            surface = graphiteContext->createSurface(w, h);
+        } else {
+            // CPU raster fallback
+            SkImageInfo imageInfo = SkImageInfo::MakeN32Premul(w, h);
+            surface = SkSurfaces::Raster(imageInfo);
+        }
         return surface != nullptr;
     };
 
@@ -2351,10 +2382,13 @@ int main(int argc, char* argv[]) {
                                 break;
 
                             case svgplayer::HitTestResult::LoadButton:
-                                // Load button loads selected SVG (if one is selected)
+                                // Load button loads selected SVG/FBF.SVG (if one is selected)
+                                // Note: FrameFolder not supported on Windows yet (no image sequence mode)
                                 if (g_folderBrowser.canLoad()) {
                                     std::optional<svgplayer::BrowserEntry> selected = g_folderBrowser.getSelectedEntry();
-                                    if (selected.has_value() && selected->type == svgplayer::BrowserEntryType::SVGFile) {
+                                    if (selected.has_value() &&
+                                        (selected->type == svgplayer::BrowserEntryType::SVGFile ||
+                                         selected->type == svgplayer::BrowserEntryType::FBFSVGFile)) {
                                         std::cout << "\n=== Loading from browser (Load button): " << selected->fullPath << " ===" << std::endl;
                                         g_browserMode = false;
                                         g_browserSvgDom = nullptr;
@@ -2546,6 +2580,96 @@ int main(int argc, char* argv[]) {
                                                         SDL_SetWindowTitle(window, windowTitle.c_str());
 
                                                         std::cout << "Loaded: " << newPath << std::endl;
+                                                        std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
+                                                        std::cout << "  Animations: " << animations.size() << std::endl;
+                                                    } else {
+                                                        // Loading failed - restart with old content if available
+                                                        if (svgDom) {
+                                                            parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                                            threadedRenderer.start();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            break;
+
+                                        case svgplayer::BrowserEntryType::FrameFolder:
+                                            // FrameFolder: folder containing numbered SVG frames
+                                            // Windows player doesn't support image sequence mode yet
+                                            if (isDoubleClick) {
+                                                // Double-click: show message that image sequence not supported
+                                                std::cout << "[Windows Player] Frame sequence folders not yet supported. Use macOS player." << std::endl;
+                                                // Just select the folder for now
+                                                g_folderBrowser.selectEntry(clickedEntry->gridIndex);
+                                                refreshBrowserSVG();
+                                            } else {
+                                                // Single click selects the folder
+                                                g_folderBrowser.selectEntry(clickedEntry->gridIndex);
+                                                refreshBrowserSVG();
+                                            }
+                                            break;
+
+                                        case svgplayer::BrowserEntryType::FBFSVGFile:
+                                            // FBFSVGFile: animated SVG with SMIL - same loading as SVGFile
+                                            if (isDoubleClick) {
+                                                // Double-click loads the FBF.SVG file directly
+                                                std::cout << "\n=== Loading FBF.SVG from browser: " << clickedEntry->fullPath << " ===" << std::endl;
+                                                // Fall through to load code below
+                                            } else {
+                                                // Single click selects the FBF.SVG file
+                                                g_folderBrowser.selectEntry(clickedEntry->gridIndex);
+                                                refreshBrowserSVG();
+                                                break;
+                                            }
+                                            // Load the selected FBF.SVG file (same as SVGFile loading)
+                                            {
+                                                g_browserMode = false;
+                                                g_browserSvgDom = nullptr;
+                                                clearBrowserAnimations();
+
+                                                static std::string currentFilePath;
+                                                std::string newPath = clickedEntry->fullPath;
+                                                if (!newPath.empty() && fileExists(newPath.c_str())) {
+                                                    // Stop renderers before loading
+                                                    threadedRenderer.stop();
+                                                    parallelRenderer.stop();
+
+                                                    // Load SVG file using unified loading function
+                                                    SVGLoadError error = loadSVGFile(newPath, inputPath, rawSvgContent, animations, svgDom,
+                                                                                    svgWidth, svgHeight, aspectRatio,
+                                                                                    preBufferTotalDuration, preBufferTotalFrames,
+                                                                                    currentFilePath);
+
+                                                    if (error == SVGLoadError::Success) {
+                                                        // Success - reset stats and configure renderers
+                                                        g_animController.resetStats();
+
+                                                        parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                                                                                  animations, preBufferTotalDuration, preBufferTotalFrames);
+                                                        parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+
+                                                        threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                                        threadedRenderer.setTotalAnimationFrames(preBufferTotalFrames);
+                                                        threadedRenderer.start();
+
+                                                        // Reset animation timing state
+                                                        animationStartTime = Clock::now();
+                                                        animationStartTimeSteady = SteadyClock::now();
+                                                        pausedTime = 0;
+                                                        lastRenderedAnimFrame = 0;
+                                                        displayCycles = 0;
+                                                        framesDelivered = 0;
+                                                        framesSkipped = 0;
+                                                        framesRendered = 0;
+                                                        animationPaused = false;
+
+                                                        // Update window title
+                                                        size_t lastSlash = newPath.find_last_of("/\\");
+                                                        std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
+                                                        std::string windowTitle = "SVG Player - " + filename;
+                                                        SDL_SetWindowTitle(window, windowTitle.c_str());
+
+                                                        std::cout << "Loaded FBF.SVG: " << newPath << std::endl;
                                                         std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
                                                         std::cout << "  Animations: " << animations.size() << std::endl;
                                                     } else {
@@ -2834,21 +2958,51 @@ int main(int argc, char* argv[]) {
             }
         } else {
             // === NORMAL ANIMATION MODE ===
-            // Request new frame (render thread will process asynchronously)
-            // Main thread NEVER touches parallelRenderer directly - all through ThreadedRenderer
-            threadedRenderer.requestFrame(currentFrameIndex);
+            if (useGraphiteBackend && graphiteContext && graphiteContext->isInitialized()) {
+                // === GRAPHITE GPU RENDERING PATH (Next-gen Vulkan) ===
+                // Create new surface for this frame via Graphite
+                surface = graphiteContext->createSurface(renderWidth, renderHeight);
+                if (surface) {
+                    SkCanvas* graphiteCanvas = surface->getCanvas();
+                    graphiteCanvas->clear(SK_ColorBLACK);
 
-            // Try to get rendered frame from ThreadedRenderer (non-blocking!)
-            // Copy directly under lock to prevent use-after-free race condition
-            SkPixmap pixmap;
-            if (surface->peekPixels(&pixmap)) {
-                size_t bufferSize = renderWidth * renderHeight * sizeof(uint32_t);
-                if (threadedRenderer.copyFrontBufferIfReady(const_cast<void*>(pixmap.addr()), bufferSize)) {
+                    // Calculate transform for centering/scaling
+                    graphiteCanvas->save();
+                    float scaleX = static_cast<float>(renderWidth) / svgWidth;
+                    float scaleY = static_cast<float>(renderHeight) / svgHeight;
+                    float uniformScale = std::min(scaleX, scaleY);
+                    float offsetX = (renderWidth - svgWidth * uniformScale) / 2.0f;
+                    float offsetY = (renderHeight - svgHeight * uniformScale) / 2.0f;
+                    graphiteCanvas->translate(offsetX, offsetY);
+                    graphiteCanvas->scale(uniformScale, uniformScale);
+
+                    // Render the animation frame
+                    g_animController.renderFrame(graphiteCanvas, renderWidth, renderHeight);
+                    graphiteCanvas->restore();
+
+                    // Submit frame to GPU
+                    graphiteContext->submitFrame();
                     gotNewFrame = true;
-                    framesDelivered++;  // Count frames actually received from render thread
+                    framesDelivered++;
                 }
+            } else {
+                // === CPU RASTER PATH (with threaded rendering) ===
+                // Request new frame (render thread will process asynchronously)
+                // Main thread NEVER touches parallelRenderer directly - all through ThreadedRenderer
+                threadedRenderer.requestFrame(currentFrameIndex);
+
+                // Try to get rendered frame from ThreadedRenderer (non-blocking!)
+                // Copy directly under lock to prevent use-after-free race condition
+                SkPixmap pixmap;
+                if (surface->peekPixels(&pixmap)) {
+                    size_t bufferSize = renderWidth * renderHeight * sizeof(uint32_t);
+                    if (threadedRenderer.copyFrontBufferIfReady(const_cast<void*>(pixmap.addr()), bufferSize)) {
+                        gotNewFrame = true;
+                        framesDelivered++;  // Count frames actually received from render thread
+                    }
+                }
+                // If no new frame ready, surface keeps last frame (no blocking!)
             }
-            // If no new frame ready, surface keeps last frame (no blocking!)
         }
 
         auto fetchEnd = Clock::now();
@@ -3180,61 +3334,78 @@ int main(int argc, char* argv[]) {
         if (gotNewFrame) {
             frameCount++;
 
-            // === COPY TO SDL TEXTURE ===
-            auto copyStart = Clock::now();
+            if (useGraphiteBackend && graphiteContext && graphiteContext->isInitialized()) {
+                // === GRAPHITE GPU PRESENTATION PATH ===
+                // Graphite handles its own presentation via Vulkan swapchain
+                auto presentStart = Clock::now();
+                graphiteContext->present();
+                presentEnd = Clock::now();
+                presentTime = presentEnd - presentStart;
 
-            SkPixmap pixmap;
-            if (surface->peekPixels(&pixmap)) {
-                void* pixels;
-                int pitch;
-                SDL_LockTexture(texture, nullptr, &pixels, &pitch);
+                // Track phase times (no copy time for Graphite - GPU handles transfer)
+                if (!skipStatsThisFrame) {
+                    eventTimes.add(eventTime.count());
+                    animTimes.add(animTime_ms.count());
+                    overlayTimes.add(overlayTime.count());
+                    presentTimes.add(presentTime.count());
+                }
+            } else {
+                // === CPU RASTER PRESENTATION PATH (SDL Texture) ===
+                auto copyStart = Clock::now();
 
-                const uint8_t* src = static_cast<const uint8_t*>(pixmap.addr());
-                uint8_t* dst = static_cast<uint8_t*>(pixels);
-                size_t rowBytes = renderWidth * 4;
+                SkPixmap pixmap;
+                if (surface->peekPixels(&pixmap)) {
+                    void* pixels;
+                    int pitch;
+                    SDL_LockTexture(texture, nullptr, &pixels, &pitch);
 
-                for (int row = 0; row < renderHeight; row++) {
-                    memcpy(dst + row * pitch, src + row * pixmap.rowBytes(), rowBytes);
+                    const uint8_t* src = static_cast<const uint8_t*>(pixmap.addr());
+                    uint8_t* dst = static_cast<uint8_t*>(pixels);
+                    size_t rowBytes = renderWidth * 4;
+
+                    for (int row = 0; row < renderHeight; row++) {
+                        memcpy(dst + row * pitch, src + row * pixmap.rowBytes(), rowBytes);
+                    }
+
+                    SDL_UnlockTexture(texture);
                 }
 
-                SDL_UnlockTexture(texture);
-            }
+                auto copyEnd = Clock::now();
+                copyTime = copyEnd - copyStart;
+                if (!skipStatsThisFrame) {
+                    copyTimes.add(copyTime.count());
+                }
 
-            auto copyEnd = Clock::now();
-            copyTime = copyEnd - copyStart;
-            if (!skipStatsThisFrame) {
-                copyTimes.add(copyTime.count());
-            }
+                // Clear and render to screen (pure black for exclusive fullscreen)
+                SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+                SDL_RenderClear(renderer);
 
-            // Clear and render to screen (pure black for exclusive fullscreen)
-            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            SDL_RenderClear(renderer);
+                // Get actual renderer output size for proper centering
+                int outW, outH;
+                SDL_GetRendererOutputSize(renderer, &outW, &outH);
 
-            // Get actual renderer output size for proper centering
-            int outW, outH;
-            SDL_GetRendererOutputSize(renderer, &outW, &outH);
+                SDL_Rect destRect;
+                destRect.w = renderWidth;
+                destRect.h = renderHeight;
+                destRect.x = (outW - renderWidth) / 2;
+                destRect.y = (outH - renderHeight) / 2;
 
-            SDL_Rect destRect;
-            destRect.w = renderWidth;
-            destRect.h = renderHeight;
-            destRect.x = (outW - renderWidth) / 2;
-            destRect.y = (outH - renderHeight) / 2;
+                SDL_RenderCopy(renderer, texture, nullptr, &destRect);
 
-            SDL_RenderCopy(renderer, texture, nullptr, &destRect);
+                // Measure SDL_RenderPresent time separately (often the stutter source)
+                auto presentStart = Clock::now();
+                SDL_RenderPresent(renderer);
+                presentEnd = Clock::now();
+                presentTime = presentEnd - presentStart;
 
-            // Measure SDL_RenderPresent time separately (often the stutter source)
-            auto presentStart = Clock::now();
-            SDL_RenderPresent(renderer);
-            presentEnd = Clock::now();
-            presentTime = presentEnd - presentStart;
-
-            // Track all phase times for frames that were presented
-            // Skip when disruptive events occurred (reset, mode change, screenshot, etc.)
-            if (!skipStatsThisFrame) {
-                eventTimes.add(eventTime.count());
-                animTimes.add(animTime_ms.count());
-                overlayTimes.add(overlayTime.count());
-                presentTimes.add(presentTime.count());
+                // Track all phase times for frames that were presented
+                // Skip when disruptive events occurred (reset, mode change, screenshot, etc.)
+                if (!skipStatsThisFrame) {
+                    eventTimes.add(eventTime.count());
+                    animTimes.add(animTime_ms.count());
+                    overlayTimes.add(overlayTime.count());
+                    presentTimes.add(presentTime.count());
+                }
             }
         } else {
             // No new frame - yield CPU briefly to prevent busy-spinning
@@ -3344,6 +3515,13 @@ int main(int argc, char* argv[]) {
         std::cout << "Stopping parallel render threads..." << std::endl;
         parallelRenderer.stop();
         std::cout << "Parallel renderer stopped." << std::endl;
+    }
+
+    // Destroy Graphite context before SDL cleanup (holds Vulkan resources)
+    if (graphiteContext) {
+        std::cout << "Destroying Graphite context..." << std::endl;
+        graphiteContext.reset();
+        std::cout << "Graphite context destroyed." << std::endl;
     }
 
     SDL_DestroyTexture(texture);

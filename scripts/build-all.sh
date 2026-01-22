@@ -271,7 +271,7 @@ else
     log_success "All requested builds completed successfully!"
     echo ""
     echo "Build artifacts:"
-    [ "${BUILD_RESULTS[macOS]}" = "SUCCESS" ] && echo "  - macOS: build/svg_player_animated"
+    [ "${BUILD_RESULTS[macOS]}" = "SUCCESS" ] && echo "  - macOS: build/fbfsvg-player"
     [ "${BUILD_RESULTS[iOS]}" = "SUCCESS" ] && echo "  - iOS:   build/SVGPlayer.xcframework/"
     [ "${BUILD_RESULTS[Linux]}" = "SUCCESS" ] && echo "  - Linux: build/linux/libsvgplayer.so"
 fi
