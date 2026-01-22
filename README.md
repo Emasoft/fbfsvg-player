@@ -37,9 +37,9 @@ For complete format details, schema, and validation tools, see the [FBF.SVG Spec
 
 | Platform | Architectures | GPU Backend | Windowing |
 |----------|---------------|-------------|-----------|
-| macOS | x64, arm64, universal | Metal | SDL2 |
-| Linux | x64, arm64 | OpenGL/EGL | SDL2 |
-| Windows | x64 | Direct3D/OpenGL | SDL2 |
+| macOS | x64, arm64, universal | Graphite (Metal) | SDL2 |
+| Linux | x64, arm64 | Graphite (Vulkan) | SDL2 |
+| Windows | x64 | Graphite (Vulkan) | SDL2 |
 | iOS | arm64, simulator (x64+arm64) | Metal | UIKit |
 
 ## Features
@@ -47,14 +47,64 @@ For complete format details, schema, and validation tools, see the [FBF.SVG Spec
 - **Native FBF.SVG Support**: Optimized for the FBF.SVG vector video format
 - **SMIL Animation Engine**: Full support for declarative SMIL timing
 - **Frame-by-Frame Playback**: Smooth rendering with configurable FPS
-- **Hardware Acceleration**: Metal on Apple platforms, OpenGL/EGL on Linux
+- **Hardware Acceleration**: Graphite GPU backend (Metal on macOS, Vulkan on Linux/Windows)
 - **Fullscreen Mode**: Toggle with `--fullscreen` flag or `F` key
 - **Playback Controls**: Play, pause, seek, and speed control
 - **Pre-buffering**: Threaded rendering for smooth playback
 - **Universal Binary**: Supports both x86_64 and arm64 on macOS
 - **iOS Integration**: XCFramework with C API for UIKit apps
 
-## Quick Start
+## Installation (Pre-built Binaries)
+
+### macOS (Homebrew)
+
+```bash
+brew tap Emasoft/tools
+brew install fbfsvg-player
+```
+
+**Requirements:** Apple Silicon (M1/M2/M3) - ARM64 only
+
+### Linux (APT/DEB)
+
+```bash
+# Download and install .deb package
+wget https://github.com/Emasoft/fbfsvg-player/releases/download/v0.1.0/fbfsvg-player_0.1.0_amd64.deb
+sudo dpkg -i fbfsvg-player_0.1.0_amd64.deb
+```
+
+### Linux (AppImage)
+
+```bash
+# Download portable AppImage (no installation required)
+wget https://github.com/Emasoft/fbfsvg-player/releases/download/v0.1.0/fbfsvg-player-0.1.0-x86_64.AppImage
+chmod +x fbfsvg-player-0.1.0-x86_64.AppImage
+./fbfsvg-player-0.1.0-x86_64.AppImage animation.fbf.svg
+```
+
+### Linux (Linuxbrew)
+
+```bash
+brew tap Emasoft/tools
+brew install fbfsvg-player@linux
+```
+
+### Windows
+
+Windows binaries coming soon. Build from source using Visual Studio 2019+.
+
+```powershell
+# Future: Scoop
+scoop bucket add fbfsvg https://github.com/Emasoft/scoop-fbfsvg
+scoop install fbfsvg-player
+
+# Future: Chocolatey
+choco install fbfsvg-player
+```
+
+---
+
+## Building from Source
 
 ### macOS
 
@@ -141,6 +191,17 @@ make ios-xcframework
 # Example
 ./build/svg_player_animated svg_input_samples/girl_hair.fbf.svg
 ```
+
+### Command-Line Options
+
+| Flag | Description |
+|------|-------------|
+| `--fullscreen` | Start in fullscreen mode |
+| `--cpu` | Use CPU raster rendering instead of GPU (Graphite) |
+| `--metal` | (macOS only) Use Metal Ganesh instead of Graphite |
+| `--benchmark` | Run benchmark mode (exits after measuring) |
+| `--remote-control[=PORT]` | Enable remote control server (default port 9999) |
+| `--sequential` | Force sequential frame rendering (no prebuffering) |
 
 ### iOS Integration
 
@@ -272,21 +333,21 @@ fbfsvg-player/
 
 ### macOS
 
-- Uses Metal for GPU-accelerated rendering
+- Uses Graphite (Metal) for GPU-accelerated rendering (default). Use `--cpu` for CPU raster, `--metal` for Metal Ganesh.
 - CoreText for font management
 - Mach APIs for CPU/thread monitoring
 - Homebrew for dependencies (SDL2, ICU)
 
 ### Linux
 
-- Uses OpenGL/EGL for rendering
+- Uses Graphite (Vulkan) for GPU-accelerated rendering (default). Use `--cpu` for CPU raster fallback.
 - Fontconfig for font management
 - /proc filesystem for CPU monitoring
 - System packages for dependencies
 
 ### Windows
 
-- Uses Direct3D or OpenGL for rendering
+- Uses Graphite (Vulkan) for GPU-accelerated rendering (default). Use `--cpu` for CPU raster fallback.
 - DirectWrite for font management
 - Visual Studio required for building
 
