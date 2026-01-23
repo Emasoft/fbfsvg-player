@@ -15,6 +15,9 @@ defaults:
     shell: bash
 
 jobs:
+  # ═══════════════════════════════════════════════════════════════════
+  # Stage 1: Build all platforms in parallel
+  # ═══════════════════════════════════════════════════════════════════
   build:
     strategy:
       fail-fast: false
@@ -70,12 +73,9 @@ jobs:
       - name: Install Windows dependencies
         if: matrix.os == 'windows-latest'
         run: |
-          # Download SDL2
           curl -L -o SDL2-devel.zip https://github.com/libsdl-org/SDL/releases/download/release-2.30.0/SDL2-devel-2.30.0-VC.zip
           unzip SDL2-devel.zip -d external/
           mv external/SDL2-2.30.0 external/SDL2
-
-          # Download Vulkan SDK headers (runtime uses system drivers)
           curl -L -o vulkan-headers.zip https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.3.275.zip
           unzip vulkan-headers.zip -d external/
 
@@ -94,21 +94,15 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       - name: Build Skia (macOS)
         if: steps.cache-skia.outputs.cache-hit != 'true' && matrix.os == 'macos-14'
-        run: |
-          cd skia-build
-          ./build-macos.sh -y
+        run: cd skia-build && ./build-macos.sh -y
 
       - name: Build Skia (Linux)
         if: steps.cache-skia.outputs.cache-hit != 'true' && matrix.os == 'ubuntu-latest'
-        run: |
-          cd skia-build
-          ./build-linux.sh -y
+        run: cd skia-build && ./build-linux.sh -y
 
       - name: Build Skia (Windows)
         if: steps.cache-skia.outputs.cache-hit != 'true' && matrix.os == 'windows-latest'
-        run: |
-          cd skia-build
-          ./build-windows.bat -y
+        run: cd skia-build && ./build-windows.bat -y
 
       # ─────────────────────────────────────────────────────────────
       # Build Player
@@ -142,12 +136,15 @@ jobs:
           retention-days: 5
 
   # ═══════════════════════════════════════════════════════════════════
-  # Create Release
+  # Stage 2: Create DRAFT release with all assets
   # ═══════════════════════════════════════════════════════════════════
-  release:
+  draft-release:
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
+    outputs:
+      version: ${{ steps.version.outputs.VERSION }}
+      release_id: ${{ steps.create.outputs.id }}
 
     steps:
       - name: Checkout
@@ -163,6 +160,7 @@ jobs:
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
       - name: Package releases
+        id: package
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
           mkdir -p release
@@ -202,15 +200,28 @@ jobs:
           zip ../../release/fbfsvg-player-${VERSION}-windows-x64.zip fbfsvg-player-windows-x64.exe
           cd ../..
 
-      - name: Create GitHub Release
+          # Generate SHA256 checksums
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          cd ..
+
+          # Output checksums for validation
+          echo "CHECKSUMS<<EOF" >> $GITHUB_OUTPUT
+          cat release/SHA256SUMS.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create DRAFT GitHub Release
+        id: create
         uses: softprops/action-gh-release@v1
         with:
           name: FBF.SVG Player ${{ steps.version.outputs.VERSION }}
-          draft: false
+          draft: true  # <-- DRAFT MODE: allows validation before publish
           prerelease: false
           files: release/*
           body: |
             ## FBF.SVG Player ${{ steps.version.outputs.VERSION }}
+
+            > ⚠️ **DRAFT RELEASE** - Pending validation. Do not use until published.
 
             ### Downloads
 
@@ -221,34 +232,205 @@ jobs:
             | Linux (DEB) | `fbfsvg-player_${{ steps.version.outputs.VERSION }}_amd64.deb` | Graphite (Vulkan) |
             | Windows (x64) | `fbfsvg-player-${{ steps.version.outputs.VERSION }}-windows-x64.zip` | Graphite (Vulkan) |
 
-            ### Installation
+            ### Checksums (SHA256)
 
-            **macOS (Homebrew):**
-            ```bash
-            brew tap Emasoft/tools
-            brew install fbfsvg-player
             ```
-
-            **Linux (APT):**
-            ```bash
-            sudo dpkg -i fbfsvg-player_${{ steps.version.outputs.VERSION }}_amd64.deb
-            ```
-
-            **Windows (Scoop):**
-            ```powershell
-            scoop bucket add fbfsvg https://github.com/Emasoft/scoop-fbfsvg
-            scoop install fbfsvg-player
+            ${{ steps.package.outputs.CHECKSUMS }}
             ```
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Output release info
+        run: |
+          echo "Created DRAFT release: ${{ steps.version.outputs.VERSION }}"
+          echo "Release ID: ${{ steps.create.outputs.id }}"
+          echo "Release URL: ${{ steps.create.outputs.url }}"
+
   # ═══════════════════════════════════════════════════════════════════
-  # Update Package Manifests (in main repo)
+  # Stage 3: Validate draft release assets
+  # ═══════════════════════════════════════════════════════════════════
+  validate:
+    needs: draft-release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get version
+        id: version
+        run: echo "VERSION=${{ needs.draft-release.outputs.version }}" >> $GITHUB_OUTPUT
+
+      - name: Wait for assets to propagate
+        run: sleep 10
+
+      - name: Download and validate all assets
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          BASE_URL="https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}"
+
+          echo "=== Downloading release assets ==="
+          mkdir -p downloads
+          cd downloads
+
+          # Download all assets
+          for asset in \
+            "fbfsvg-player-${VERSION}-macos-arm64.tar.gz" \
+            "fbfsvg-player-${VERSION}-linux-x64.tar.gz" \
+            "fbfsvg-player_${VERSION#v}_amd64.deb" \
+            "fbfsvg-player-${VERSION}-windows-x64.zip" \
+            "SHA256SUMS.txt"
+          do
+            echo "Downloading: $asset"
+            curl -fsSL -o "$asset" "${BASE_URL}/${asset}" || {
+              echo "ERROR: Failed to download $asset"
+              exit 1
+            }
+          done
+
+          echo ""
+          echo "=== Verifying SHA256 checksums ==="
+          # Verify checksums match
+          sha256sum -c SHA256SUMS.txt || {
+            echo "ERROR: Checksum verification failed!"
+            exit 1
+          }
+
+          echo ""
+          echo "=== Validating archive contents ==="
+
+          # Validate macOS tarball
+          echo "Checking macOS tarball..."
+          tar -tzf "fbfsvg-player-${VERSION}-macos-arm64.tar.gz" | grep -q "fbfsvg-player" || {
+            echo "ERROR: macOS tarball missing fbfsvg-player binary"
+            exit 1
+          }
+
+          # Validate Linux tarball
+          echo "Checking Linux tarball..."
+          tar -tzf "fbfsvg-player-${VERSION}-linux-x64.tar.gz" | grep -q "fbfsvg-player" || {
+            echo "ERROR: Linux tarball missing fbfsvg-player binary"
+            exit 1
+          }
+
+          # Validate DEB package
+          echo "Checking DEB package..."
+          dpkg-deb -c "fbfsvg-player_${VERSION#v}_amd64.deb" | grep -q "usr/bin/fbfsvg-player" || {
+            echo "ERROR: DEB package missing fbfsvg-player binary"
+            exit 1
+          }
+
+          # Validate Windows zip
+          echo "Checking Windows zip..."
+          unzip -l "fbfsvg-player-${VERSION}-windows-x64.zip" | grep -q ".exe" || {
+            echo "ERROR: Windows zip missing .exe binary"
+            exit 1
+          }
+
+          echo ""
+          echo "=== Testing Linux binary execution ==="
+          tar -xzf "fbfsvg-player-${VERSION}-linux-x64.tar.gz"
+          chmod +x fbfsvg-player
+          ./fbfsvg-player --help 2>&1 | head -5 || true  # May fail without display, that's OK
+
+          echo ""
+          echo "✅ All validations passed!"
+
+      - name: Report validation success
+        run: |
+          echo "::notice::Release ${{ steps.version.outputs.VERSION }} validated successfully"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Stage 4: Publish release (convert draft to public)
+  # ═══════════════════════════════════════════════════════════════════
+  publish:
+    needs: [draft-release, validate]
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
+
+    steps:
+      - name: Get version
+        id: version
+        run: echo "VERSION=${{ needs.draft-release.outputs.version }}" >> $GITHUB_OUTPUT
+
+      - name: Publish release (remove draft status)
+        id: publish
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+
+          echo "Publishing release ${VERSION}..."
+
+          # Update release: remove draft status, update body
+          gh release edit "${VERSION}" \
+            --draft=false \
+            --notes "## FBF.SVG Player ${VERSION}
+
+          ### Downloads
+
+          | Platform | Package | GPU Backend |
+          |----------|---------|-------------|
+          | macOS (ARM64) | \`fbfsvg-player-${VERSION}-macos-arm64.tar.gz\` | Graphite (Metal) |
+          | Linux (x64) | \`fbfsvg-player-${VERSION}-linux-x64.tar.gz\` | Graphite (Vulkan) |
+          | Linux (DEB) | \`fbfsvg-player_${VERSION#v}_amd64.deb\` | Graphite (Vulkan) |
+          | Windows (x64) | \`fbfsvg-player-${VERSION}-windows-x64.zip\` | Graphite (Vulkan) |
+
+          ### Installation
+
+          **macOS (Homebrew):**
+          \`\`\`bash
+          brew tap Emasoft/fbfsvg-player
+          brew install fbfsvg-player
+          \`\`\`
+
+          **Linux (APT):**
+          \`\`\`bash
+          wget https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}/fbfsvg-player_${VERSION#v}_amd64.deb
+          sudo dpkg -i fbfsvg-player_${VERSION#v}_amd64.deb
+          \`\`\`
+
+          **Linux (Tarball):**
+          \`\`\`bash
+          wget https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}/fbfsvg-player-${VERSION}-linux-x64.tar.gz
+          tar -xzf fbfsvg-player-${VERSION}-linux-x64.tar.gz
+          ./fbfsvg-player animation.fbf.svg
+          \`\`\`
+
+          **Windows (Scoop):**
+          \`\`\`powershell
+          scoop bucket add fbfsvg-player https://github.com/Emasoft/fbfsvg-player
+          scoop install fbfsvg-player
+          \`\`\`
+
+          ### Checksums
+
+          See \`SHA256SUMS.txt\` in release assets for verification.
+          "
+
+          echo "published=true" >> $GITHUB_OUTPUT
+          echo "✅ Release ${VERSION} is now PUBLIC"
+
+      - name: Verify release is public
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+
+          # Verify draft status is false
+          IS_DRAFT=$(gh release view "${VERSION}" --json isDraft --jq '.isDraft')
+          if [ "$IS_DRAFT" = "true" ]; then
+            echo "ERROR: Release is still a draft!"
+            exit 1
+          fi
+
+          echo "✅ Confirmed: Release ${VERSION} is published (not draft)"
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Stage 5: Update package manifests (only after publish)
   # ═══════════════════════════════════════════════════════════════════
   update-packages:
-    needs: release
+    needs: [draft-release, publish]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: needs.publish.outputs.published == 'true'
 
     steps:
       - name: Checkout
@@ -260,10 +442,9 @@ jobs:
       - name: Get version and hashes
         id: info
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${{ needs.draft-release.outputs.version }}
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-          # Download and hash each release
           BASE_URL="https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}"
 
           curl -sL "${BASE_URL}/fbfsvg-player-${VERSION}-macos-arm64.tar.gz" -o macos.tar.gz
@@ -362,3 +543,14 @@ jobs:
           git add Formula/ bucket/
           git commit -m "Update package manifests to ${{ steps.info.outputs.VERSION }}" || echo "No changes"
           git push
+
+      - name: Summary
+        run: |
+          echo "### Release Published Successfully! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.info.outputs.VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Package Manifests Updated:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`Formula/fbfsvg-player.rb\` (Homebrew macOS)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`Formula/fbfsvg-player@linux.rb\` (Linuxbrew)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`bucket/fbfsvg-player.json\` (Scoop Windows)" >> $GITHUB_STEP_SUMMARY
