@@ -59,7 +59,7 @@ For complete format details, schema, and validation tools, see the [FBF.SVG Spec
 ### macOS (Homebrew)
 
 ```bash
-brew tap Emasoft/tools
+brew tap Emasoft/fbfsvg-player
 brew install fbfsvg-player
 ```
 
@@ -85,21 +85,18 @@ chmod +x fbfsvg-player-0.1.0-x86_64.AppImage
 ### Linux (Linuxbrew)
 
 ```bash
-brew tap Emasoft/tools
+brew tap Emasoft/fbfsvg-player
 brew install fbfsvg-player@linux
 ```
 
-### Windows
+### Windows (Scoop)
 
 Windows binaries coming soon. Build from source using Visual Studio 2019+.
 
 ```powershell
-# Future: Scoop
-scoop bucket add fbfsvg https://github.com/Emasoft/scoop-fbfsvg
+# Add the bucket and install (when Windows build is available)
+scoop bucket add fbfsvg-player https://github.com/Emasoft/fbfsvg-player
 scoop install fbfsvg-player
-
-# Future: Chocolatey
-choco install fbfsvg-player
 ```
 
 ---

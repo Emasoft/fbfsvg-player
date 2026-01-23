@@ -1,0 +1,22 @@
+{
+    "$schema": "https://raw.githubusercontent.com/ScoopInstaller/Scoop/master/schema.json",
+    "version": "0.1.0",
+    "description": "High-performance animated SVG player for the FBF.SVG vector video format",
+    "homepage": "https://github.com/Emasoft/fbfsvg-player",
+    "license": "BSD-3-Clause",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/Emasoft/fbfsvg-player/releases/download/v0.1.0/fbfsvg-player-0.1.0-windows-x64.zip",
+            "hash": "PENDING_WINDOWS_BUILD"
+        }
+    },
+    "bin": "fbfsvg-player.exe",
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/Emasoft/fbfsvg-player/releases/download/v$version/fbfsvg-player-$version-windows-x64.zip"
+            }
+        }
+    }
+}
