@@ -1,0 +1,366 @@
+name: Multi-Platform Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v0.2.0)'
+        required: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: macos-arm64
+            artifact: fbfsvg-player-macos-arm64
+          - os: ubuntu-latest
+            target: linux-x64
+            artifact: fbfsvg-player-linux-x64
+          - os: windows-latest
+            target: windows-x64
+            artifact: fbfsvg-player-windows-x64
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.target }})
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ─────────────────────────────────────────────────────────────
+      # macOS Setup
+      # ─────────────────────────────────────────────────────────────
+      - name: Install macOS dependencies
+        if: matrix.os == 'macos-14'
+        run: |
+          brew install sdl2 pkg-config icu4c ninja
+          echo "ICU_ROOT=$(brew --prefix icu4c)" >> $GITHUB_ENV
+
+      # ─────────────────────────────────────────────────────────────
+      # Linux Setup
+      # ─────────────────────────────────────────────────────────────
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang ninja-build pkg-config \
+            libsdl2-dev libicu-dev libgl1-mesa-dev libegl1-mesa-dev \
+            libgles2-mesa-dev libfreetype6-dev libfontconfig1-dev libx11-dev \
+            libvulkan-dev
+
+      # ─────────────────────────────────────────────────────────────
+      # Windows Setup
+      # ─────────────────────────────────────────────────────────────
+      - name: Setup MSVC
+        if: matrix.os == 'windows-latest'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install Windows dependencies
+        if: matrix.os == 'windows-latest'
+        run: |
+          # Download SDL2
+          curl -L -o SDL2-devel.zip https://github.com/libsdl-org/SDL/releases/download/release-2.30.0/SDL2-devel-2.30.0-VC.zip
+          unzip SDL2-devel.zip -d external/
+          mv external/SDL2-2.30.0 external/SDL2
+
+          # Download Vulkan SDK headers (runtime uses system drivers)
+          curl -L -o vulkan-headers.zip https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.3.275.zip
+          unzip vulkan-headers.zip -d external/
+
+      # ─────────────────────────────────────────────────────────────
+      # Cache Skia
+      # ─────────────────────────────────────────────────────────────
+      - name: Cache Skia
+        id: cache-skia
+        uses: actions/cache@v4
+        with:
+          path: skia-build/src/skia/out/release-${{ matrix.target }}
+          key: skia-${{ matrix.target }}-${{ hashFiles('skia-build/build-*.sh', 'skia-build/build-*.bat') }}
+
+      # ─────────────────────────────────────────────────────────────
+      # Build Skia (if not cached)
+      # ─────────────────────────────────────────────────────────────
+      - name: Build Skia (macOS)
+        if: steps.cache-skia.outputs.cache-hit != 'true' && matrix.os == 'macos-14'
+        run: |
+          cd skia-build
+          ./build-macos.sh -y
+
+      - name: Build Skia (Linux)
+        if: steps.cache-skia.outputs.cache-hit != 'true' && matrix.os == 'ubuntu-latest'
+        run: |
+          cd skia-build
+          ./build-linux.sh -y
+
+      - name: Build Skia (Windows)
+        if: steps.cache-skia.outputs.cache-hit != 'true' && matrix.os == 'windows-latest'
+        run: |
+          cd skia-build
+          ./build-windows.bat -y
+
+      # ─────────────────────────────────────────────────────────────
+      # Build Player
+      # ─────────────────────────────────────────────────────────────
+      - name: Build Player (macOS)
+        if: matrix.os == 'macos-14'
+        run: |
+          ./scripts/build-macos.sh
+          mv build/fbfsvg-player build/${{ matrix.artifact }}
+
+      - name: Build Player (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          ./scripts/build-linux.sh
+          mv build/fbfsvg-player-linux-x64 build/${{ matrix.artifact }}
+
+      - name: Build Player (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          ./scripts/build-windows.bat
+          mv build/windows/svg_player_animated.exe build/${{ matrix.artifact }}.exe
+
+      # ─────────────────────────────────────────────────────────────
+      # Upload Artifact
+      # ─────────────────────────────────────────────────────────────
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: build/${{ matrix.artifact }}*
+          retention-days: 5
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Create Release
+  # ═══════════════════════════════════════════════════════════════════
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Package releases
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          mkdir -p release
+
+          # macOS ARM64 tarball
+          cd artifacts/fbfsvg-player-macos-arm64
+          chmod +x fbfsvg-player-macos-arm64
+          mv fbfsvg-player-macos-arm64 fbfsvg-player
+          tar -czvf ../../release/fbfsvg-player-${VERSION}-macos-arm64.tar.gz fbfsvg-player
+          cd ../..
+
+          # Linux x64 tarball
+          cd artifacts/fbfsvg-player-linux-x64
+          chmod +x fbfsvg-player-linux-x64
+          mv fbfsvg-player-linux-x64 fbfsvg-player
+          tar -czvf ../../release/fbfsvg-player-${VERSION}-linux-x64.tar.gz fbfsvg-player
+          cd ../..
+
+          # Linux DEB package
+          mkdir -p deb/DEBIAN deb/usr/bin
+          cp artifacts/fbfsvg-player-linux-x64/fbfsvg-player deb/usr/bin/
+          chmod +x deb/usr/bin/fbfsvg-player
+          cat > deb/DEBIAN/control << EOF
+          Package: fbfsvg-player
+          Version: ${VERSION#v}
+          Section: graphics
+          Priority: optional
+          Architecture: amd64
+          Maintainer: Emasoft <713559+Emasoft@users.noreply.github.com>
+          Description: FBF.SVG vector video player
+           High-performance animated SVG player for the FBF.SVG format.
+          EOF
+          dpkg-deb --build deb release/fbfsvg-player_${VERSION#v}_amd64.deb
+
+          # Windows x64 zip
+          cd artifacts/fbfsvg-player-windows-x64
+          zip ../../release/fbfsvg-player-${VERSION}-windows-x64.zip fbfsvg-player-windows-x64.exe
+          cd ../..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: FBF.SVG Player ${{ steps.version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          files: release/*
+          body: |
+            ## FBF.SVG Player ${{ steps.version.outputs.VERSION }}
+
+            ### Downloads
+
+            | Platform | Package | GPU Backend |
+            |----------|---------|-------------|
+            | macOS (ARM64) | `fbfsvg-player-${{ steps.version.outputs.VERSION }}-macos-arm64.tar.gz` | Graphite (Metal) |
+            | Linux (x64) | `fbfsvg-player-${{ steps.version.outputs.VERSION }}-linux-x64.tar.gz` | Graphite (Vulkan) |
+            | Linux (DEB) | `fbfsvg-player_${{ steps.version.outputs.VERSION }}_amd64.deb` | Graphite (Vulkan) |
+            | Windows (x64) | `fbfsvg-player-${{ steps.version.outputs.VERSION }}-windows-x64.zip` | Graphite (Vulkan) |
+
+            ### Installation
+
+            **macOS (Homebrew):**
+            ```bash
+            brew tap Emasoft/tools
+            brew install fbfsvg-player
+            ```
+
+            **Linux (APT):**
+            ```bash
+            sudo dpkg -i fbfsvg-player_${{ steps.version.outputs.VERSION }}_amd64.deb
+            ```
+
+            **Windows (Scoop):**
+            ```powershell
+            scoop bucket add fbfsvg https://github.com/Emasoft/scoop-fbfsvg
+            scoop install fbfsvg-player
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ═══════════════════════════════════════════════════════════════════
+  # Update Package Managers
+  # ═══════════════════════════════════════════════════════════════════
+  update-packages:
+    needs: release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Get version and hashes
+        id: info
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+          # Download and hash each release
+          BASE_URL="https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}"
+
+          curl -sL "${BASE_URL}/fbfsvg-player-${VERSION}-macos-arm64.tar.gz" -o macos.tar.gz
+          echo "MACOS_SHA256=$(sha256sum macos.tar.gz | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+          curl -sL "${BASE_URL}/fbfsvg-player-${VERSION}-linux-x64.tar.gz" -o linux.tar.gz
+          echo "LINUX_SHA256=$(sha256sum linux.tar.gz | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+          curl -sL "${BASE_URL}/fbfsvg-player-${VERSION}-windows-x64.zip" -o windows.zip
+          echo "WINDOWS_SHA256=$(sha256sum windows.zip | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+      - name: Update Homebrew tap
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION=${{ steps.info.outputs.VERSION }}
+          MACOS_SHA=${{ steps.info.outputs.MACOS_SHA256 }}
+          LINUX_SHA=${{ steps.info.outputs.LINUX_SHA256 }}
+
+          gh repo clone Emasoft/homebrew-tools /tmp/tap
+          cd /tmp/tap
+
+          # Update macOS formula
+          cat > Formula/fbfsvg-player.rb << EOF
+          class FbfsvgPlayer < Formula
+            desc "High-performance animated SVG player for the FBF.SVG vector video format"
+            homepage "https://github.com/Emasoft/fbfsvg-player"
+            url "https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}/fbfsvg-player-${VERSION}-macos-arm64.tar.gz"
+            sha256 "${MACOS_SHA}"
+            license "BSD-3-Clause"
+            version "${VERSION#v}"
+            depends_on arch: :arm64
+            def install
+              bin.install "fbfsvg-player"
+            end
+            test do
+              assert_match "FBF.SVG Player", shell_output("#{bin}/fbfsvg-player --help 2>&1", 1)
+            end
+          end
+          EOF
+
+          # Update Linux formula
+          cat > Formula/fbfsvg-player@linux.rb << EOF
+          class FbfsvgPlayerAtLinux < Formula
+            desc "High-performance animated SVG player for the FBF.SVG vector video format"
+            homepage "https://github.com/Emasoft/fbfsvg-player"
+            url "https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}/fbfsvg-player-${VERSION}-linux-x64.tar.gz"
+            sha256 "${LINUX_SHA}"
+            license "BSD-3-Clause"
+            version "${VERSION#v}"
+            depends_on :linux
+            depends_on arch: :x86_64
+            def install
+              bin.install "fbfsvg-player"
+            end
+            test do
+              assert_match "FBF.SVG Player", shell_output("#{bin}/fbfsvg-player --help 2>&1", 1)
+            end
+          end
+          EOF
+
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add Formula/
+          git commit -m "Update fbfsvg-player to ${VERSION}"
+          git push
+
+      - name: Update Scoop bucket
+        env:
+          GH_TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+        run: |
+          VERSION=${{ steps.info.outputs.VERSION }}
+          WINDOWS_SHA=${{ steps.info.outputs.WINDOWS_SHA256 }}
+
+          gh repo clone Emasoft/scoop-fbfsvg /tmp/scoop
+          cd /tmp/scoop
+
+          cat > bucket/fbfsvg-player.json << EOF
+          {
+              "version": "${VERSION#v}",
+              "description": "High-performance animated SVG player for the FBF.SVG vector video format",
+              "homepage": "https://github.com/Emasoft/fbfsvg-player",
+              "license": "BSD-3-Clause",
+              "architecture": {
+                  "64bit": {
+                      "url": "https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}/fbfsvg-player-${VERSION}-windows-x64.zip",
+                      "hash": "${WINDOWS_SHA}"
+                  }
+              },
+              "bin": "fbfsvg-player-windows-x64.exe",
+              "checkver": "github",
+              "autoupdate": {
+                  "architecture": {
+                      "64bit": {
+                          "url": "https://github.com/Emasoft/fbfsvg-player/releases/download/v\$version/fbfsvg-player-v\$version-windows-x64.zip"
+                      }
+                  }
+              }
+          }
+          EOF
+
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add bucket/
+          git commit -m "Update fbfsvg-player to ${VERSION}"
+          git push
