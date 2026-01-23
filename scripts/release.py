@@ -44,19 +44,33 @@ GITHUB_REPO = "Emasoft/fbfsvg-player"
 LICENSE = "BSD-3-Clause"
 
 # Platform configurations
+# Note: macOS has two separate architectures (arm64 and x64) with separate builds
 PLATFORMS = {
-    "macos": {
+    "macos-arm64": {
         "os": "Darwin",
         "arch": "arm64",
-        "build_script": "scripts/build-macos.sh",
-        "binary_name": "fbfsvg-player",
+        "build_script": "scripts/build-macos-arch.sh",
+        "build_args": ["arm64"],
+        "binary_name": "fbfsvg-player-macos-arm64",
         "package_format": "tar.gz",
         "asset_name": "{name}-{version}-macos-arm64.tar.gz",
+        "display_name": "macOS (Apple Silicon)",
+    },
+    "macos-x64": {
+        "os": "Darwin",
+        "arch": "x86_64",
+        "build_script": "scripts/build-macos-arch.sh",
+        "build_args": ["x64"],
+        "binary_name": "fbfsvg-player-macos-x64",
+        "package_format": "tar.gz",
+        "asset_name": "{name}-{version}-macos-x64.tar.gz",
+        "display_name": "macOS (Intel)",
     },
     "linux": {
         "os": "Linux",
         "arch": "x86_64",
         "build_script": "scripts/build-linux.sh",
+        "build_args": [],
         "binary_name": "fbfsvg-player",
         "package_formats": ["tar.gz", "deb", "appimage"],
         "asset_names": {
@@ -64,15 +78,23 @@ PLATFORMS = {
             "deb": "{name}_{version}_amd64.deb",
             "appimage": "{name}-{version}-x86_64.AppImage",
         },
+        "display_name": "Linux (x64)",
     },
     "windows": {
         "os": "Windows",
         "arch": "x86_64",
         "build_script": "scripts/build-windows.bat",
+        "build_args": [],
         "binary_name": "fbfsvg-player.exe",
         "package_format": "zip",
         "asset_name": "{name}-{version}-windows-x64.zip",
+        "display_name": "Windows (x64)",
     },
+}
+
+# Platform aliases for convenience
+PLATFORM_ALIASES = {
+    "macos": ["macos-arm64", "macos-x64"],  # "macos" means both architectures
 }
 
 
@@ -165,29 +187,32 @@ class BuildResult:
     error: Optional[str] = None
 
 
-def build_macos(project_root: Path, dry_run: bool = False) -> BuildResult:
-    """Build for macOS."""
-    log("Building for macOS (ARM64)...", "STEP")
+def build_macos_arch(project_root: Path, arch: str, dry_run: bool = False) -> BuildResult:
+    """Build for macOS with specific architecture (arm64 or x64)."""
+    platform_key = f"macos-{arch}"
+    display_name = PLATFORMS[platform_key]["display_name"]
+    log(f"Building for {display_name}...", "STEP")
 
     if get_current_platform() != "macos":
         log("macOS builds require a macOS host", "WARNING")
-        return BuildResult("macos", False, None, "Requires macOS host")
+        return BuildResult(platform_key, False, None, "Requires macOS host")
 
-    build_script = project_root / "scripts" / "build-macos.sh"
+    build_script = project_root / "scripts" / "build-macos-arch.sh"
     if not build_script.exists():
-        return BuildResult("macos", False, None, f"Build script not found: {build_script}")
+        return BuildResult(platform_key, False, None, f"Build script not found: {build_script}")
 
     try:
-        run_cmd(["bash", str(build_script)], cwd=project_root, dry_run=dry_run)
-        binary_path = project_root / "build" / "fbfsvg-player"
+        run_cmd(["bash", str(build_script), arch], cwd=project_root, dry_run=dry_run)
+        binary_name = PLATFORMS[platform_key]["binary_name"]
+        binary_path = project_root / "build" / binary_name
 
         if dry_run or binary_path.exists():
-            log("macOS build successful", "SUCCESS")
-            return BuildResult("macos", True, binary_path)
+            log(f"{display_name} build successful", "SUCCESS")
+            return BuildResult(platform_key, True, binary_path)
         else:
-            return BuildResult("macos", False, None, "Binary not found after build")
+            return BuildResult(platform_key, False, None, "Binary not found after build")
     except subprocess.CalledProcessError as e:
-        return BuildResult("macos", False, None, str(e))
+        return BuildResult(platform_key, False, None, str(e))
 
 
 def build_linux(project_root: Path, dry_run: bool = False) -> BuildResult:
@@ -409,8 +434,8 @@ def create_packages(build_results: dict[str, BuildResult], output_dir: Path,
         if not result.success or result.binary_path is None:
             continue
 
-        if plat == "macos":
-            # Create tarball
+        if plat == "macos-arm64":
+            # Create tarball for macOS ARM64
             asset_name = f"{PROJECT_NAME}-{version}-macos-arm64.tar.gz"
             output_path = output_dir / asset_name
 
@@ -421,7 +446,22 @@ def create_packages(build_results: dict[str, BuildResult], output_dir: Path,
             else:
                 sha, size = "DRY_RUN", "0 B"
 
-            packages.append(PackageResult("macos", "tar.gz", output_path, sha, size))
+            packages.append(PackageResult("macos-arm64", "tar.gz", output_path, sha, size))
+            log(f"Created {asset_name} ({size})", "SUCCESS")
+
+        elif plat == "macos-x64":
+            # Create tarball for macOS x64 (Intel)
+            asset_name = f"{PROJECT_NAME}-{version}-macos-x64.tar.gz"
+            output_path = output_dir / asset_name
+
+            if not dry_run:
+                create_tarball(result.binary_path, output_path, "fbfsvg-player")
+                sha = sha256_file(output_path)
+                size = get_file_size(output_path)
+            else:
+                sha, size = "DRY_RUN", "0 B"
+
+            packages.append(PackageResult("macos-x64", "tar.gz", output_path, sha, size))
             log(f"Created {asset_name} ({size})", "SUCCESS")
 
         elif plat == "linux":
@@ -507,7 +547,7 @@ def create_draft_release(version: str, packages: list[PackageResult],
     for pkg in packages:
         release_notes += f"| {pkg.platform.title()} | [{pkg.path.name}](https://github.com/{GITHUB_REPO}/releases/download/{tag}/{pkg.path.name}) | {pkg.size} |\n"
 
-    release_notes += f"""
+    release_notes += """
 ### Checksums (SHA256)
 
 ```
@@ -621,43 +661,63 @@ def publish_release(tag: str, dry_run: bool = False) -> bool:
 
 def update_homebrew_formula(project_root: Path, version: str,
                            packages: list[PackageResult], dry_run: bool = False):
-    """Update Homebrew formula with new version and checksum."""
+    """Update Homebrew formula with new version and checksum for both architectures."""
     log("Updating Homebrew formulas...", "STEP")
 
-    # Find macOS package
-    macos_pkg = next((p for p in packages if p.platform == "macos" and p.format == "tar.gz"), None)
+    # Find macOS packages for both architectures
+    macos_arm64_pkg = next((p for p in packages if p.platform == "macos-arm64" and p.format == "tar.gz"), None)
+    macos_x64_pkg = next((p for p in packages if p.platform == "macos-x64" and p.format == "tar.gz"), None)
     linux_pkg = next((p for p in packages if p.platform == "linux" and p.format == "tar.gz"), None)
 
-    # Update macOS formula
-    if macos_pkg:
-        formula_path = project_root / "Formula" / "fbfsvg-player.rb"
-        if formula_path.exists():
-            content = formula_path.read_text()
+    # Update macOS formula (supports both ARM64 and Intel via on_arm/on_intel blocks)
+    formula_path = project_root / "Formula" / "fbfsvg-player.rb"
+    if formula_path.exists():
+        content = formula_path.read_text()
 
-            # Update URL
+        # Update version (common field)
+        content = re.sub(
+            r'version "[\d.]+"',
+            f'version "{version}"',
+            content
+        )
+
+        # Update on_arm block (ARM64 / Apple Silicon)
+        if macos_arm64_pkg:
+            # Update ARM64 URL in on_arm block
             content = re.sub(
-                r'url "https://github\.com/Emasoft/fbfsvg-player/releases/download/v[\d.]+/.*\.tar\.gz"',
-                f'url "https://github.com/Emasoft/fbfsvg-player/releases/download/v{version}/{macos_pkg.path.name}"',
+                r'(on_arm do\s+url )"https://github\.com/Emasoft/fbfsvg-player/releases/download/v[\d.]+/[^"]+\.tar\.gz"',
+                f'\\1"https://github.com/Emasoft/fbfsvg-player/releases/download/v{version}/{macos_arm64_pkg.path.name}"',
                 content
             )
-
-            # Update SHA256
+            # Update ARM64 SHA256 in on_arm block
             content = re.sub(
-                r'sha256 "[a-f0-9]+"',
-                f'sha256 "{macos_pkg.sha256}"',
+                r'(on_arm do\s+url "[^"]+"\s+sha256 )"[a-fA-F0-9]+"',
+                f'\\1"{macos_arm64_pkg.sha256}"',
                 content
             )
+            log(f"Updated on_arm block with ARM64 SHA256: {macos_arm64_pkg.sha256[:16]}...", "SUCCESS")
 
-            # Update version
+        # Update on_intel block (x86_64 / Intel)
+        if macos_x64_pkg:
+            # Update x64 URL in on_intel block
             content = re.sub(
-                r'version "[\d.]+"',
-                f'version "{version}"',
+                r'(on_intel do\s+url )"https://github\.com/Emasoft/fbfsvg-player/releases/download/v[\d.]+/[^"]+\.tar\.gz"',
+                f'\\1"https://github.com/Emasoft/fbfsvg-player/releases/download/v{version}/{macos_x64_pkg.path.name}"',
                 content
             )
+            # Update x64 SHA256 in on_intel block
+            content = re.sub(
+                r'(on_intel do\s+url "[^"]+"\s+sha256 )"[a-fA-F0-9_]+"',
+                f'\\1"{macos_x64_pkg.sha256}"',
+                content
+            )
+            log(f"Updated on_intel block with x64 SHA256: {macos_x64_pkg.sha256[:16]}...", "SUCCESS")
 
-            if not dry_run:
-                formula_path.write_text(content)
-            log(f"Updated {formula_path.name}", "SUCCESS")
+        if not dry_run:
+            formula_path.write_text(content)
+        log(f"Updated {formula_path.name}", "SUCCESS")
+    else:
+        log(f"Homebrew formula not found: {formula_path}", "WARNING")
 
     # Update Linux formula
     if linux_pkg:
@@ -774,6 +834,15 @@ def run_release(version: str, platforms: Optional[list[str]] = None,
     if platforms is None:
         platforms = ["macos", "linux", "windows"]
 
+    # Expand platform aliases (e.g., "macos" -> ["macos-arm64", "macos-x64"])
+    expanded_platforms = []
+    for p in platforms:
+        if p in PLATFORM_ALIASES:
+            expanded_platforms.extend(PLATFORM_ALIASES[p])
+        else:
+            expanded_platforms.append(p)
+    platforms = expanded_platforms
+
     current_platform = get_current_platform()
     log(f"Current platform: {current_platform}")
     log(f"Target platforms: {', '.join(platforms)}")
@@ -791,8 +860,10 @@ def run_release(version: str, platforms: Optional[list[str]] = None,
         log("=" * 60)
 
         for plat in platforms:
-            if plat == "macos":
-                build_results["macos"] = build_macos(project_root, dry_run)
+            if plat == "macos-arm64":
+                build_results["macos-arm64"] = build_macos_arch(project_root, "arm64", dry_run)
+            elif plat == "macos-x64":
+                build_results["macos-x64"] = build_macos_arch(project_root, "x64", dry_run)
             elif plat == "linux":
                 build_results["linux"] = build_linux(project_root, dry_run)
             elif plat == "windows":
@@ -810,8 +881,10 @@ def run_release(version: str, platforms: Optional[list[str]] = None,
         # Assume existing binaries
         for plat in platforms:
             binary: Optional[Path] = None
-            if plat == "macos":
-                binary = project_root / "build" / "fbfsvg-player"
+            if plat == "macos-arm64":
+                binary = project_root / "build" / "fbfsvg-player-macos-arm64"
+            elif plat == "macos-x64":
+                binary = project_root / "build" / "fbfsvg-player-macos-x64"
             elif plat == "linux":
                 binary = project_root / "build" / "linux" / "fbfsvg-player"
             elif plat == "windows":

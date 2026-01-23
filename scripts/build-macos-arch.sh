@@ -77,21 +77,32 @@ check_sdl2() {
     return 0
 }
 
-# Check for Skia libraries
+# Check for Skia libraries (architecture-specific)
 check_skia() {
-    log_info "Checking for Skia libraries..."
+    log_info "Checking for Skia libraries ($arch)..."
 
-    local skia_dir="$PROJECT_ROOT/skia-build/src/skia/out/release-macos"
+    # Use architecture-specific Skia directory
+    local skia_dir="$PROJECT_ROOT/skia-build/src/skia/out/release-macos-$arch"
+
+    # Fallback to generic release-macos if arch-specific not found
+    if [ ! -f "$skia_dir/libskia.a" ]; then
+        skia_dir="$PROJECT_ROOT/skia-build/src/skia/out/release-macos"
+    fi
 
     if [ ! -f "$skia_dir/libskia.a" ]; then
-        log_error "Skia libraries not found at: $skia_dir"
-        log_info "Run './scripts/build-skia.sh' to build Skia first"
+        log_error "Skia libraries not found"
+        log_info "Expected at: $PROJECT_ROOT/skia-build/src/skia/out/release-macos-$arch"
+        log_info "Run 'cd skia-build && ./build-macos-$arch.sh' to build Skia first"
         return 1
     fi
 
-    # Verify architecture
+    # Verify architecture matches
     local arch_info=$(lipo -info "$skia_dir/libskia.a" 2>/dev/null || echo "unknown")
-    log_info "Skia library architectures: $arch_info"
+    log_info "Skia library: $skia_dir"
+    log_info "Skia architectures: $arch_info"
+
+    # Export for use in build
+    export SKIA_OUT_DIR="$skia_dir"
     return 0
 }
 
@@ -169,19 +180,20 @@ TARGET="$BUILD_DIR/fbfsvg-player-macos-$arch"
 INCLUDES="-I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules -I$PROJECT_ROOT $(pkg-config --cflags sdl2)"
 
 # Skia static libraries (order matters for linking)
-SKIA_LIBS="$SKIA_DIR/out/release-macos/libsvg.a \
-           $SKIA_DIR/out/release-macos/libskia.a \
-           $SKIA_DIR/out/release-macos/libskresources.a \
-           $SKIA_DIR/out/release-macos/libskshaper.a \
-           $SKIA_DIR/out/release-macos/libharfbuzz.a \
-           $SKIA_DIR/out/release-macos/libskunicode_core.a \
-           $SKIA_DIR/out/release-macos/libskunicode_icu.a \
-           $SKIA_DIR/out/release-macos/libexpat.a \
-           $SKIA_DIR/out/release-macos/libpng.a \
-           $SKIA_DIR/out/release-macos/libzlib.a \
-           $SKIA_DIR/out/release-macos/libjpeg.a \
-           $SKIA_DIR/out/release-macos/libwebp.a \
-           $SKIA_DIR/out/release-macos/libwuffs.a"
+# Uses SKIA_OUT_DIR set by check_skia() for architecture-specific build
+SKIA_LIBS="$SKIA_OUT_DIR/libsvg.a \
+           $SKIA_OUT_DIR/libskia.a \
+           $SKIA_OUT_DIR/libskresources.a \
+           $SKIA_OUT_DIR/libskshaper.a \
+           $SKIA_OUT_DIR/libharfbuzz.a \
+           $SKIA_OUT_DIR/libskunicode_core.a \
+           $SKIA_OUT_DIR/libskunicode_icu.a \
+           $SKIA_OUT_DIR/libexpat.a \
+           $SKIA_OUT_DIR/libpng.a \
+           $SKIA_OUT_DIR/libzlib.a \
+           $SKIA_OUT_DIR/libjpeg.a \
+           $SKIA_OUT_DIR/libwebp.a \
+           $SKIA_OUT_DIR/libwuffs.a"
 
 # External libraries
 LDFLAGS="$(pkg-config --libs sdl2) -L$ICU_ROOT/lib -licuuc -licui18n -licudata -liconv"
