@@ -3,23 +3,27 @@
 fbfsvg-player Release Automation Script
 
 Automates the complete release process for all platforms:
-1. Version validation and tagging
-2. Building for macOS, Linux, Windows
-3. Creating distribution packages
-4. Draft release creation on GitHub
-5. Asset upload and checksum generation
-6. Validation of all assets
-7. Publishing the release
-8. Updating package manifests (Homebrew, Scoop)
+1. Pre-flight checks (dependencies, Skia libraries, disk space)
+2. Version validation and tagging
+3. Building for macOS (ARM64 + x64 in parallel), Linux, Windows
+4. Creating distribution packages
+5. Draft release creation on GitHub
+6. Asset upload and checksum generation
+7. Validation of all assets
+8. Interactive publish confirmation
+9. Publishing the release
+10. Updating package manifests (Homebrew, Scoop)
 
 Usage:
     python3 scripts/release.py --version 0.2.0
     python3 scripts/release.py --version 0.2.0 --dry-run
     python3 scripts/release.py --version 0.2.0 --skip-build
     python3 scripts/release.py --version 0.2.0 --platform macos
+    python3 scripts/release.py --version 0.2.0 --no-confirm
 """
 
 import argparse
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -28,11 +32,13 @@ import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
 # =============================================================================
@@ -43,9 +49,14 @@ PROJECT_NAME = "fbfsvg-player"
 GITHUB_REPO = "Emasoft/fbfsvg-player"
 LICENSE = "BSD-3-Clause"
 
+# Minimum requirements
+MIN_DISK_SPACE_GB = 2.0
+NETWORK_RETRY_COUNT = 3
+NETWORK_RETRY_DELAY = 5  # seconds
+
 # Platform configurations
 # Note: macOS has two separate architectures (arm64 and x64) with separate builds
-PLATFORMS = {
+PLATFORMS: dict[str, dict[str, Any]] = {
     "macos-arm64": {
         "os": "Darwin",
         "arch": "arm64",
@@ -55,6 +66,8 @@ PLATFORMS = {
         "package_format": "tar.gz",
         "asset_name": "{name}-{version}-macos-arm64.tar.gz",
         "display_name": "macOS (Apple Silicon)",
+        "skia_dir": "release-macos-arm64",
+        "lipo_arch": "arm64",
     },
     "macos-x64": {
         "os": "Darwin",
@@ -65,6 +78,9 @@ PLATFORMS = {
         "package_format": "tar.gz",
         "asset_name": "{name}-{version}-macos-x64.tar.gz",
         "display_name": "macOS (Intel)",
+        "skia_dir": "release-macos-x64",
+        "lipo_arch": "x86_64",
+        "rosetta_prefix": ["arch", "-x86_64"],  # Cross-compile on ARM64
     },
     "linux": {
         "os": "Linux",
@@ -79,6 +95,7 @@ PLATFORMS = {
             "appimage": "{name}-{version}-x86_64.AppImage",
         },
         "display_name": "Linux (x64)",
+        "skia_dir": "release-linux",
     },
     "windows": {
         "os": "Windows",
@@ -89,6 +106,7 @@ PLATFORMS = {
         "package_format": "zip",
         "asset_name": "{name}-{version}-windows-x64.zip",
         "display_name": "Windows (x64)",
+        "skia_dir": "release-windows",
     },
 }
 
@@ -99,41 +117,96 @@ PLATFORM_ALIASES = {
 
 
 # =============================================================================
-# Utility Functions
+# Logging
 # =============================================================================
 
-def log(msg: str, level: str = "INFO"):
+LOG_FILE: Optional[Path] = None
+
+
+def init_logging(log_dir: Path) -> None:
+    """Initialize log file."""
+    global LOG_FILE
+    log_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    LOG_FILE = log_dir / f"release_{timestamp}.log"
+    LOG_FILE.touch()
+
+
+def log(msg: str, level: str = "INFO") -> None:
     """Print a log message with timestamp and level."""
     timestamp = datetime.now().strftime("%H:%M:%S")
     colors = {
-        "INFO": "\033[0;36m",    # Cyan
-        "SUCCESS": "\033[0;32m", # Green
-        "WARNING": "\033[0;33m", # Yellow
-        "ERROR": "\033[0;31m",   # Red
-        "STEP": "\033[1;35m",    # Bold Magenta
+        "INFO": "\033[0;36m",  # Cyan
+        "SUCCESS": "\033[0;32m",  # Green
+        "WARNING": "\033[0;33m",  # Yellow
+        "ERROR": "\033[0;31m",  # Red
+        "STEP": "\033[1;35m",  # Bold Magenta
+        "DEBUG": "\033[0;90m",  # Gray
     }
     reset = "\033[0m"
     color = colors.get(level, "")
+
+    # Console output
     print(f"{color}[{timestamp}] [{level}] {msg}{reset}")
 
+    # File output (no colors)
+    if LOG_FILE:
+        with open(LOG_FILE, "a") as f:
+            f.write(f"[{timestamp}] [{level}] {msg}\n")
 
-def run_cmd(cmd: list[str], cwd: Optional[Path] = None, capture: bool = False,
-            check: bool = True, dry_run: bool = False) -> subprocess.CompletedProcess:
-    """Run a shell command with logging."""
+
+# =============================================================================
+# Utility Functions
+# =============================================================================
+
+
+def run_cmd(
+    cmd: list[str],
+    cwd: Optional[Path] = None,
+    capture: bool = False,
+    check: bool = True,
+    dry_run: bool = False,
+    retry: int = 0,
+    retry_delay: int = NETWORK_RETRY_DELAY,
+    timeout: Optional[int] = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run a shell command with logging and optional retry."""
     cmd_str = " ".join(str(c) for c in cmd)
     if dry_run:
         log(f"[DRY-RUN] Would execute: {cmd_str}", "WARNING")
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
-    log(f"Executing: {cmd_str}")
-    result = subprocess.run(
-        cmd,
-        cwd=cwd,
-        capture_output=capture,
-        text=True,
-        check=check,
-    )
-    return result
+    log(f"Executing: {cmd_str}", "DEBUG")
+
+    last_error = None
+    for attempt in range(retry + 1):
+        try:
+            result = subprocess.run(
+                cmd,
+                cwd=cwd,
+                capture_output=capture,
+                text=True,
+                check=check,
+                timeout=timeout,
+            )
+            return result
+        except subprocess.CalledProcessError as e:
+            last_error = e
+            if attempt < retry:
+                log(
+                    f"Command failed (attempt {attempt + 1}/{retry + 1}), retrying in {retry_delay}s...",
+                    "WARNING",
+                )
+                time.sleep(retry_delay)
+            else:
+                raise
+        except subprocess.TimeoutExpired:
+            log(f"Command timed out after {timeout}s", "ERROR")
+            raise
+
+    # Should never reach here - raise RuntimeError as fallback
+    assert last_error is not None, "Unexpected execution path in run_cmd"
+    raise last_error
 
 
 def sha256_file(filepath: Path) -> str:
@@ -147,7 +220,7 @@ def sha256_file(filepath: Path) -> str:
 
 def get_file_size(filepath: Path) -> str:
     """Get human-readable file size."""
-    size = filepath.stat().st_size
+    size: float = filepath.stat().st_size
     for unit in ["B", "KB", "MB", "GB"]:
         if size < 1024:
             return f"{size:.1f} {unit}"
@@ -174,119 +247,545 @@ def get_current_platform() -> str:
         raise RuntimeError(f"Unsupported platform: {system}")
 
 
+def get_current_arch() -> str:
+    """Detect the current CPU architecture."""
+    machine = platform.machine()
+    if machine in ("arm64", "aarch64"):
+        return "arm64"
+    elif machine in ("x86_64", "AMD64"):
+        return "x86_64"
+    else:
+        return machine
+
+
+def get_disk_space_gb(path: Path) -> float:
+    """Get available disk space in GB."""
+    stat = shutil.disk_usage(path)
+    return stat.free / (1024**3)
+
+
+def verify_binary_architecture(binary_path: Path, expected_arch: str) -> bool:
+    """Verify binary architecture using lipo (macOS) or file command."""
+    if not binary_path.exists():
+        return False
+
+    try:
+        if get_current_platform() == "macos":
+            result = subprocess.run(
+                ["lipo", "-info", str(binary_path)],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return expected_arch in result.stdout
+        else:
+            result = subprocess.run(
+                ["file", str(binary_path)], capture_output=True, text=True, check=True
+            )
+            if expected_arch == "x86_64":
+                return "x86-64" in result.stdout or "x86_64" in result.stdout
+            elif expected_arch == "arm64":
+                return "arm64" in result.stdout or "aarch64" in result.stdout
+    except subprocess.CalledProcessError:
+        pass
+    return False
+
+
+# =============================================================================
+# Pre-flight Checks
+# =============================================================================
+
+
+@dataclass
+class PreflightResult:
+    """Result of a preflight check."""
+
+    name: str
+    passed: bool
+    message: str
+    fix_hint: Optional[str] = None
+
+
+def check_gh_cli() -> PreflightResult:
+    """Check if GitHub CLI is installed and authenticated."""
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "status"], capture_output=True, text=True, check=False
+        )
+        if result.returncode == 0:
+            return PreflightResult("GitHub CLI", True, "Authenticated")
+        else:
+            return PreflightResult(
+                "GitHub CLI", False, "Not authenticated", "Run: gh auth login"
+            )
+    except FileNotFoundError:
+        return PreflightResult(
+            "GitHub CLI", False, "Not installed", "Install: brew install gh"
+        )
+
+
+def check_docker() -> PreflightResult:
+    """Check if Docker is available."""
+    try:
+        result = subprocess.run(
+            ["docker", "info"], capture_output=True, text=True, check=False, timeout=10
+        )
+        if result.returncode == 0:
+            return PreflightResult("Docker", True, "Running")
+        else:
+            return PreflightResult(
+                "Docker",
+                False,
+                "Not running",
+                "Start Docker Desktop or: sudo systemctl start docker",
+            )
+    except FileNotFoundError:
+        return PreflightResult(
+            "Docker",
+            False,
+            "Not installed",
+            "Install Docker Desktop from https://docker.com",
+        )
+    except subprocess.TimeoutExpired:
+        return PreflightResult("Docker", False, "Not responding", "Restart Docker")
+
+
+def check_skia_libraries(
+    project_root: Path, platforms: list[str]
+) -> list[PreflightResult]:
+    """Check if Skia libraries exist for target platforms."""
+    results = []
+    skia_base = project_root / "skia-build" / "src" / "skia" / "out"
+
+    for plat in platforms:
+        if plat not in PLATFORMS:
+            continue
+
+        config = PLATFORMS[plat]
+        skia_dir = config.get("skia_dir")
+        if not skia_dir:
+            continue
+
+        skia_path = skia_base / skia_dir / "libskia.a"
+
+        # Try fallback for macOS
+        if not skia_path.exists() and plat.startswith("macos"):
+            skia_path = skia_base / "release-macos" / "libskia.a"
+
+        if skia_path.exists():
+            # Verify architecture for macOS
+            if plat.startswith("macos"):
+                expected_arch = config.get("lipo_arch", "")
+                try:
+                    result = subprocess.run(
+                        ["lipo", "-info", str(skia_path)],
+                        capture_output=True,
+                        text=True,
+                        check=True,
+                    )
+                    if expected_arch in result.stdout:
+                        results.append(
+                            PreflightResult(
+                                f"Skia ({config['display_name']})",
+                                True,
+                                f"Found at {skia_path.relative_to(project_root)}",
+                            )
+                        )
+                    else:
+                        results.append(
+                            PreflightResult(
+                                f"Skia ({config['display_name']})",
+                                False,
+                                f"Wrong architecture (expected {expected_arch})",
+                                f"Rebuild: cd skia-build && ./build-macos-{config['build_args'][0]}.sh",
+                            )
+                        )
+                except subprocess.CalledProcessError:
+                    results.append(
+                        PreflightResult(
+                            f"Skia ({config['display_name']})",
+                            True,
+                            "Found (arch unverified)",
+                        )
+                    )
+            else:
+                results.append(
+                    PreflightResult(
+                        f"Skia ({config['display_name']})",
+                        True,
+                        f"Found at {skia_path.relative_to(project_root)}",
+                    )
+                )
+        else:
+            arch_suffix = config["build_args"][0] if config.get("build_args") else ""
+            build_cmd = f"cd skia-build && ./build-{plat.split('-')[0]}"
+            if arch_suffix:
+                build_cmd += f"-{arch_suffix}"
+            build_cmd += ".sh"
+
+            results.append(
+                PreflightResult(
+                    f"Skia ({config['display_name']})",
+                    False,
+                    f"Not found at {skia_path}",
+                    f"Build: {build_cmd}",
+                )
+            )
+
+    return results
+
+
+def check_disk_space(project_root: Path) -> PreflightResult:
+    """Check available disk space."""
+    free_gb = get_disk_space_gb(project_root)
+    if free_gb >= MIN_DISK_SPACE_GB:
+        return PreflightResult("Disk Space", True, f"{free_gb:.1f} GB available")
+    else:
+        return PreflightResult(
+            "Disk Space",
+            False,
+            f"Only {free_gb:.1f} GB available (need {MIN_DISK_SPACE_GB} GB)",
+            "Free up disk space",
+        )
+
+
+def check_git_clean(project_root: Path) -> PreflightResult:
+    """Check if git working directory is clean (optional warning)."""
+    try:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=project_root,
+        )
+        if result.stdout.strip():
+            return PreflightResult(
+                "Git Status",
+                True,  # Warning, not failure
+                "Uncommitted changes present (will continue)",
+                "Consider: git stash or git commit",
+            )
+        return PreflightResult("Git Status", True, "Clean")
+    except subprocess.CalledProcessError:
+        return PreflightResult("Git Status", True, "Could not check (not a git repo?)")
+
+
+def check_rosetta(need_x64_on_arm: bool) -> PreflightResult:
+    """Check if Rosetta 2 is available for x64 cross-compilation on ARM64."""
+    if not need_x64_on_arm:
+        return PreflightResult("Rosetta 2", True, "Not needed")
+
+    if get_current_platform() != "macos" or get_current_arch() != "arm64":
+        return PreflightResult("Rosetta 2", True, "Not needed (not ARM64 Mac)")
+
+    try:
+        # Check if Rosetta is installed by running a simple x64 command
+        result = subprocess.run(
+            ["arch", "-x86_64", "uname", "-m"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+        if result.returncode == 0 and "x86_64" in result.stdout:
+            return PreflightResult("Rosetta 2", True, "Installed and working")
+        else:
+            return PreflightResult(
+                "Rosetta 2",
+                False,
+                "Not installed or not working",
+                "Install: softwareupdate --install-rosetta",
+            )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return PreflightResult(
+            "Rosetta 2",
+            False,
+            "Could not verify",
+            "Install: softwareupdate --install-rosetta",
+        )
+
+
+def run_preflight_checks(
+    project_root: Path, platforms: list[str], skip_build: bool
+) -> bool:
+    """Run all preflight checks."""
+    log("Running pre-flight checks...", "STEP")
+
+    checks = []
+
+    # Essential checks
+    checks.append(check_gh_cli())
+    checks.append(check_disk_space(project_root))
+    checks.append(check_git_clean(project_root))
+
+    # Platform-specific checks
+    if not skip_build:
+        if "linux" in platforms:
+            checks.append(check_docker())
+
+        # Check Skia libraries
+        checks.extend(check_skia_libraries(project_root, platforms))
+
+        # Check Rosetta if building x64 on ARM64 Mac
+        need_x64 = "macos-x64" in platforms
+        if need_x64 and get_current_arch() == "arm64":
+            checks.append(check_rosetta(True))
+
+    # Report results
+    all_passed = True
+    for check in checks:
+        status = "✓" if check.passed else "✗"
+        level = "SUCCESS" if check.passed else "ERROR"
+        log(f"  {status} {check.name}: {check.message}", level)
+        if not check.passed and check.fix_hint:
+            log(f"    → Fix: {check.fix_hint}", "WARNING")
+            all_passed = False
+
+    if not all_passed:
+        log("\nSome pre-flight checks failed. Fix the issues above and retry.", "ERROR")
+
+    return all_passed
+
+
 # =============================================================================
 # Build Functions
 # =============================================================================
 
+
 @dataclass
 class BuildResult:
     """Result of a platform build."""
+
     platform: str
     success: bool
     binary_path: Optional[Path]
     error: Optional[str] = None
+    duration_seconds: float = 0.0
 
 
-def build_macos_arch(project_root: Path, arch: str, dry_run: bool = False) -> BuildResult:
+def build_macos_arch(
+    project_root: Path, arch: str, dry_run: bool = False
+) -> BuildResult:
     """Build for macOS with specific architecture (arm64 or x64)."""
+    start_time = time.time()
     platform_key = f"macos-{arch}"
-    display_name = PLATFORMS[platform_key]["display_name"]
+    config = PLATFORMS[platform_key]
+    display_name = config["display_name"]
     log(f"Building for {display_name}...", "STEP")
 
     if get_current_platform() != "macos":
-        log("macOS builds require a macOS host", "WARNING")
         return BuildResult(platform_key, False, None, "Requires macOS host")
 
     build_script = project_root / "scripts" / "build-macos-arch.sh"
     if not build_script.exists():
-        return BuildResult(platform_key, False, None, f"Build script not found: {build_script}")
+        return BuildResult(
+            platform_key, False, None, f"Build script not found: {build_script}"
+        )
 
     try:
-        run_cmd(["bash", str(build_script), arch], cwd=project_root, dry_run=dry_run)
-        binary_name = PLATFORMS[platform_key]["binary_name"]
-        binary_path = project_root / "build" / binary_name
+        # Check if cross-compilation needed (building x64 on ARM64)
+        current_arch = get_current_arch()
+        cmd = ["bash", str(build_script), arch]
 
-        if dry_run or binary_path.exists():
-            log(f"{display_name} build successful", "SUCCESS")
-            return BuildResult(platform_key, True, binary_path)
+        if arch == "x64" and current_arch == "arm64":
+            log("Cross-compiling x64 on ARM64 via Rosetta 2", "INFO")
+            # Use Rosetta prefix for x64 build on ARM64
+            rosetta_prefix = config.get("rosetta_prefix", [])
+            if rosetta_prefix:
+                cmd = rosetta_prefix + cmd
+
+        run_cmd(cmd, cwd=project_root, dry_run=dry_run, timeout=1800)  # 30 min timeout
+
+        binary_name = config["binary_name"]
+        binary_path = project_root / "build" / binary_name
+        duration = time.time() - start_time
+
+        if dry_run:
+            log(f"{display_name} build successful (dry-run)", "SUCCESS")
+            return BuildResult(
+                platform_key, True, binary_path, duration_seconds=duration
+            )
+
+        if binary_path.exists():
+            # Verify architecture
+            expected_lipo_arch = config.get("lipo_arch", arch)
+            if verify_binary_architecture(binary_path, expected_lipo_arch):
+                log(f"{display_name} build successful ({duration:.1f}s)", "SUCCESS")
+                return BuildResult(
+                    platform_key, True, binary_path, duration_seconds=duration
+                )
+            else:
+                return BuildResult(
+                    platform_key,
+                    False,
+                    None,
+                    f"Binary architecture mismatch (expected {expected_lipo_arch})",
+                    duration_seconds=duration,
+                )
         else:
-            return BuildResult(platform_key, False, None, "Binary not found after build")
+            return BuildResult(
+                platform_key,
+                False,
+                None,
+                "Binary not found after build",
+                duration_seconds=duration,
+            )
+
     except subprocess.CalledProcessError as e:
-        return BuildResult(platform_key, False, None, str(e))
+        duration = time.time() - start_time
+        return BuildResult(
+            platform_key, False, None, f"Build failed: {e}", duration_seconds=duration
+        )
+    except subprocess.TimeoutExpired:
+        duration = time.time() - start_time
+        return BuildResult(
+            platform_key,
+            False,
+            None,
+            "Build timed out (30 min)",
+            duration_seconds=duration,
+        )
 
 
 def build_linux(project_root: Path, dry_run: bool = False) -> BuildResult:
     """Build for Linux using Docker."""
+    start_time = time.time()
     log("Building for Linux (x64) via Docker...", "STEP")
 
     docker_dir = project_root / "docker"
 
-    # Check if Docker is available
-    try:
-        run_cmd(["docker", "info"], capture=True, dry_run=dry_run)
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return BuildResult("linux", False, None, "Docker not available")
-
-    # Build using docker-compose
     try:
         # Ensure container is running
         run_cmd(
             ["docker-compose", "up", "-d"],
             cwd=docker_dir,
             dry_run=dry_run,
+            timeout=120,
         )
 
         # Execute build inside container
         run_cmd(
-            ["docker-compose", "exec", "-T", "dev", "bash", "-c",
-             "cd /workspace && ./scripts/build-linux.sh"],
+            [
+                "docker-compose",
+                "exec",
+                "-T",
+                "dev",
+                "bash",
+                "-c",
+                "cd /workspace && ./scripts/build-linux.sh",
+            ],
             cwd=docker_dir,
             dry_run=dry_run,
+            timeout=1800,  # 30 min timeout
         )
 
         binary_path = project_root / "build" / "linux" / "fbfsvg-player"
+        duration = time.time() - start_time
 
         if dry_run or binary_path.exists():
-            log("Linux build successful", "SUCCESS")
-            return BuildResult("linux", True, binary_path)
+            log(f"Linux build successful ({duration:.1f}s)", "SUCCESS")
+            return BuildResult("linux", True, binary_path, duration_seconds=duration)
         else:
-            return BuildResult("linux", False, None, "Binary not found after build")
+            return BuildResult(
+                "linux",
+                False,
+                None,
+                "Binary not found after build",
+                duration_seconds=duration,
+            )
+
     except subprocess.CalledProcessError as e:
-        return BuildResult("linux", False, None, str(e))
+        duration = time.time() - start_time
+        return BuildResult(
+            "linux", False, None, f"Build failed: {e}", duration_seconds=duration
+        )
+    except subprocess.TimeoutExpired:
+        duration = time.time() - start_time
+        return BuildResult(
+            "linux", False, None, "Build timed out (30 min)", duration_seconds=duration
+        )
 
 
 def build_windows(project_root: Path, dry_run: bool = False) -> BuildResult:
     """Build for Windows."""
+    start_time = time.time()
     log("Building for Windows (x64)...", "STEP")
 
     if get_current_platform() != "windows":
-        log("Windows builds require a Windows host or CI", "WARNING")
-        return BuildResult("windows", False, None, "Requires Windows host")
+        return BuildResult("windows", False, None, "Requires Windows host or CI")
 
     build_script = project_root / "scripts" / "build-windows.bat"
     if not build_script.exists():
-        return BuildResult("windows", False, None, f"Build script not found: {build_script}")
+        return BuildResult(
+            "windows", False, None, f"Build script not found: {build_script}"
+        )
 
     try:
-        run_cmd(["cmd", "/c", str(build_script)], cwd=project_root, dry_run=dry_run)
+        run_cmd(
+            ["cmd", "/c", str(build_script)],
+            cwd=project_root,
+            dry_run=dry_run,
+            timeout=1800,
+        )
         binary_path = project_root / "build" / "windows" / "fbfsvg-player.exe"
+        duration = time.time() - start_time
 
         if dry_run or binary_path.exists():
-            log("Windows build successful", "SUCCESS")
-            return BuildResult("windows", True, binary_path)
+            log(f"Windows build successful ({duration:.1f}s)", "SUCCESS")
+            return BuildResult("windows", True, binary_path, duration_seconds=duration)
         else:
-            return BuildResult("windows", False, None, "Binary not found after build")
+            return BuildResult(
+                "windows",
+                False,
+                None,
+                "Binary not found after build",
+                duration_seconds=duration,
+            )
+
     except subprocess.CalledProcessError as e:
-        return BuildResult("windows", False, None, str(e))
+        duration = time.time() - start_time
+        return BuildResult(
+            "windows", False, None, f"Build failed: {e}", duration_seconds=duration
+        )
+
+
+def build_macos_parallel(
+    project_root: Path, dry_run: bool = False
+) -> dict[str, BuildResult]:
+    """Build both macOS architectures in parallel."""
+    log("Building macOS ARM64 and x64 in parallel...", "STEP")
+
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {
+            executor.submit(
+                build_macos_arch, project_root, "arm64", dry_run
+            ): "macos-arm64",
+            executor.submit(
+                build_macos_arch, project_root, "x64", dry_run
+            ): "macos-x64",
+        }
+
+        for future in concurrent.futures.as_completed(futures):
+            platform_key = futures[future]
+            try:
+                results[platform_key] = future.result()
+            except Exception as e:
+                results[platform_key] = BuildResult(platform_key, False, None, str(e))
+
+    return results
 
 
 # =============================================================================
 # Packaging Functions
 # =============================================================================
 
+
 @dataclass
 class PackageResult:
     """Result of package creation."""
+
     platform: str
     format: str
     path: Path
@@ -296,11 +795,17 @@ class PackageResult:
 
 def create_tarball(binary_path: Path, output_path: Path, name: str) -> Path:
     """Create a minimal .tar.gz package."""
-    import tarfile
-
     with tarfile.open(output_path, "w:gz") as tar:
         tar.add(binary_path, arcname=name)
+    return output_path
 
+
+def create_zip_package(binary_path: Path, output_path: Path, name: str) -> Path:
+    """Create a .zip package."""
+    import zipfile
+
+    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(binary_path, arcname=name)
     return output_path
 
 
@@ -353,58 +858,114 @@ def create_appimage(binary_path: Path, output_dir: Path, version: str) -> Path:
     shutil.copy2(binary_path, appdir / "usr" / "bin" / "fbfsvg-player")
     os.chmod(appdir / "usr" / "bin" / "fbfsvg-player", 0o755)
 
-    # Create AppRun
-    apprun_content = """#!/bin/bash
-SELF=$(readlink -f "$0")
-HERE=${SELF%/*}
-exec "${HERE}/usr/bin/fbfsvg-player" "$@"
-"""
-    apprun_path = appdir / "AppRun"
-    apprun_path.write_text(apprun_content)
-    os.chmod(apprun_path, 0o755)
-
     # Create .desktop file
     desktop_content = """[Desktop Entry]
 Name=FBF.SVG Player
 Exec=fbfsvg-player
 Icon=fbfsvg-player
 Type=Application
-Categories=Graphics;Viewer;
+Categories=Graphics;Video;
+Comment=High-performance animated SVG player for FBF.SVG format
 """
     (appdir / "fbfsvg-player.desktop").write_text(desktop_content)
 
-    # Create minimal icon (1x1 PNG)
+    # Create AppRun
+    apprun_content = """#!/bin/bash
+HERE="$(dirname "$(readlink -f "${0}")")"
+exec "$HERE/usr/bin/fbfsvg-player" "$@"
+"""
+    apprun_path = appdir / "AppRun"
+    apprun_path.write_text(apprun_content)
+    os.chmod(apprun_path, 0o755)
+
+    # Create a placeholder icon (1x1 PNG)
     icon_path = appdir / "fbfsvg-player.png"
-    # Minimal valid PNG (1x1 transparent)
-    png_data = bytes([
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,  # PNG signature
-        0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,  # IHDR chunk
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,  # 1x1
-        0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,  # RGBA
-        0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41,  # IDAT chunk
-        0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,  # compressed data
-        0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00,  #
-        0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,  # IEND chunk
-        0x42, 0x60, 0x82,
-    ])
-    icon_path.write_bytes(png_data)
+    # Minimal 1x1 transparent PNG
+    icon_data = bytes(
+        [
+            0x89,
+            0x50,
+            0x4E,
+            0x47,
+            0x0D,
+            0x0A,
+            0x1A,
+            0x0A,
+            0x00,
+            0x00,
+            0x00,
+            0x0D,
+            0x49,
+            0x48,
+            0x44,
+            0x52,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x08,
+            0x06,
+            0x00,
+            0x00,
+            0x00,
+            0x1F,
+            0x15,
+            0xC4,
+            0x89,
+            0x00,
+            0x00,
+            0x00,
+            0x0A,
+            0x49,
+            0x44,
+            0x41,
+            0x54,
+            0x78,
+            0x9C,
+            0x63,
+            0x00,
+            0x01,
+            0x00,
+            0x00,
+            0x05,
+            0x00,
+            0x01,
+            0x0D,
+            0x0A,
+            0x2D,
+            0xB4,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x49,
+            0x45,
+            0x4E,
+            0x44,
+            0xAE,
+            0x42,
+            0x60,
+            0x82,
+        ]
+    )
+    icon_path.write_bytes(icon_data)
 
-    # Download appimagetool if not present
-    appimagetool = output_dir / "appimagetool-x86_64.AppImage"
-    if not appimagetool.exists():
-        log("Downloading appimagetool...")
-        run_cmd([
-            "curl", "-L", "-o", str(appimagetool),
-            "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
-        ])
-        os.chmod(appimagetool, 0o755)
-
-    # Create AppImage
+    # Check for appimagetool
     output_path = output_dir / f"fbfsvg-player-{version}-x86_64.AppImage"
-    env = os.environ.copy()
-    env["ARCH"] = "x86_64"
 
-    run_cmd([str(appimagetool), str(appdir), str(output_path)])
+    try:
+        run_cmd(["appimagetool", "--version"], capture=True)
+        run_cmd(["appimagetool", str(appdir), str(output_path)])
+    except FileNotFoundError:
+        log("appimagetool not found, creating tarball instead", "WARNING")
+        # Fallback: create a tarball of AppDir
+        output_path = output_dir / f"fbfsvg-player-{version}-x86_64.AppDir.tar.gz"
+        with tarfile.open(output_path, "w:gz") as tar:
+            tar.add(appdir, arcname="AppDir")
 
     # Cleanup
     shutil.rmtree(appdir)
@@ -412,140 +973,155 @@ Categories=Graphics;Viewer;
     return output_path
 
 
-def create_zip(binary_path: Path, output_path: Path, name: str) -> Path:
-    """Create a minimal .zip package."""
-    import zipfile
-
-    with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.write(binary_path, name)
-
-    return output_path
-
-
-def create_packages(build_results: dict[str, BuildResult], output_dir: Path,
-                   version: str, dry_run: bool = False) -> list[PackageResult]:
+def create_packages(
+    build_results: dict[str, BuildResult],
+    release_dir: Path,
+    version: str,
+    dry_run: bool = False,
+) -> list[PackageResult]:
     """Create distribution packages for all successful builds."""
     log("Creating distribution packages...", "STEP")
 
     packages = []
-    output_dir.mkdir(parents=True, exist_ok=True)
 
-    for plat, result in build_results.items():
-        if not result.success or result.binary_path is None:
+    for platform_key, result in build_results.items():
+        if not result.success:
+            continue
+        if result.binary_path is None:
+            log(f"Skipping {platform_key}: no binary path available", "WARNING")
             continue
 
-        if plat == "macos-arm64":
-            # Create tarball for macOS ARM64
-            asset_name = f"{PROJECT_NAME}-{version}-macos-arm64.tar.gz"
-            output_path = output_dir / asset_name
+        config = PLATFORMS.get(platform_key, {})
 
-            if not dry_run:
+        # Handle macOS architecture-specific packages
+        if platform_key in ("macos-arm64", "macos-x64"):
+            asset_name = config["asset_name"].format(name=PROJECT_NAME, version=version)
+            output_path = release_dir / asset_name
+
+            if dry_run:
+                output_path.touch()
+                packages.append(
+                    PackageResult(
+                        platform_key, "tar.gz", output_path, "DRY_RUN_CHECKSUM", "0 B"
+                    )
+                )
+            else:
                 create_tarball(result.binary_path, output_path, "fbfsvg-player")
-                sha = sha256_file(output_path)
+                checksum = sha256_file(output_path)
                 size = get_file_size(output_path)
+                packages.append(
+                    PackageResult(platform_key, "tar.gz", output_path, checksum, size)
+                )
+                log(f"Created {asset_name} ({size})", "SUCCESS")
+
+        elif platform_key == "linux":
+            # Create multiple Linux packages
+            formats = config.get("package_formats", ["tar.gz"])
+            asset_names = config.get("asset_names", {})
+
+            for fmt in formats:
+                asset_name = asset_names.get(
+                    fmt, f"{PROJECT_NAME}-{version}-linux.{fmt}"
+                )
+                asset_name = asset_name.format(name=PROJECT_NAME, version=version)
+                output_path = release_dir / asset_name
+
+                if dry_run:
+                    output_path.touch()
+                    packages.append(
+                        PackageResult(
+                            platform_key, fmt, output_path, "DRY_RUN_CHECKSUM", "0 B"
+                        )
+                    )
+                else:
+                    try:
+                        if fmt == "tar.gz":
+                            create_tarball(
+                                result.binary_path, output_path, "fbfsvg-player"
+                            )
+                        elif fmt == "deb":
+                            output_path = create_deb_package(
+                                result.binary_path, release_dir, version
+                            )
+                        elif fmt == "appimage":
+                            output_path = create_appimage(
+                                result.binary_path, release_dir, version
+                            )
+
+                        if output_path.exists():
+                            checksum = sha256_file(output_path)
+                            size = get_file_size(output_path)
+                            packages.append(
+                                PackageResult(
+                                    platform_key, fmt, output_path, checksum, size
+                                )
+                            )
+                            log(f"Created {output_path.name} ({size})", "SUCCESS")
+                    except Exception as e:
+                        log(f"Failed to create {fmt} package: {e}", "ERROR")
+
+        elif platform_key == "windows":
+            asset_name = config["asset_name"].format(name=PROJECT_NAME, version=version)
+            output_path = release_dir / asset_name
+
+            if dry_run:
+                output_path.touch()
+                packages.append(
+                    PackageResult(
+                        platform_key, "zip", output_path, "DRY_RUN_CHECKSUM", "0 B"
+                    )
+                )
             else:
-                sha, size = "DRY_RUN", "0 B"
-
-            packages.append(PackageResult("macos-arm64", "tar.gz", output_path, sha, size))
-            log(f"Created {asset_name} ({size})", "SUCCESS")
-
-        elif plat == "macos-x64":
-            # Create tarball for macOS x64 (Intel)
-            asset_name = f"{PROJECT_NAME}-{version}-macos-x64.tar.gz"
-            output_path = output_dir / asset_name
-
-            if not dry_run:
-                create_tarball(result.binary_path, output_path, "fbfsvg-player")
-                sha = sha256_file(output_path)
+                create_zip_package(result.binary_path, output_path, "fbfsvg-player.exe")
+                checksum = sha256_file(output_path)
                 size = get_file_size(output_path)
-            else:
-                sha, size = "DRY_RUN", "0 B"
-
-            packages.append(PackageResult("macos-x64", "tar.gz", output_path, sha, size))
-            log(f"Created {asset_name} ({size})", "SUCCESS")
-
-        elif plat == "linux":
-            # Create tarball
-            tar_name = f"{PROJECT_NAME}-{version}-linux-x64.tar.gz"
-            tar_path = output_dir / tar_name
-
-            if not dry_run:
-                create_tarball(result.binary_path, tar_path, "fbfsvg-player")
-                sha = sha256_file(tar_path)
-                size = get_file_size(tar_path)
-            else:
-                sha, size = "DRY_RUN", "0 B"
-
-            packages.append(PackageResult("linux", "tar.gz", tar_path, sha, size))
-            log(f"Created {tar_name} ({size})", "SUCCESS")
-
-            # Create .deb
-            if not dry_run:
-                try:
-                    deb_path = create_deb_package(result.binary_path, output_dir, version)
-                    sha = sha256_file(deb_path)
-                    size = get_file_size(deb_path)
-                    packages.append(PackageResult("linux", "deb", deb_path, sha, size))
-                    log(f"Created {deb_path.name} ({size})", "SUCCESS")
-                except Exception as e:
-                    log(f"Failed to create .deb: {e}", "WARNING")
-
-            # Create AppImage
-            if not dry_run:
-                try:
-                    appimage_path = create_appimage(result.binary_path, output_dir, version)
-                    sha = sha256_file(appimage_path)
-                    size = get_file_size(appimage_path)
-                    packages.append(PackageResult("linux", "appimage", appimage_path, sha, size))
-                    log(f"Created {appimage_path.name} ({size})", "SUCCESS")
-                except Exception as e:
-                    log(f"Failed to create AppImage: {e}", "WARNING")
-
-        elif plat == "windows":
-            # Create zip
-            asset_name = f"{PROJECT_NAME}-{version}-windows-x64.zip"
-            output_path = output_dir / asset_name
-
-            if not dry_run:
-                create_zip(result.binary_path, output_path, "fbfsvg-player.exe")
-                sha = sha256_file(output_path)
-                size = get_file_size(output_path)
-            else:
-                sha, size = "DRY_RUN", "0 B"
-
-            packages.append(PackageResult("windows", "zip", output_path, sha, size))
-            log(f"Created {asset_name} ({size})", "SUCCESS")
+                packages.append(
+                    PackageResult(platform_key, "zip", output_path, checksum, size)
+                )
+                log(f"Created {asset_name} ({size})", "SUCCESS")
 
     return packages
+
+
+def create_checksums_file(packages: list[PackageResult], release_dir: Path) -> Path:
+    """Create SHA256SUMS.txt file."""
+    checksums_path = release_dir / "SHA256SUMS.txt"
+    with open(checksums_path, "w") as f:
+        for pkg in packages:
+            f.write(f"{pkg.sha256}  {pkg.path.name}\n")
+    return checksums_path
 
 
 # =============================================================================
 # GitHub Release Functions
 # =============================================================================
 
-def create_checksums_file(packages: list[PackageResult], output_dir: Path) -> Path:
-    """Create SHA256SUMS.txt file."""
-    checksums_path = output_dir / "SHA256SUMS.txt"
-    lines = [f"{pkg.sha256}  {pkg.path.name}" for pkg in packages]
-    checksums_path.write_text("\n".join(lines) + "\n")
-    return checksums_path
 
-
-def create_draft_release(version: str, packages: list[PackageResult],
-                        checksums_path: Path, dry_run: bool = False) -> Optional[str]:
-    """Create a draft release on GitHub and upload assets."""
-    log(f"Creating draft release v{version}...", "STEP")
-
+def create_draft_release(
+    version: str,
+    packages: list[PackageResult],
+    checksums_path: Path,
+    dry_run: bool = False,
+) -> Optional[str]:
+    """Create a draft release on GitHub with uploaded assets."""
     tag = f"v{version}"
-    release_notes = f"""## FBF.SVG Player v{version}
+    log(f"Creating draft release {tag}...", "STEP")
+
+    # Generate release notes
+    release_notes = f"""## fbfsvg-player {tag}
+
+High-performance animated SVG player for the FBF.SVG vector video format.
 
 ### Downloads
 
-| Platform | Package | Size |
-|----------|---------|------|
+| Platform | Download | Size |
+|----------|----------|------|
 """
     for pkg in packages:
-        release_notes += f"| {pkg.platform.title()} | [{pkg.path.name}](https://github.com/{GITHUB_REPO}/releases/download/{tag}/{pkg.path.name}) | {pkg.size} |\n"
+        display_name = PLATFORMS.get(pkg.platform, {}).get(
+            "display_name", pkg.platform.title()
+        )
+        release_notes += f"| {display_name} | [{pkg.path.name}](https://github.com/{GITHUB_REPO}/releases/download/{tag}/{pkg.path.name}) | {pkg.size} |\n"
 
     release_notes += """
 ### Checksums (SHA256)
@@ -556,6 +1132,28 @@ def create_draft_release(version: str, packages: list[PackageResult],
         release_notes += f"{pkg.sha256}  {pkg.path.name}\n"
     release_notes += "```\n"
 
+    release_notes += """
+### Installation
+
+**macOS (Homebrew)**
+```bash
+brew tap Emasoft/fbfsvg-player
+brew install fbfsvg-player
+```
+
+**Linux (APT)**
+```bash
+wget https://github.com/Emasoft/fbfsvg-player/releases/download/{tag}/fbfsvg-player_{version}_amd64.deb
+sudo dpkg -i fbfsvg-player_{version}_amd64.deb
+```
+
+**Windows (Scoop)**
+```powershell
+scoop bucket add fbfsvg-player https://github.com/Emasoft/fbfsvg-player
+scoop install fbfsvg-player
+```
+""".format(tag=tag, version=version)
+
     # Create draft release
     if dry_run:
         log("[DRY-RUN] Would create draft release", "WARNING")
@@ -564,93 +1162,88 @@ def create_draft_release(version: str, packages: list[PackageResult],
     # Check if tag exists
     result = run_cmd(
         ["gh", "release", "view", tag],
-        capture=True, check=False,
+        capture=True,
+        check=False,
+        retry=NETWORK_RETRY_COUNT,
     )
-
     if result.returncode == 0:
-        log(f"Release {tag} already exists, deleting...", "WARNING")
-        run_cmd(["gh", "release", "delete", tag, "--yes"])
-        run_cmd(["git", "tag", "-d", tag], check=False)
-        run_cmd(["git", "push", "origin", f":refs/tags/{tag}"], check=False)
+        log(f"Release {tag} already exists, updating...", "WARNING")
+        run_cmd(["gh", "release", "delete", tag, "--yes"], retry=NETWORK_RETRY_COUNT)
 
-    # Create tag
-    run_cmd(["git", "tag", "-a", tag, "-m", f"Release {version}"])
-    run_cmd(["git", "push", "origin", tag])
+    # Create release
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(release_notes)
+        notes_file = f.name
 
-    # Create draft release
-    asset_args = []
-    for pkg in packages:
-        asset_args.extend([str(pkg.path)])
-    asset_args.append(str(checksums_path))
+    try:
+        cmd = [
+            "gh",
+            "release",
+            "create",
+            tag,
+            "--draft",
+            "--title",
+            f"fbfsvg-player {tag}",
+            "--notes-file",
+            notes_file,
+        ]
 
-    run_cmd([
-        "gh", "release", "create", tag,
-        "--title", f"FBF.SVG Player {version}",
-        "--notes", release_notes,
-        "--draft",
-        *asset_args,
-    ])
+        # Add all package files
+        for pkg in packages:
+            cmd.append(str(pkg.path))
 
-    log(f"Draft release {tag} created successfully", "SUCCESS")
-    return tag
+        # Add checksums file
+        cmd.append(str(checksums_path))
+
+        run_cmd(cmd, retry=NETWORK_RETRY_COUNT)
+        log(f"Created draft release {tag}", "SUCCESS")
+        return tag
+
+    finally:
+        os.unlink(notes_file)
 
 
-def validate_release(tag: str, packages: list[PackageResult], dry_run: bool = False) -> bool:
-    """Validate release assets by downloading and checking checksums."""
+def validate_release(
+    tag: str, packages: list[PackageResult], dry_run: bool = False
+) -> bool:
+    """Validate that all release assets were uploaded correctly."""
     log(f"Validating release {tag}...", "STEP")
 
     if dry_run:
         log("[DRY-RUN] Would validate release assets", "WARNING")
         return True
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmppath = Path(tmpdir)
+    # Get release info
+    result = run_cmd(
+        ["gh", "release", "view", tag, "--json", "assets"],
+        capture=True,
+        retry=NETWORK_RETRY_COUNT,
+    )
 
-        # Download all assets
-        run_cmd([
-            "gh", "release", "download", tag,
-            "--dir", str(tmppath),
-        ])
+    release_info = json.loads(result.stdout)
+    uploaded_assets = {a["name"] for a in release_info.get("assets", [])}
 
-        # Verify checksums
-        for pkg in packages:
-            downloaded = tmppath / pkg.path.name
-            if not downloaded.exists():
-                log(f"Asset not found: {pkg.path.name}", "ERROR")
-                return False
+    expected_assets = {pkg.path.name for pkg in packages}
+    expected_assets.add("SHA256SUMS.txt")
 
-            actual_sha = sha256_file(downloaded)
-            if actual_sha != pkg.sha256:
-                log(f"Checksum mismatch for {pkg.path.name}", "ERROR")
-                log(f"  Expected: {pkg.sha256}", "ERROR")
-                log(f"  Actual:   {actual_sha}", "ERROR")
-                return False
+    missing = expected_assets - uploaded_assets
+    if missing:
+        log(f"Missing assets: {missing}", "ERROR")
+        return False
 
-            log(f"Verified: {pkg.path.name}", "SUCCESS")
-
-        # Verify archives can be extracted
-        for pkg in packages:
-            downloaded = tmppath / pkg.path.name
-            if pkg.format == "tar.gz":
-                run_cmd(["tar", "-tzf", str(downloaded)], capture=True)
-            elif pkg.format == "zip":
-                run_cmd(["unzip", "-t", str(downloaded)], capture=True)
-            elif pkg.format == "deb":
-                run_cmd(["dpkg", "--contents", str(downloaded)], capture=True)
-
-    log("All assets validated successfully", "SUCCESS")
+    log(f"All {len(expected_assets)} assets validated", "SUCCESS")
     return True
 
 
 def publish_release(tag: str, dry_run: bool = False) -> bool:
-    """Convert draft release to public release."""
+    """Publish the draft release."""
     log(f"Publishing release {tag}...", "STEP")
 
     if dry_run:
         log("[DRY-RUN] Would publish release", "WARNING")
         return True
 
-    run_cmd(["gh", "release", "edit", tag, "--draft=false"])
+    run_cmd(["gh", "release", "edit", tag, "--draft=false"], retry=NETWORK_RETRY_COUNT)
     log(f"Release {tag} published successfully", "SUCCESS")
     return True
 
@@ -659,15 +1252,28 @@ def publish_release(tag: str, dry_run: bool = False) -> bool:
 # Package Manifest Update Functions
 # =============================================================================
 
-def update_homebrew_formula(project_root: Path, version: str,
-                           packages: list[PackageResult], dry_run: bool = False):
+
+def update_homebrew_formula(
+    project_root: Path,
+    version: str,
+    packages: list[PackageResult],
+    dry_run: bool = False,
+) -> None:
     """Update Homebrew formula with new version and checksum for both architectures."""
     log("Updating Homebrew formulas...", "STEP")
 
     # Find macOS packages for both architectures
-    macos_arm64_pkg = next((p for p in packages if p.platform == "macos-arm64" and p.format == "tar.gz"), None)
-    macos_x64_pkg = next((p for p in packages if p.platform == "macos-x64" and p.format == "tar.gz"), None)
-    linux_pkg = next((p for p in packages if p.platform == "linux" and p.format == "tar.gz"), None)
+    macos_arm64_pkg = next(
+        (p for p in packages if p.platform == "macos-arm64" and p.format == "tar.gz"),
+        None,
+    )
+    macos_x64_pkg = next(
+        (p for p in packages if p.platform == "macos-x64" and p.format == "tar.gz"),
+        None,
+    )
+    linux_pkg = next(
+        (p for p in packages if p.platform == "linux" and p.format == "tar.gz"), None
+    )
 
     # Update macOS formula (supports both ARM64 and Intel via on_arm/on_intel blocks)
     formula_path = project_root / "Formula" / "fbfsvg-player.rb"
@@ -675,11 +1281,7 @@ def update_homebrew_formula(project_root: Path, version: str,
         content = formula_path.read_text()
 
         # Update version (common field)
-        content = re.sub(
-            r'version "[\d.]+"',
-            f'version "{version}"',
-            content
-        )
+        content = re.sub(r'version "[\d.]+"', f'version "{version}"', content)
 
         # Update on_arm block (ARM64 / Apple Silicon)
         if macos_arm64_pkg:
@@ -687,15 +1289,18 @@ def update_homebrew_formula(project_root: Path, version: str,
             content = re.sub(
                 r'(on_arm do\s+url )"https://github\.com/Emasoft/fbfsvg-player/releases/download/v[\d.]+/[^"]+\.tar\.gz"',
                 f'\\1"https://github.com/Emasoft/fbfsvg-player/releases/download/v{version}/{macos_arm64_pkg.path.name}"',
-                content
+                content,
             )
             # Update ARM64 SHA256 in on_arm block
             content = re.sub(
                 r'(on_arm do\s+url "[^"]+"\s+sha256 )"[a-fA-F0-9]+"',
                 f'\\1"{macos_arm64_pkg.sha256}"',
-                content
+                content,
             )
-            log(f"Updated on_arm block with ARM64 SHA256: {macos_arm64_pkg.sha256[:16]}...", "SUCCESS")
+            log(
+                f"Updated on_arm block with ARM64 SHA256: {macos_arm64_pkg.sha256[:16]}...",
+                "SUCCESS",
+            )
 
         # Update on_intel block (x86_64 / Intel)
         if macos_x64_pkg:
@@ -703,15 +1308,18 @@ def update_homebrew_formula(project_root: Path, version: str,
             content = re.sub(
                 r'(on_intel do\s+url )"https://github\.com/Emasoft/fbfsvg-player/releases/download/v[\d.]+/[^"]+\.tar\.gz"',
                 f'\\1"https://github.com/Emasoft/fbfsvg-player/releases/download/v{version}/{macos_x64_pkg.path.name}"',
-                content
+                content,
             )
             # Update x64 SHA256 in on_intel block
             content = re.sub(
                 r'(on_intel do\s+url "[^"]+"\s+sha256 )"[a-fA-F0-9_]+"',
                 f'\\1"{macos_x64_pkg.sha256}"',
-                content
+                content,
             )
-            log(f"Updated on_intel block with x64 SHA256: {macos_x64_pkg.sha256[:16]}...", "SUCCESS")
+            log(
+                f"Updated on_intel block with x64 SHA256: {macos_x64_pkg.sha256[:16]}...",
+                "SUCCESS",
+            )
 
         if not dry_run:
             formula_path.write_text(content)
@@ -729,35 +1337,35 @@ def update_homebrew_formula(project_root: Path, version: str,
             content = re.sub(
                 r'url "https://github\.com/Emasoft/fbfsvg-player/releases/download/v[\d.]+/.*\.tar\.gz"',
                 f'url "https://github.com/Emasoft/fbfsvg-player/releases/download/v{version}/{linux_pkg.path.name}"',
-                content
+                content,
             )
 
             # Update SHA256
             content = re.sub(
-                r'sha256 "[a-f0-9]+"',
-                f'sha256 "{linux_pkg.sha256}"',
-                content
+                r'sha256 "[a-f0-9]+"', f'sha256 "{linux_pkg.sha256}"', content
             )
 
             # Update version
-            content = re.sub(
-                r'version "[\d.]+"',
-                f'version "{version}"',
-                content
-            )
+            content = re.sub(r'version "[\d.]+"', f'version "{version}"', content)
 
             if not dry_run:
                 formula_path.write_text(content)
             log(f"Updated {formula_path.name}", "SUCCESS")
 
 
-def update_scoop_manifest(project_root: Path, version: str,
-                         packages: list[PackageResult], dry_run: bool = False):
+def update_scoop_manifest(
+    project_root: Path,
+    version: str,
+    packages: list[PackageResult],
+    dry_run: bool = False,
+) -> None:
     """Update Scoop manifest with new version and checksum."""
     log("Updating Scoop manifest...", "STEP")
 
     # Find Windows package
-    win_pkg = next((p for p in packages if p.platform == "windows" and p.format == "zip"), None)
+    win_pkg = next(
+        (p for p in packages if p.platform == "windows" and p.format == "zip"), None
+    )
 
     manifest_path = project_root / "bucket" / "fbfsvg-player.json"
     if not manifest_path.exists():
@@ -771,12 +1379,14 @@ def update_scoop_manifest(project_root: Path, version: str,
 
     # Update URL and hash
     if win_pkg:
-        manifest["architecture"]["64bit"]["url"] = \
+        manifest["architecture"]["64bit"]["url"] = (
             f"https://github.com/{GITHUB_REPO}/releases/download/v{version}/{win_pkg.path.name}"
+        )
         manifest["architecture"]["64bit"]["hash"] = win_pkg.sha256
     else:
-        manifest["architecture"]["64bit"]["url"] = \
+        manifest["architecture"]["64bit"]["url"] = (
             f"https://github.com/{GITHUB_REPO}/releases/download/v{version}/{PROJECT_NAME}-{version}-windows-x64.zip"
+        )
         manifest["architecture"]["64bit"]["hash"] = "PENDING_WINDOWS_BUILD"
 
     if not dry_run:
@@ -784,7 +1394,9 @@ def update_scoop_manifest(project_root: Path, version: str,
     log(f"Updated {manifest_path.name}", "SUCCESS")
 
 
-def commit_manifest_updates(project_root: Path, version: str, dry_run: bool = False):
+def commit_manifest_updates(
+    project_root: Path, version: str, dry_run: bool = False
+) -> None:
     """Commit and push manifest updates."""
     log("Committing manifest updates...", "STEP")
 
@@ -796,33 +1408,85 @@ def commit_manifest_updates(project_root: Path, version: str, dry_run: bool = Fa
 
     result = run_cmd(
         ["git", "diff", "--cached", "--quiet"],
-        cwd=project_root, check=False,
+        cwd=project_root,
+        check=False,
     )
 
     if result.returncode != 0:  # Changes exist
-        run_cmd([
-            "git", "commit", "-m",
-            f"Update package manifests for v{version}\n\n- Update Homebrew formulas\n- Update Scoop manifest"
-        ], cwd=project_root)
-        run_cmd(["git", "push", "origin", "main"], cwd=project_root)
+        run_cmd(
+            [
+                "git",
+                "commit",
+                "-m",
+                f"Update package manifests for v{version}\n\n- Update Homebrew formulas\n- Update Scoop manifest",
+            ],
+            cwd=project_root,
+        )
+        run_cmd(
+            ["git", "push", "origin", "main"],
+            cwd=project_root,
+            retry=NETWORK_RETRY_COUNT,
+        )
         log("Manifest updates committed and pushed", "SUCCESS")
     else:
         log("No manifest changes to commit", "INFO")
 
 
 # =============================================================================
+# Interactive Confirmation
+# =============================================================================
+
+
+def confirm_publish(
+    version: str, packages: list[PackageResult], no_confirm: bool = False
+) -> bool:
+    """Ask user to confirm before publishing."""
+    if no_confirm:
+        return True
+
+    print("\n" + "=" * 60)
+    print(f"Ready to publish release v{version}")
+    print("=" * 60)
+    print("\nPackages to be released:")
+    for pkg in packages:
+        print(f"  • {pkg.path.name} ({pkg.size})")
+
+    print("\n⚠️  Publishing is IRREVERSIBLE. The release will be visible to everyone.")
+    print("   Package manifests will be updated and pushed.")
+
+    try:
+        response = input("\nType 'publish' to confirm: ").strip().lower()
+        return response == "publish"
+    except (KeyboardInterrupt, EOFError):
+        print("\nCancelled.")
+        return False
+
+
+# =============================================================================
 # Main Release Workflow
 # =============================================================================
 
-def run_release(version: str, platforms: Optional[list[str]] = None,
-               skip_build: bool = False, dry_run: bool = False):
+
+def run_release(
+    version: str,
+    platforms: Optional[list[str]] = None,
+    skip_build: bool = False,
+    dry_run: bool = False,
+    no_confirm: bool = False,
+    parallel_macos: bool = True,
+) -> None:
     """Run the complete release workflow."""
     project_root = Path(__file__).parent.parent.resolve()
     release_dir = project_root / "release"
 
+    # Initialize logging
+    init_logging(release_dir)
+
     log(f"Starting release workflow for v{version}", "STEP")
     log(f"Project root: {project_root}")
     log(f"Release directory: {release_dir}")
+    if LOG_FILE:
+        log(f"Log file: {LOG_FILE}")
 
     # Validate version
     if not validate_version(version):
@@ -844,8 +1508,20 @@ def run_release(version: str, platforms: Optional[list[str]] = None,
     platforms = expanded_platforms
 
     current_platform = get_current_platform()
-    log(f"Current platform: {current_platform}")
+    current_arch = get_current_arch()
+    log(f"Current platform: {current_platform} ({current_arch})")
     log(f"Target platforms: {', '.join(platforms)}")
+
+    # Pre-flight checks
+    log("=" * 60)
+    log("PRE-FLIGHT CHECKS", "STEP")
+    log("=" * 60)
+
+    if not run_preflight_checks(project_root, platforms, skip_build):
+        if not dry_run:
+            sys.exit(1)
+        else:
+            log("[DRY-RUN] Continuing despite preflight failures", "WARNING")
 
     # Clean release directory
     if release_dir.exists() and not dry_run:
@@ -853,29 +1529,46 @@ def run_release(version: str, platforms: Optional[list[str]] = None,
     release_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 1: Build
-    build_results = {}
+    build_results: dict[str, BuildResult] = {}
     if not skip_build:
         log("=" * 60)
         log("STEP 1: Building for all platforms", "STEP")
         log("=" * 60)
 
-        for plat in platforms:
-            if plat == "macos-arm64":
-                build_results["macos-arm64"] = build_macos_arch(project_root, "arm64", dry_run)
-            elif plat == "macos-x64":
-                build_results["macos-x64"] = build_macos_arch(project_root, "x64", dry_run)
-            elif plat == "linux":
-                build_results["linux"] = build_linux(project_root, dry_run)
-            elif plat == "windows":
-                build_results["windows"] = build_windows(project_root, dry_run)
+        # Build macOS in parallel if both architectures requested
+        macos_archs = [p for p in platforms if p.startswith("macos-")]
+        if len(macos_archs) == 2 and parallel_macos and current_platform == "macos":
+            macos_results = build_macos_parallel(project_root, dry_run)
+            build_results.update(macos_results)
+        else:
+            # Build macOS sequentially
+            for plat in macos_archs:
+                arch = plat.split("-")[1]
+                build_results[plat] = build_macos_arch(project_root, arch, dry_run)
+
+        # Build other platforms
+        if "linux" in platforms:
+            build_results["linux"] = build_linux(project_root, dry_run)
+        if "windows" in platforms:
+            build_results["windows"] = build_windows(project_root, dry_run)
 
         # Report build results
         log("\nBuild Results:")
+        total_time = sum(r.duration_seconds for r in build_results.values())
         for plat, result in build_results.items():
             status = "SUCCESS" if result.success else "FAILED"
-            log(f"  {plat}: {status}", "SUCCESS" if result.success else "ERROR")
+            time_str = (
+                f" ({result.duration_seconds:.1f}s)"
+                if result.duration_seconds > 0
+                else ""
+            )
+            log(
+                f"  {plat}: {status}{time_str}",
+                "SUCCESS" if result.success else "ERROR",
+            )
             if result.error:
                 log(f"    Error: {result.error}", "ERROR")
+        log(f"Total build time: {total_time:.1f}s")
     else:
         log("Skipping build step (--skip-build)", "WARNING")
         # Assume existing binaries
@@ -939,18 +1632,31 @@ def run_release(version: str, platforms: Optional[list[str]] = None,
         log("Draft release preserved for manual inspection", "WARNING")
         sys.exit(1)
 
-    # Step 5: Publish release
+    # Step 5: Interactive confirmation
     log("=" * 60)
-    log("STEP 5: Publishing release", "STEP")
+    log("STEP 5: Publish confirmation", "STEP")
+    log("=" * 60)
+
+    if not dry_run and not confirm_publish(version, packages, no_confirm):
+        log("Release cancelled by user", "WARNING")
+        log(
+            f"Draft release preserved: https://github.com/{GITHUB_REPO}/releases/tag/{tag}",
+            "INFO",
+        )
+        sys.exit(0)
+
+    # Step 6: Publish release
+    log("=" * 60)
+    log("STEP 6: Publishing release", "STEP")
     log("=" * 60)
 
     if not publish_release(tag, dry_run):
         log("Failed to publish release", "ERROR")
         sys.exit(1)
 
-    # Step 6: Update package manifests
+    # Step 7: Update package manifests
     log("=" * 60)
-    log("STEP 6: Updating package manifests", "STEP")
+    log("STEP 7: Updating package manifests", "STEP")
     log("=" * 60)
 
     update_homebrew_formula(project_root, version, packages, dry_run)
@@ -967,13 +1673,16 @@ def run_release(version: str, platforms: Optional[list[str]] = None,
     for pkg in packages:
         log(f"  - {pkg.path.name} ({pkg.size})")
     log(f"\nView release: https://github.com/{GITHUB_REPO}/releases/tag/{tag}")
+    if LOG_FILE:
+        log(f"Full log: {LOG_FILE}")
 
 
 # =============================================================================
 # CLI Entry Point
 # =============================================================================
 
-def main():
+
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="Automate fbfsvg-player releases for all platforms",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -983,17 +1692,29 @@ Examples:
   python3 scripts/release.py --version 0.2.0 --dry-run
   python3 scripts/release.py --version 0.2.0 --skip-build
   python3 scripts/release.py --version 0.2.0 --platform macos linux
-        """
+  python3 scripts/release.py --version 0.2.0 --no-confirm
+
+Features:
+  • Pre-flight checks for dependencies, Skia libraries, disk space
+  • Parallel macOS builds (ARM64 + x64 simultaneously)
+  • Cross-compilation support (x64 on ARM64 via Rosetta 2)
+  • Binary architecture verification
+  • Network retry logic for GitHub API calls
+  • Interactive publish confirmation
+  • Detailed logging to file
+        """,
     )
 
     parser.add_argument(
-        "--version", "-v",
+        "--version",
+        "-v",
         required=True,
         help="Version number (e.g., 0.2.0, 1.0.0-beta)",
     )
 
     parser.add_argument(
-        "--platform", "-p",
+        "--platform",
+        "-p",
         nargs="+",
         choices=["macos", "linux", "windows"],
         help="Platforms to build (default: all)",
@@ -1011,6 +1732,18 @@ Examples:
         help="Show what would be done without making changes",
     )
 
+    parser.add_argument(
+        "--no-confirm",
+        action="store_true",
+        help="Skip interactive publish confirmation",
+    )
+
+    parser.add_argument(
+        "--sequential-macos",
+        action="store_true",
+        help="Build macOS architectures sequentially (default: parallel)",
+    )
+
     args = parser.parse_args()
 
     try:
@@ -1019,16 +1752,18 @@ Examples:
             platforms=args.platform,
             skip_build=args.skip_build,
             dry_run=args.dry_run,
+            no_confirm=args.no_confirm,
+            parallel_macos=not args.sequential_macos,
         )
     except KeyboardInterrupt:
-        log("\nRelease aborted by user", "WARNING")
-        sys.exit(1)
-    except subprocess.CalledProcessError as e:
-        log(f"Command failed: {e}", "ERROR")
-        sys.exit(1)
+        log("\nRelease cancelled by user", "WARNING")
+        sys.exit(130)
     except Exception as e:
         log(f"Release failed: {e}", "ERROR")
-        raise
+        import traceback
+
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
