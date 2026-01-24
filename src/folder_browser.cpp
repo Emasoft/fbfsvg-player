@@ -943,22 +943,20 @@ void FolderBrowser::scanDirectory() {
                 folderEntry.modifiedTime = modTime;
                 folders.push_back(folderEntry);
             } else if (entry.is_regular_file()) {
-                std::string ext = entry.path().extension().string();
-                // Case-insensitive SVG check
-                std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-                if (ext == ".svg") {
+                // Only show FBF.SVG files (animated SVG) - hide plain static SVG files
+                std::string filename = entry.path().filename().string();
+                std::string lowerFilename = filename;
+                std::transform(lowerFilename.begin(), lowerFilename.end(), lowerFilename.begin(), ::tolower);
+                if (lowerFilename.size() > 8 && lowerFilename.substr(lowerFilename.size() - 8) == ".fbf.svg") {
+                    // This is an FBF.SVG file - always show it as FBFSVGFile type
                     BrowserEntry fileEntry;
-                    // Check if SVG contains SMIL animation (FBF.SVG format)
-                    if (isFBFSVGFile(entry.path().string())) {
-                        fileEntry.type = BrowserEntryType::FBFSVGFile;
-                    } else {
-                        fileEntry.type = BrowserEntryType::SVGFile;
-                    }
+                    fileEntry.type = BrowserEntryType::FBFSVGFile;
                     fileEntry.name = name;
                     fileEntry.fullPath = entry.path().string();
                     fileEntry.modifiedTime = modTime;
                     svgFiles.push_back(fileEntry);
                 }
+                // Skip plain .svg files - they are not compatible with the player
             }
         }
     } catch (const std::exception& e) {
@@ -1332,6 +1330,34 @@ HitTestResult FolderBrowser::hitTest(float screenX, float screenY,
         return HitTestResult::LoadButton;
     }
 
+    // Check play arrow overlays for FrameFolder entries (must come BEFORE general Entry check)
+    // Play arrow is in the center-bottom of the cell thumbnail area
+    {
+        std::lock_guard<std::mutex> lock(stateMutex_);
+        for (const auto& cell : gridCells_) {
+            if (cell.entryIndex >= 0 && cell.entryIndex < static_cast<int>(currentPageEntries_.size())) {
+                const BrowserEntry& entry = currentPageEntries_[cell.entryIndex];
+
+                // Only FrameFolder entries get play arrows
+                if (entry.type == BrowserEntryType::FrameFolder) {
+                    // Play arrow is a circle in the center-bottom area of the cell
+                    float arrowRadius = std::min(cell.width, cell.height) * 0.12f;  // 12% of cell
+                    float arrowCenterX = cell.x + cell.width / 2;
+                    float arrowCenterY = cell.y + cell.height - arrowRadius - 8;  // 8px from bottom
+
+                    // Check if click is within circular play button (distance check)
+                    float dx = screenX - arrowCenterX;
+                    float dy = screenY - arrowCenterY;
+
+                    if (dx * dx + dy * dy <= arrowRadius * arrowRadius) {
+                        if (outEntry) *outEntry = &currentPageEntries_[cell.entryIndex];
+                        return HitTestResult::PlayArrowEntry;
+                    }
+                }
+            }
+        }
+    }
+
     // Check grid cells (thread-safe: lock while accessing currentPageEntries_)
     {
         std::lock_guard<std::mutex> lock(stateMutex_);
@@ -1455,6 +1481,33 @@ std::string FolderBrowser::generateClickFeedbackHighlight(const GridCell& cell) 
        << "\" width=\"" << (cell.width + 6) << "\" height=\"" << (cell.height + 6)
        << "\" fill=\"none\" stroke=\"#ffffff\" stroke-opacity=\"" << strokeOpacity
        << "\" stroke-width=\"4\" rx=\"10\"/>";
+    return ss.str();
+}
+
+std::string FolderBrowser::generatePlayArrowOverlay(const GridCell& cell) const {
+    std::ostringstream ss;
+
+    // Play arrow is a circle with triangle in center-bottom of cell
+    // Position must match hit test in hitTest() for FrameFolder entries
+    float arrowRadius = std::min(cell.width, cell.height) * 0.12f;
+    float centerX = cell.x + cell.width / 2;
+    float centerY = cell.y + cell.height - arrowRadius - 8;  // 8px from bottom
+
+    // Semi-transparent dark circle background
+    ss << R"(<circle cx=")" << centerX << R"(" cy=")" << centerY
+       << R"(" r=")" << arrowRadius << R"(" fill="#000000" fill-opacity="0.7"/>)";
+
+    // White play triangle (pointing right)
+    float triSize = arrowRadius * 0.6f;
+    float triX = centerX - triSize * 0.25f;  // Offset left to visually center
+    float x1 = triX, y1 = centerY - triSize * 0.5f;
+    float x2 = triX + triSize, y2 = centerY;
+    float x3 = triX, y3 = centerY + triSize * 0.5f;
+
+    ss << R"(<polygon points=")" << x1 << "," << y1 << " "
+       << x2 << "," << y2 << " " << x3 << "," << y3
+       << R"(" fill="#ffffff"/>)";
+
     return ss.str();
 }
 
@@ -1944,6 +1997,10 @@ std::string FolderBrowser::generateBrowserSVG() {
                 svg << generateFolderIconSVG(iconSize);
                 svg << R"(</g>)";
             }
+
+            // Add play arrow overlay for FrameFolder entries (clickable to play content)
+            // Position matches hit test in hitTest() for PlayArrowEntry detection
+            svg << generatePlayArrowOverlay(cell);
         } else {
             // Non-SVG icons don't need clipping
             svg << "<g transform=\"translate(" << iconX << "," << iconY << ")\">";

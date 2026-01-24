@@ -99,10 +99,10 @@ fbfsvg-player/
 │   ├── module.modulemap         # Swift module map
 │   └── Info.plist               # Framework info
 │
-├── macos-sdk/SVGPlayer/         # macOS SDK components
+├── macos-sdk/FBFSVGPlayer/      # macOS SDK components
 │   ├── svg_player.h             # Forwards to shared/svg_player_api.h
 │   ├── SVGPlayerController.h/.mm # Obj-C wrapper for AppKit
-│   └── (future: SVGPlayerView)  # NSView wrapper
+│   └── entitlements.plist       # Code signing entitlements
 │
 ├── linux-sdk/SVGPlayer/         # Linux SDK components
 │   ├── svg_player.h             # Forwards to shared/svg_player_api.h
@@ -368,7 +368,7 @@ When modifying the public API (unified API only):
 3. **Update Obj-C wrappers if exposing to Swift/Obj-C**
    ```bash
    # Edit ios-sdk/SVGPlayer/SVGPlayerController.h/.mm
-   # Edit macos-sdk/SVGPlayer/SVGPlayerController.h/.mm
+   # Edit macos-sdk/FBFSVGPlayer/SVGPlayerController.h/.mm
    ```
 
 4. **Test on all platforms**
@@ -392,8 +392,8 @@ git add shared/svg_player_api.cpp
 # Stage Obj-C wrappers if changed
 git add ios-sdk/SVGPlayer/SVGPlayerController.h
 git add ios-sdk/SVGPlayer/SVGPlayerController.mm
-git add macos-sdk/SVGPlayer/SVGPlayerController.h
-git add macos-sdk/SVGPlayer/SVGPlayerController.mm
+git add macos-sdk/FBFSVGPlayer/SVGPlayerController.h
+git add macos-sdk/FBFSVGPlayer/SVGPlayerController.mm
 
 # Use descriptive commit messages
 git commit -m "$(cat <<'EOF'

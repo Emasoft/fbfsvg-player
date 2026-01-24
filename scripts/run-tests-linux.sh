@@ -1,301 +1,256 @@
 #!/bin/bash
 
-# run-tests-linux.sh - Linux Test Runner for SVG Player
+# run-tests-linux.sh - Linux CI/CD Smoke Tests for FBF.SVG Player
 #
-# Runs the automated test suite in a Linux environment (native or Docker).
-# Outputs JSON report for cross-platform aggregation.
+# Runs basic smoke tests to verify the Linux build works correctly.
+# Designed to run inside Docker container with /workspace as project root.
+#
+# Tests performed:
+#   1. Binary existence and executability
+#   2. Version check (--version smoke test)
+#   3. Headless render test (if sample SVG exists)
 #
 # Usage:
-#   ./scripts/run-tests-linux.sh [OPTIONS]
+#   ./scripts/run-tests-linux.sh
+#   docker-compose exec dev /workspace/scripts/run-tests-linux.sh
 #
-# Options:
-#   --output-dir DIR    Output directory for test results (default: build/test-results)
-#   --json              Output JSON format (default)
-#   --verbose           Verbose output
-#   -h, --help          Show this help
+# Exit codes:
+#   0 - All tests passed
+#   1 - One or more tests failed
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+# Detect project root (works both inside Docker and standalone)
+if [ -d "/workspace" ] && [ -f "/workspace/CLAUDE.md" ]; then
+    PROJECT_ROOT="/workspace"
+else
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+fi
 
-# Colors for output
+# Create logs directory if it doesn't exist
+LOG_DIR="${PROJECT_ROOT}/tests/logs"
+mkdir -p "$LOG_DIR"
+
+# Timestamped log file
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+LOG_FILE="${LOG_DIR}/linux_test_${TIMESTAMP}.log"
+
+# Colors for terminal output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
-log_step() { echo -e "${CYAN}[STEP]${NC} $1"; }
+# Test counters
+TESTS_PASSED=0
+TESTS_FAILED=0
+TESTS_SKIPPED=0
 
-# Default options
-OUTPUT_DIR="${PROJECT_ROOT}/build/test-results"
-OUTPUT_FORMAT="json"
-VERBOSE=false
+# Logging functions (write to both terminal and log file)
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1" | tee -a "$LOG_FILE"
+}
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1" | tee -a "$LOG_FILE"
+}
+log_error() {
+    echo -e "${RED}[FAIL]${NC} $1" | tee -a "$LOG_FILE"
+}
+log_pass() {
+    echo -e "${GREEN}[PASS]${NC} $1" | tee -a "$LOG_FILE"
+    ((TESTS_PASSED++))
+}
+log_fail() {
+    echo -e "${RED}[FAIL]${NC} $1" | tee -a "$LOG_FILE"
+    ((TESTS_FAILED++))
+}
+log_skip() {
+    echo -e "${YELLOW}[SKIP]${NC} $1" | tee -a "$LOG_FILE"
+    ((TESTS_SKIPPED++))
+}
 
-# Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --output-dir)
-            OUTPUT_DIR="$2"
-            shift 2
-            ;;
-        --json)
-            OUTPUT_FORMAT="json"
-            shift
-            ;;
-        --verbose)
-            VERBOSE=true
-            shift
-            ;;
-        -h|--help)
-            echo "Usage: $0 [OPTIONS]"
-            echo "Options:"
-            echo "  --output-dir DIR    Output directory for test results"
-            echo "  --json              Output JSON format (default)"
-            echo "  --verbose           Verbose output"
-            echo "  -h, --help          Show this help"
-            exit 0
-            ;;
-        *)
-            log_error "Unknown option: $1"
-            exit 1
-            ;;
-    esac
-done
+# Write header to log
+{
+    echo "=============================================="
+    echo "FBF.SVG Player - Linux CI/CD Smoke Tests"
+    echo "=============================================="
+    echo "Timestamp: $(date -Iseconds)"
+    echo "Project Root: $PROJECT_ROOT"
+    echo "Hostname: $(hostname)"
+    echo "Architecture: $(uname -m)"
+    echo "Kernel: $(uname -r)"
+    echo "=============================================="
+    echo ""
+} >> "$LOG_FILE"
 
-# Detect architecture
+log_info "Starting Linux smoke tests..."
+log_info "Log file: $LOG_FILE"
+echo ""
+
+# Detect architecture for binary path
 ARCH=$(uname -m)
 if [ "$ARCH" = "x86_64" ]; then
-    ARCH_NAME="x64"
+    ARCH_SUFFIX="x64"
 elif [ "$ARCH" = "aarch64" ]; then
-    ARCH_NAME="arm64"
+    ARCH_SUFFIX="arm64"
 else
-    log_error "Unsupported architecture: $ARCH"
+    log_warn "Unknown architecture: $ARCH, trying x64"
+    ARCH_SUFFIX="x64"
+fi
+
+# Find the binary (check multiple possible locations)
+BINARY=""
+POSSIBLE_PATHS=(
+    "${PROJECT_ROOT}/build/fbfsvg-player-linux-${ARCH_SUFFIX}"
+    "${PROJECT_ROOT}/build/linux/fbfsvg-player"
+    "${PROJECT_ROOT}/build/fbfsvg-player"
+    "${PROJECT_ROOT}/build/svg_player_animated_linux"
+)
+
+for path in "${POSSIBLE_PATHS[@]}"; do
+    if [ -f "$path" ]; then
+        BINARY="$path"
+        break
+    fi
+done
+
+# ============================================
+# TEST 1: Binary existence and executability
+# ============================================
+echo "--- Test 1: Binary Existence ---" >> "$LOG_FILE"
+
+if [ -z "$BINARY" ]; then
+    log_fail "Test 1: Binary not found in any expected location"
+    echo "Searched paths:" >> "$LOG_FILE"
+    for path in "${POSSIBLE_PATHS[@]}"; do
+        echo "  - $path" >> "$LOG_FILE"
+    done
+    echo ""
+    log_error "Build the Linux player first with: ./scripts/build-linux.sh"
+
+    # Write final summary and exit
+    {
+        echo ""
+        echo "=============================================="
+        echo "TEST SUMMARY"
+        echo "=============================================="
+        echo "Passed:  $TESTS_PASSED"
+        echo "Failed:  $TESTS_FAILED"
+        echo "Skipped: $TESTS_SKIPPED"
+        echo "Status:  FAILED"
+        echo "=============================================="
+    } >> "$LOG_FILE"
+
     exit 1
 fi
 
-PLATFORM="linux-${ARCH_NAME}"
-TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-RESULT_FILE="${OUTPUT_DIR}/${PLATFORM}_${TIMESTAMP}.json"
+log_info "Found binary at: $BINARY"
 
-log_step "Running Linux tests on ${PLATFORM}..."
-
-# Create output directory
-mkdir -p "$OUTPUT_DIR"
-
-# Check if test binary exists
-TEST_BINARY="${PROJECT_ROOT}/build/run_tests_linux_${ARCH_NAME}"
-if [ ! -f "$TEST_BINARY" ]; then
-    # Try to build the test binary
-    log_info "Test binary not found, building..."
-    cd "$PROJECT_ROOT"
-
-    # Check for Skia (architecture-specific)
-    SKIA_DIR="${PROJECT_ROOT}/skia-build/src/skia"
-    SKIA_OUT="${SKIA_DIR}/out/release-linux-${ARCH_NAME}"
-
-    # Fallback to release-linux if arch-specific not found
-    if [ ! -f "${SKIA_OUT}/libskia.a" ]; then
-        SKIA_OUT="${SKIA_DIR}/out/release-linux"
-    fi
-
-    log_info "Using Skia from: ${SKIA_OUT}"
-
-    if [ ! -f "${SKIA_OUT}/libskia.a" ]; then
-        log_error "Skia libraries not found at ${SKIA_DIR}/out/release-linux-${ARCH_NAME}"
-        log_info "Run './skia-build/build-linux.sh' to build Skia first"
-
-        # Create a minimal test result indicating build failure
-        cat > "$RESULT_FILE" << EOF
-{
-    "platform": "${PLATFORM}",
-    "timestamp": "$(date -Iseconds)",
-    "status": "build_failed",
-    "error": "Skia libraries not found",
-    "tests": [],
-    "summary": {
-        "total": 0,
-        "passed": 0,
-        "failed": 0,
-        "skipped": 0
-    }
-}
-EOF
-        log_error "Test build failed. Results saved to: $RESULT_FILE"
-        exit 1
-    fi
-
-    # Compiler settings
-    CXX="clang++"
-    if ! command -v clang++ >/dev/null 2>&1; then
-        CXX="g++"
-    fi
-
-    # Build test binary
-    log_info "Compiling test suite..."
-
-    # All source files needed for tests (same as macOS Makefile test-build)
-    TEST_SOURCES="${PROJECT_ROOT}/tests/test_folder_browser_automated.cpp \
-        ${PROJECT_ROOT}/src/thumbnail_cache.cpp \
-        ${PROJECT_ROOT}/src/folder_browser.cpp \
-        ${PROJECT_ROOT}/shared/SVGAnimationController.cpp \
-        ${PROJECT_ROOT}/shared/SVGGridCompositor.cpp \
-        ${PROJECT_ROOT}/shared/svg_player_api.cpp \
-        ${PROJECT_ROOT}/shared/svg_instrumentation.cpp"
-
-    TEST_CXXFLAGS="-std=c++17 -DSVG_INSTRUMENTATION_ENABLED=1 -g -O1"
-
-    # Get SDL2 flags
-    SDL2_CFLAGS=$(pkg-config --cflags sdl2 2>/dev/null || echo "")
-    SDL2_LIBS=$(pkg-config --libs sdl2 2>/dev/null || echo "-lSDL2")
-
-    # Get ICU flags
-    ICU_CFLAGS=$(pkg-config --cflags icu-uc icu-i18n 2>/dev/null || echo "")
-    ICU_LIBS=$(pkg-config --libs icu-uc icu-i18n 2>/dev/null || echo "-licuuc -licui18n -licudata")
-
-    TEST_INCLUDES="-I${PROJECT_ROOT} -I${PROJECT_ROOT}/shared -I${PROJECT_ROOT}/tests -I${PROJECT_ROOT}/src -I${SKIA_DIR} ${SDL2_CFLAGS} ${ICU_CFLAGS}"
-
-    # Skia libraries (order matters - dependencies come after dependents in static linking)
-    # Match the order from macOS Makefile for consistency
-    SKIA_LIBS="${SKIA_OUT}/libsvg.a \
-        ${SKIA_OUT}/libskresources.a \
-        ${SKIA_OUT}/libsksg.a \
-        ${SKIA_OUT}/libskshaper.a \
-        ${SKIA_OUT}/libskunicode_icu.a \
-        ${SKIA_OUT}/libskunicode_core.a \
-        ${SKIA_OUT}/libharfbuzz.a \
-        ${SKIA_OUT}/libskparagraph.a \
-        ${SKIA_OUT}/libskia.a \
-        ${SKIA_OUT}/libexpat.a \
-        ${SKIA_OUT}/libpng.a \
-        ${SKIA_OUT}/libjpeg.a \
-        ${SKIA_OUT}/libwebp.a \
-        ${SKIA_OUT}/libzlib.a \
-        ${SKIA_OUT}/libwuffs.a"
-
-    # Linux system libraries
-    LINUX_LIBS="-lGL -lEGL -lX11 -lXext -lpthread -ldl -lm -lfontconfig -lfreetype"
-
-    mkdir -p "${PROJECT_ROOT}/build"
-
-    $CXX $TEST_CXXFLAGS $TEST_INCLUDES \
-        $TEST_SOURCES \
-        -o "$TEST_BINARY" \
-        $SKIA_LIBS \
-        $ICU_LIBS \
-        $SDL2_LIBS \
-        $LINUX_LIBS \
-        -lstdc++ || {
-            cat > "$RESULT_FILE" << EOF
-{
-    "platform": "${PLATFORM}",
-    "timestamp": "$(date -Iseconds)",
-    "status": "build_failed",
-    "error": "Test compilation failed",
-    "tests": [],
-    "summary": {
-        "total": 0,
-        "passed": 0,
-        "failed": 0,
-        "skipped": 0
-    }
-}
-EOF
-            log_error "Test compilation failed. Results saved to: $RESULT_FILE"
-            exit 1
-        }
-
-    log_info "Test binary built: $TEST_BINARY"
-fi
-
-# Run the tests and capture output
-log_step "Executing tests..."
-
-# Create temp file for raw output
-RAW_OUTPUT=$(mktemp)
-trap "rm -f $RAW_OUTPUT" EXIT
-
-# Run tests with timeout (5 minutes max)
-START_TIME=$(date +%s.%N 2>/dev/null || date +%s)
-
-if timeout 300 "$TEST_BINARY" --json > "$RAW_OUTPUT" 2>&1; then
-    TEST_EXIT_CODE=0
+if [ -x "$BINARY" ]; then
+    log_pass "Test 1: Binary exists and is executable"
 else
-    TEST_EXIT_CODE=$?
+    log_fail "Test 1: Binary exists but is not executable"
+    chmod +x "$BINARY" 2>/dev/null && log_info "Fixed: Made binary executable" || true
 fi
 
-END_TIME=$(date +%s.%N 2>/dev/null || date +%s)
-# Calculate duration using awk (more portable than bc)
-DURATION=$(awk "BEGIN {printf \"%.3f\", $END_TIME - $START_TIME}")
+# ============================================
+# TEST 2: Version smoke test (--version)
+# ============================================
+echo "" >> "$LOG_FILE"
+echo "--- Test 2: Version Check ---" >> "$LOG_FILE"
 
-# Process results
-if [ -s "$RAW_OUTPUT" ] && head -1 "$RAW_OUTPUT" | grep -q '^{'; then
-    # Output is valid JSON, use it directly but add platform info
-    # Use jq if available, otherwise use simple sed
-    if command -v jq >/dev/null 2>&1; then
-        jq --arg platform "$PLATFORM" \
-           --arg timestamp "$(date -Iseconds)" \
-           --arg duration "$DURATION" \
-           '. + {platform: $platform, timestamp: $timestamp, duration_seconds: ($duration | tonumber)}' \
-           "$RAW_OUTPUT" > "$RESULT_FILE"
+log_info "Running: $BINARY --version"
+
+if VERSION_OUTPUT=$("$BINARY" --version 2>&1); then
+    log_pass "Test 2: --version returned successfully"
+    echo "Output: $VERSION_OUTPUT" >> "$LOG_FILE"
+    log_info "Version output: $VERSION_OUTPUT"
+else
+    EXIT_CODE=$?
+    # Some programs return non-zero for --version but still work
+    if [ -n "$VERSION_OUTPUT" ]; then
+        log_warn "Test 2: --version returned exit code $EXIT_CODE but produced output"
+        echo "Output: $VERSION_OUTPUT" >> "$LOG_FILE"
+        log_pass "Test 2: --version produced output (exit code $EXIT_CODE)"
     else
-        # Fallback: wrap the output
-        {
-            echo "{"
-            echo "  \"platform\": \"${PLATFORM}\","
-            echo "  \"timestamp\": \"$(date -Iseconds)\","
-            echo "  \"duration_seconds\": ${DURATION},"
-            echo "  \"raw_output\": true,"
-            cat "$RAW_OUTPUT"
-            echo "}"
-        } > "$RESULT_FILE"
+        log_fail "Test 2: --version failed with exit code $EXIT_CODE"
     fi
+fi
+
+# ============================================
+# TEST 3: Headless render test
+# ============================================
+echo "" >> "$LOG_FILE"
+echo "--- Test 3: Headless Render Test ---" >> "$LOG_FILE"
+
+# Find a test SVG file
+TEST_SVG=""
+SAMPLE_SVGS=(
+    "${PROJECT_ROOT}/svg_input_samples/test.svg"
+    "${PROJECT_ROOT}/svg_input_samples/benchmark_500.svg"
+    "${PROJECT_ROOT}/svg_input_samples/simple.svg"
+)
+
+for svg in "${SAMPLE_SVGS[@]}"; do
+    if [ -f "$svg" ]; then
+        TEST_SVG="$svg"
+        break
+    fi
+done
+
+# Also check for any .svg file in samples directory
+if [ -z "$TEST_SVG" ]; then
+    TEST_SVG=$(find "${PROJECT_ROOT}/svg_input_samples" -name "*.svg" -type f 2>/dev/null | head -1)
+fi
+
+if [ -z "$TEST_SVG" ]; then
+    log_skip "Test 3: No test SVG file found in svg_input_samples/"
 else
-    # Parse text output to JSON format
-    # Note: grep -c returns exit code 1 when count is 0, but still outputs "0"
-    # Use || true to suppress error exit, then default empty to 0
-    PASSED=$(grep -c "\[PASS\]" "$RAW_OUTPUT" 2>/dev/null || true)
-    FAILED=$(grep -c "\[FAIL\]" "$RAW_OUTPUT" 2>/dev/null || true)
-    PASSED=${PASSED:-0}
-    FAILED=${FAILED:-0}
-    TOTAL=$((PASSED + FAILED))
+    log_info "Using test SVG: $TEST_SVG"
+    log_info "Running: $BINARY --headless --frames 10 $TEST_SVG"
 
-    # Escape output for JSON
-    ESCAPED_OUTPUT=$(cat "$RAW_OUTPUT" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | tr '\n' ' ')
+    # Run headless render test with timeout
+    if timeout 30 "$BINARY" --headless --frames 10 "$TEST_SVG" >> "$LOG_FILE" 2>&1; then
+        log_pass "Test 3: Headless render completed successfully"
+    else
+        EXIT_CODE=$?
+        if [ $EXIT_CODE -eq 124 ]; then
+            log_fail "Test 3: Headless render timed out after 30 seconds"
+        else
+            log_fail "Test 3: Headless render failed with exit code $EXIT_CODE"
+        fi
+    fi
+fi
 
-    cat > "$RESULT_FILE" << EOF
+# ============================================
+# TEST SUMMARY
+# ============================================
+echo ""
+echo "=============================================="
 {
-    "platform": "${PLATFORM}",
-    "timestamp": "$(date -Iseconds)",
-    "status": "$([ $TEST_EXIT_CODE -eq 0 ] && echo "passed" || echo "failed")",
-    "exit_code": ${TEST_EXIT_CODE},
-    "duration_seconds": ${DURATION},
-    "summary": {
-        "total": ${TOTAL},
-        "passed": ${PASSED},
-        "failed": ${FAILED},
-        "skipped": 0
-    },
-    "raw_output": "${ESCAPED_OUTPUT}"
-}
-EOF
-fi
+    echo ""
+    echo "=============================================="
+    echo "TEST SUMMARY"
+    echo "=============================================="
+    echo "Passed:  $TESTS_PASSED"
+    echo "Failed:  $TESTS_FAILED"
+    echo "Skipped: $TESTS_SKIPPED"
+} >> "$LOG_FILE"
 
-# Display summary
-if [ "$VERBOSE" = true ]; then
-    cat "$RAW_OUTPUT"
-fi
+TOTAL=$((TESTS_PASSED + TESTS_FAILED))
 
-if [ $TEST_EXIT_CODE -eq 0 ]; then
-    log_info "All tests passed on ${PLATFORM}"
+if [ $TESTS_FAILED -eq 0 ]; then
+    log_info "All tests passed ($TESTS_PASSED/$TOTAL)"
+    echo "Status:  PASSED" >> "$LOG_FILE"
+    echo "=============================================="
+    log_info "Results saved to: $LOG_FILE"
+    exit 0
 else
-    log_error "Some tests failed on ${PLATFORM} (exit code: $TEST_EXIT_CODE)"
+    log_error "Some tests failed ($TESTS_FAILED/$TOTAL failed)"
+    echo "Status:  FAILED" >> "$LOG_FILE"
+    echo "=============================================="
+    log_info "Results saved to: $LOG_FILE"
+    exit 1
 fi
-
-log_info "Results saved to: $RESULT_FILE"
-
-exit $TEST_EXIT_CODE

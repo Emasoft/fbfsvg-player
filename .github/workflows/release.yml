@@ -26,6 +26,9 @@ jobs:
           - os: macos-14
             target: macos-arm64
             artifact: fbfsvg-player-macos-arm64
+          - os: macos-13
+            target: macos-x64
+            artifact: fbfsvg-player-macos-x64
           - os: ubuntu-latest
             target: linux-x64
             artifact: fbfsvg-player-linux-x64
@@ -92,8 +95,12 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # Build Skia (if not cached)
       # ─────────────────────────────────────────────────────────────
-      - name: Build Skia (macOS)
+      - name: Build Skia (macOS ARM64)
         if: steps.cache-skia.outputs.cache-hit != 'true' && matrix.os == 'macos-14'
+        run: cd skia-build && ./build-macos.sh -y
+
+      - name: Build Skia (macOS x64)
+        if: steps.cache-skia.outputs.cache-hit != 'true' && matrix.os == 'macos-13'
         run: cd skia-build && ./build-macos.sh -y
 
       - name: Build Skia (Linux)
@@ -107,8 +114,14 @@ jobs:
       # ─────────────────────────────────────────────────────────────
       # Build Player
       # ─────────────────────────────────────────────────────────────
-      - name: Build Player (macOS)
+      - name: Build Player (macOS ARM64)
         if: matrix.os == 'macos-14'
+        run: |
+          ./scripts/build-macos.sh
+          mv build/fbfsvg-player build/${{ matrix.artifact }}
+
+      - name: Build Player (macOS x64)
+        if: matrix.os == 'macos-13'
         run: |
           ./scripts/build-macos.sh
           mv build/fbfsvg-player build/${{ matrix.artifact }}
@@ -172,6 +185,15 @@ jobs:
           tar -czvf ../../release/fbfsvg-player-${VERSION}-macos-arm64.tar.gz fbfsvg-player
           cd ../..
 
+          # macOS x64 tarball (if artifact exists)
+          if [ -d "artifacts/fbfsvg-player-macos-x64" ]; then
+            cd artifacts/fbfsvg-player-macos-x64
+            chmod +x fbfsvg-player-macos-x64
+            mv fbfsvg-player-macos-x64 fbfsvg-player
+            tar -czvf ../../release/fbfsvg-player-${VERSION}-macos-x64.tar.gz fbfsvg-player
+            cd ../..
+          fi
+
           # Linux x64 tarball
           cd artifacts/fbfsvg-player-linux-x64
           chmod +x fbfsvg-player-linux-x64
@@ -210,6 +232,21 @@ jobs:
           cat release/SHA256SUMS.txt >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: release/
+          artifact-name: sbom-${{ steps.version.outputs.VERSION }}
+          output-file: release/sbom.spdx.json
+          format: spdx-json
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: release/
+          output-file: release/sbom.cyclonedx.json
+          format: cyclonedx-json
+
       - name: Create DRAFT GitHub Release
         id: create
         uses: softprops/action-gh-release@v1
@@ -228,6 +265,7 @@ jobs:
             | Platform | Package | GPU Backend |
             |----------|---------|-------------|
             | macOS (ARM64) | `fbfsvg-player-${{ steps.version.outputs.VERSION }}-macos-arm64.tar.gz` | Graphite (Metal) |
+            | macOS (x64) | `fbfsvg-player-${{ steps.version.outputs.VERSION }}-macos-x64.tar.gz` | Graphite (Metal) |
             | Linux (x64) | `fbfsvg-player-${{ steps.version.outputs.VERSION }}-linux-x64.tar.gz` | Graphite (Vulkan) |
             | Linux (DEB) | `fbfsvg-player_${{ steps.version.outputs.VERSION }}_amd64.deb` | Graphite (Vulkan) |
             | Windows (x64) | `fbfsvg-player-${{ steps.version.outputs.VERSION }}-windows-x64.zip` | Graphite (Vulkan) |
@@ -237,6 +275,12 @@ jobs:
             ```
             ${{ steps.package.outputs.CHECKSUMS }}
             ```
+
+            ### Software Bill of Materials (SBOM)
+
+            This release includes SBOM files for supply chain security:
+            - `sbom.spdx.json` (SPDX format)
+            - `sbom.cyclonedx.json` (CycloneDX format)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -273,9 +317,12 @@ jobs:
           # Download all assets
           for asset in \
             "fbfsvg-player-${VERSION}-macos-arm64.tar.gz" \
+            "fbfsvg-player-${VERSION}-macos-x64.tar.gz" \
             "fbfsvg-player-${VERSION}-linux-x64.tar.gz" \
             "fbfsvg-player_${VERSION#v}_amd64.deb" \
             "fbfsvg-player-${VERSION}-windows-x64.zip" \
+            "sbom.spdx.json" \
+            "sbom.cyclonedx.json" \
             "SHA256SUMS.txt"
           do
             echo "Downloading: $asset"
@@ -296,10 +343,17 @@ jobs:
           echo ""
           echo "=== Validating archive contents ==="
 
-          # Validate macOS tarball
-          echo "Checking macOS tarball..."
+          # Validate macOS ARM64 tarball
+          echo "Checking macOS ARM64 tarball..."
           tar -tzf "fbfsvg-player-${VERSION}-macos-arm64.tar.gz" | grep -q "fbfsvg-player" || {
-            echo "ERROR: macOS tarball missing fbfsvg-player binary"
+            echo "ERROR: macOS ARM64 tarball missing fbfsvg-player binary"
+            exit 1
+          }
+
+          # Validate macOS x64 tarball
+          echo "Checking macOS x64 tarball..."
+          tar -tzf "fbfsvg-player-${VERSION}-macos-x64.tar.gz" | grep -q "fbfsvg-player" || {
+            echo "ERROR: macOS x64 tarball missing fbfsvg-player binary"
             exit 1
           }
 
@@ -370,6 +424,7 @@ jobs:
           | Platform | Package | GPU Backend |
           |----------|---------|-------------|
           | macOS (ARM64) | \`fbfsvg-player-${VERSION}-macos-arm64.tar.gz\` | Graphite (Metal) |
+          | macOS (x64) | \`fbfsvg-player-${VERSION}-macos-x64.tar.gz\` | Graphite (Metal) |
           | Linux (x64) | \`fbfsvg-player-${VERSION}-linux-x64.tar.gz\` | Graphite (Vulkan) |
           | Linux (DEB) | \`fbfsvg-player_${VERSION#v}_amd64.deb\` | Graphite (Vulkan) |
           | Windows (x64) | \`fbfsvg-player-${VERSION}-windows-x64.zip\` | Graphite (Vulkan) |
@@ -404,6 +459,12 @@ jobs:
           ### Checksums
 
           See \`SHA256SUMS.txt\` in release assets for verification.
+
+          ### Software Bill of Materials (SBOM)
+
+          This release includes SBOM files for supply chain security:
+          - \`sbom.spdx.json\` (SPDX format)
+          - \`sbom.cyclonedx.json\` (CycloneDX format)
           "
 
           echo "published=true" >> $GITHUB_OUTPUT
@@ -447,8 +508,11 @@ jobs:
 
           BASE_URL="https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}"
 
-          curl -sL "${BASE_URL}/fbfsvg-player-${VERSION}-macos-arm64.tar.gz" -o macos.tar.gz
-          echo "MACOS_SHA256=$(sha256sum macos.tar.gz | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+          curl -sL "${BASE_URL}/fbfsvg-player-${VERSION}-macos-arm64.tar.gz" -o macos-arm64.tar.gz
+          echo "MACOS_ARM64_SHA256=$(sha256sum macos-arm64.tar.gz | cut -d' ' -f1)" >> $GITHUB_OUTPUT
+
+          curl -sL "${BASE_URL}/fbfsvg-player-${VERSION}-macos-x64.tar.gz" -o macos-x64.tar.gz
+          echo "MACOS_X64_SHA256=$(sha256sum macos-x64.tar.gz | cut -d' ' -f1)" >> $GITHUB_OUTPUT
 
           curl -sL "${BASE_URL}/fbfsvg-player-${VERSION}-linux-x64.tar.gz" -o linux.tar.gz
           echo "LINUX_SHA256=$(sha256sum linux.tar.gz | cut -d' ' -f1)" >> $GITHUB_OUTPUT
@@ -459,22 +523,29 @@ jobs:
       - name: Update package manifests
         run: |
           VERSION=${{ steps.info.outputs.VERSION }}
-          MACOS_SHA=${{ steps.info.outputs.MACOS_SHA256 }}
+          MACOS_ARM64_SHA=${{ steps.info.outputs.MACOS_ARM64_SHA256 }}
+          MACOS_X64_SHA=${{ steps.info.outputs.MACOS_X64_SHA256 }}
           LINUX_SHA=${{ steps.info.outputs.LINUX_SHA256 }}
           WINDOWS_SHA=${{ steps.info.outputs.WINDOWS_SHA256 }}
 
-          # Update macOS Homebrew formula
+          # Update macOS Homebrew formula (supports both ARM64 and x64)
           cat > Formula/fbfsvg-player.rb << EOF
-          # Homebrew formula for fbfsvg-player (macOS ARM64)
+          # Homebrew formula for fbfsvg-player (macOS ARM64 and Intel x86_64)
           class FbfsvgPlayer < Formula
             desc "High-performance animated SVG player for the FBF.SVG vector video format"
             homepage "https://github.com/Emasoft/fbfsvg-player"
-            url "https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}/fbfsvg-player-${VERSION}-macos-arm64.tar.gz"
-            sha256 "${MACOS_SHA}"
             license "BSD-3-Clause"
             version "${VERSION#v}"
 
-            depends_on arch: :arm64
+            on_arm do
+              url "https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}/fbfsvg-player-${VERSION}-macos-arm64.tar.gz"
+              sha256 "${MACOS_ARM64_SHA}"
+            end
+
+            on_intel do
+              url "https://github.com/Emasoft/fbfsvg-player/releases/download/${VERSION}/fbfsvg-player-${VERSION}-macos-x64.tar.gz"
+              sha256 "${MACOS_X64_SHA}"
+            end
 
             def install
               bin.install "fbfsvg-player"

@@ -1,0 +1,135 @@
+# Docker Compose for SVG Player Benchmark with GPU Passthrough
+#
+# REQUIREMENTS:
+#   Linux host with:
+#   - NVIDIA GPU: Install NVIDIA Container Toolkit
+#     https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
+#   - Intel/AMD GPU: Uses /dev/dri passthrough automatically
+#   - X11 display server running
+#
+# USAGE:
+#   # Build the benchmark image
+#   docker-compose build
+#
+#   # Run interactive benchmark shell
+#   docker-compose run --rm benchmark
+#
+#   # Run automated benchmark on specific SVGs
+#   docker-compose run --rm benchmark run-benchmark --duration 30 --fullscreen /workspace/svg_input_samples/*.svg
+#
+#   # Quick comparison of a single file
+#   docker-compose run --rm benchmark quick-compare /workspace/svg_input_samples/seagull.fbf.svg 10
+
+services:
+  benchmark:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: svg-benchmark:latest
+    container_name: svg-benchmark
+
+    # GPU passthrough configuration
+    # For NVIDIA GPUs (requires nvidia-container-toolkit):
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, video, compute, utility]
+
+    # Alternative: For Intel/AMD GPUs or when NVIDIA toolkit not available
+    # Uncomment these lines and comment out the deploy section above:
+    # devices:
+    #   - /dev/dri:/dev/dri
+
+    # X11 display forwarding for fullscreen rendering
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      # Disable vsync for benchmark accuracy (optional)
+      - vblank_mode=0
+      - __GL_SYNC_TO_VBLANK=0
+
+    # X11 socket for display access
+    volumes:
+      # X11 socket
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Mount the fbfsvg-player source code
+      - ../../:/workspace/fbfsvg-player:rw
+      # Mount SVG samples
+      - ../../svg_input_samples:/workspace/svg_input_samples:ro
+      # Persistent results directory
+      - ./results:/results:rw
+      # Share Skia build to avoid rebuilding
+      - ../../skia-build:/workspace/skia-build:ro
+
+    # Allow real-time scheduling for accurate timing
+    privileged: false
+    cap_add:
+      - SYS_NICE
+      - SYS_PTRACE
+
+    # Increase shared memory for GPU operations
+    shm_size: '4gb'
+
+    # Network for any remote debugging needs
+    network_mode: host
+
+    # Keep container running for interactive use
+    stdin_open: true
+    tty: true
+
+    # Working directory
+    working_dir: /workspace
+
+    # Default command - interactive shell
+    command: /bin/bash
+
+  # Service for building fbfsvg-player inside container
+  build-fbfsvg:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: svg-benchmark:latest
+    volumes:
+      - ../../:/workspace/fbfsvg-player:rw
+      - ../../skia-build:/workspace/skia-build:rw
+    working_dir: /workspace/fbfsvg-player
+    command: |
+      bash -c '
+        echo "Building fbfsvg-player for Linux..."
+        ./scripts/build-linux.sh -y
+        echo "Build complete!"
+        cp build/svg_player_animated_linux_* /usr/local/bin/svg_player_animated_linux 2>/dev/null || true
+      '
+
+  # Service for running automated benchmark suite
+  benchmark-suite:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: svg-benchmark:latest
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ../../:/workspace/fbfsvg-player:ro
+      - ../../svg_input_samples:/workspace/svg_input_samples:ro
+      - ./results:/results:rw
+    shm_size: '4gb'
+    network_mode: host
+    command: |
+      run-benchmark --duration 30 --fullscreen \
+        /workspace/svg_input_samples/seagull.fbf.svg \
+        /workspace/svg_input_samples/walk_cycle.fbf.svg \
+        /workspace/svg_input_samples/panther_bird.fbf.svg

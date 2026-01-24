@@ -1,0 +1,271 @@
+{
+  "summary": {
+    "total": 32,
+    "passed": 32,
+    "warnings": 0,
+    "failed": 0,
+    "critical": 0
+  },
+  "regressions": [
+  ],
+  "metrics": {
+  },
+  "results": [
+    {
+      "name": "deterministic_clock_works",
+      "category": "infrastructure",
+      "severity": "Pass",
+      "durationMs": 0.000209,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "deterministic_scheduler_queues_operations",
+      "category": "infrastructure",
+      "severity": "Pass",
+      "durationMs": 0.010875,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "test_environment_creates_svgs",
+      "category": "infrastructure",
+      "severity": "Pass",
+      "durationMs": 0.63575,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "metrics_collector_records_data",
+      "category": "infrastructure",
+      "severity": "Pass",
+      "durationMs": 0.000875,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "hooks_can_be_installed",
+      "category": "instrumentation",
+      "severity": "Pass",
+      "durationMs": 0.0235,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "hook_installer_restores_on_scope_exit",
+      "category": "instrumentation",
+      "severity": "Pass",
+      "durationMs": 0.000542,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "baseline_provider_saves_and_loads",
+      "category": "regression",
+      "severity": "Pass",
+      "durationMs": 0.119792,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "regression_detector_identifies_regressions",
+      "category": "regression",
+      "severity": "Pass",
+      "durationMs": 0.000791,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "detector_identifies_improvements",
+      "category": "regression",
+      "severity": "Pass",
+      "durationMs": 0.000416,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "report_generation",
+      "category": "regression",
+      "severity": "Pass",
+      "durationMs": 0.006958,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "render_time_tracking",
+      "category": "performance",
+      "severity": "Pass",
+      "durationMs": 0.00425,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "dropped_frame_tracking",
+      "category": "performance",
+      "severity": "Pass",
+      "durationMs": 0.011708,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "cache_metrics_tracking",
+      "category": "memory",
+      "severity": "Pass",
+      "durationMs": 0.000208,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "state_transition_tracking",
+      "category": "correctness",
+      "severity": "Pass",
+      "durationMs": 8.3e-05,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "id_prefixing_error_tracking",
+      "category": "correctness",
+      "severity": "Pass",
+      "durationMs": 0.000125,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "metrics_to_json",
+      "category": "serialization",
+      "severity": "Pass",
+      "durationMs": 0.005125,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "full_test_cycle",
+      "category": "integration",
+      "severity": "Pass",
+      "durationMs": 0.726083,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "clippath_elements_generated_for_svg_cells",
+      "category": "rendering",
+      "severity": "Pass",
+      "durationMs": 0.000625,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "clippath_rect_matches_icon_bounds",
+      "category": "rendering",
+      "severity": "Pass",
+      "durationMs": 4.2e-05,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "thumbnail_svg_has_preserve_aspect_ratio",
+      "category": "rendering",
+      "severity": "Pass",
+      "durationMs": 0.000167,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "aspect_ratio_calculation_for_wide_svg",
+      "category": "rendering",
+      "severity": "Pass",
+      "durationMs": 4.2e-05,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "aspect_ratio_calculation_for_tall_svg",
+      "category": "rendering",
+      "severity": "Pass",
+      "durationMs": 0,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "thumbnail_svg_has_overflow_hidden",
+      "category": "rendering",
+      "severity": "Pass",
+      "durationMs": 0.000125,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "double_clipping_defense_in_depth",
+      "category": "rendering",
+      "severity": "Pass",
+      "durationMs": 0.000292,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "viewbox_with_offset_preserved",
+      "category": "rendering",
+      "severity": "Pass",
+      "durationMs": 0.000125,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "id_prefixing_prevents_collisions",
+      "category": "rendering",
+      "severity": "Pass",
+      "durationMs": 0.154833,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "unique_prefix_per_thumbnail",
+      "category": "rendering",
+      "severity": "Pass",
+      "durationMs": 0.000791,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "smil_animate_elements_preserved_in_thumbnail",
+      "category": "animation",
+      "severity": "Pass",
+      "durationMs": 0.000375,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "smil_id_references_prefixed_correctly",
+      "category": "animation",
+      "severity": "Pass",
+      "durationMs": 0.27975,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "placeholder_loading_animation_uses_smil",
+      "category": "animation",
+      "severity": "Pass",
+      "durationMs": 0.441083,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "values_id_references_prefixed",
+      "category": "animation",
+      "severity": "Pass",
+      "durationMs": 0.277208,
+      "message": "PASS",
+      "metrics": {}
+    },
+    {
+      "name": "placeholder_ids_deterministic_per_cell",
+      "category": "animation",
+      "severity": "Pass",
+      "durationMs": 0.001042,
+      "message": "PASS",
+      "metrics": {}
+    }
+  ]
+}

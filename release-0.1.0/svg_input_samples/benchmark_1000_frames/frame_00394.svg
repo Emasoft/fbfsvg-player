@@ -1,0 +1,574 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <filter id="blur0" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="1"/>
+    </filter>
+    <filter id="blur1" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3"/>
+    </filter>
+    <filter id="blur2" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5"/>
+    </filter>
+    <filter id="blur3" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="7"/>
+    </filter>
+    <filter id="blur4" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="9"/>
+    </filter>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3" result="blur"/>
+      <feOffset in="blur" dx="4" dy="4" result="offsetBlur"/>
+      <feMerge>
+        <feMergeNode in="offsetBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="lgrad0" x1="0%" y1="0%" x2="26.5%" y2="5.9%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </linearGradient>
+    <linearGradient id="lgrad1" x1="0%" y1="0%" x2="51.7%" y2="0.0%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#C44D58"/>
+      <stop offset="100%" stop-color="#8B0000"/>
+    </linearGradient>
+    <linearGradient id="lgrad2" x1="0%" y1="0%" x2="76.5%" y2="7.6%">
+      <stop offset="0%" stop-color="#4169E1"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </linearGradient>
+    <linearGradient id="lgrad3" x1="0%" y1="0%" x2="94.1%" y2="26.5%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#228B22"/>
+      <stop offset="66%" stop-color="#006400"/>
+      <stop offset="100%" stop-color="#ADFF2F"/>
+    </linearGradient>
+    <linearGradient id="lgrad4" x1="0%" y1="0%" x2="100.0%" y2="51.7%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#FFB6C1"/>
+      <stop offset="100%" stop-color="#FFC0CB"/>
+    </linearGradient>
+    <radialGradient id="rgrad0" cx="68.2%" cy="68.8%" r="60%">
+      <stop offset="0%" stop-color="#FF6B6B" stop-opacity="1"/>
+      <stop offset="50%" stop-color="#4ECDC4" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#45B7D1" stop-opacity="0.6"/>
+    </radialGradient>
+    <radialGradient id="rgrad1" cx="38.2%" cy="36.8%" r="60%">
+      <stop offset="0%" stop-color="#FFE66D" stop-opacity="1"/>
+      <stop offset="50%" stop-color="#FF6B6B" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#C44D58" stop-opacity="0.6"/>
+    </radialGradient>
+    <radialGradient id="rgrad2" cx="48.2%" cy="44.8%" r="60%">
+      <stop offset="0%" stop-color="#4169E1" stop-opacity="1"/>
+      <stop offset="50%" stop-color="#7B68EE" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#9370DB" stop-opacity="0.6"/>
+    </radialGradient>
+    <radialGradient id="rgrad3" cx="58.2%" cy="52.8%" r="60%">
+      <stop offset="0%" stop-color="#32CD32" stop-opacity="1"/>
+      <stop offset="50%" stop-color="#228B22" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#006400" stop-opacity="0.6"/>
+    </radialGradient>
+    <radialGradient id="rgrad4" cx="68.2%" cy="60.8%" r="60%">
+      <stop offset="0%" stop-color="#FF1493" stop-opacity="1"/>
+      <stop offset="50%" stop-color="#FF69B4" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#FFB6C1" stop-opacity="0.6"/>
+    </radialGradient>
+    <clipPath id="clipCircle">
+      <circle cx="0" cy="0" r="50"/>
+    </clipPath>
+    <clipPath id="clipStar">
+      <path d="M0.0,-50.0 L14.7,-20.2 L47.6,-15.5 L23.8,7.7 L29.4,40.5 L0.0,25.0 L-29.4,40.5 L-23.8,7.7 L-47.6,-15.5 L-14.7,-20.2Z"/>
+    </clipPath>
+    <clipPath id="clipHex">
+      <path d="M39.0,22.5 L0.0,45.0 L-39.0,22.5 L-39.0,-22.5 L-0.0,-45.0 L39.0,-22.5Z"/>
+    </clipPath>
+    <clipPath id="clipRect">
+      <rect x="-40" y="-30" width="80" height="60" rx="10"/>
+    </clipPath>
+    <clipPath id="clipDynamic">
+      <circle cx="0" cy="0" r="44.3"/>
+    </clipPath>
+    <mask id="maskGradient" maskContentUnits="objectBoundingBox">
+      <rect x="0" y="0" width="1" height="1" fill="url(#maskGrad)"/>
+    </mask>
+    <linearGradient id="maskGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="white"/>
+      <stop offset="100%" stop-color="black"/>
+    </linearGradient>
+    <mask id="maskCircleFade">
+      <circle cx="0" cy="0" r="60" fill="white"/>
+      <circle cx="0" cy="0" r="30" fill="black"/>
+    </mask>
+    <mask id="maskStripes">
+      <rect x="-50" y="-50" width="100" height="100" fill="white"/>
+      <rect x="-50" y="-40" width="100" height="10" fill="black"/>
+      <rect x="-50" y="-20" width="100" height="10" fill="black"/>
+      <rect x="-50" y="0" width="100" height="10" fill="black"/>
+      <rect x="-50" y="20" width="100" height="10" fill="black"/>
+      <rect x="-50" y="40" width="100" height="10" fill="black"/>
+    </mask>
+    <mask id="maskDynamic">
+      <rect x="-60" y="-60" width="120" height="120" fill="white" fill-opacity="0.96"/>
+      <circle cx="0" cy="0" r="25" fill="white"/>
+    </mask>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#lgrad0)"/>
+  <g transform="translate(118.6, 80.4)">
+      <g transform="translate(3.10,-3.14) rotate(4.72) scale(1.000)">
+        <g transform="translate(0.85,-3.73) rotate(9.91) scale(0.980)">
+        <g transform="translate(-1.62,-3.99) rotate(14.97) scale(0.960)">
+        <g transform="translate(-3.69,-3.89) rotate(19.30) scale(0.940)" clip-path="url(#clipCircle)">
+        <g transform="translate(-4.86,-3.45) rotate(22.34) scale(0.920)">
+        <g transform="translate(-4.83,-2.70) rotate(23.61) scale(0.900)">
+        <g transform="translate(-3.63,-1.71) rotate(22.70) scale(0.880)">
+        <path d="M0.0,-74.2 L21.8,-30.0 L70.5,-22.9 L35.3,11.5 L43.6,60.0 L0.0,37.1 L-43.6,60.0 L-35.3,11.5 L-70.5,-22.9 L-21.8,-30.0Z" fill="url(#lgrad0)" filter="url(#blur0)" opacity="0.88"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(325.1, 75.0)">
+      <g transform="translate(-1.62,-3.78) rotate(4.72) scale(1.000)">
+        <g transform="translate(-3.69,-3.23) rotate(9.91) scale(0.980)">
+        <g transform="translate(-4.86,-2.39) rotate(14.97) scale(0.960)">
+        <g transform="translate(-4.83,-1.34) rotate(19.30) scale(0.940)">
+        <g transform="translate(-3.63,-0.16) rotate(22.34) scale(0.920)">
+        <g transform="translate(-1.53,1.03) rotate(23.61) scale(0.900)" mask="url(#maskCircleFade)">
+        <g transform="translate(0.94,2.12) rotate(22.70) scale(0.880)">
+        <rect x="-35.9" y="-35.9" width="71.8" height="71.8" rx="18.0" fill="url(#rgrad1)" filter="url(#shadow)" opacity="0.90"/>
+        <circle cx="0" cy="0" r="23.9" fill="url(#rgrad2)" opacity="0.63"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(530.3, 81.4)">
+      <g transform="translate(-4.86,-0.95) rotate(4.72) scale(1.000)">
+        <g transform="translate(-4.83,0.24) rotate(9.91) scale(0.980)">
+        <g transform="translate(-3.63,1.41) rotate(14.97) scale(0.960)">
+        <g transform="translate(-1.53,2.45) rotate(19.30) scale(0.940)">
+        <g transform="translate(0.94,3.28) rotate(22.34) scale(0.920)">
+        <g transform="translate(3.18,3.81) rotate(23.61) scale(0.900)">
+        <g transform="translate(4.64,4.00) rotate(22.70) scale(0.880)">
+        <path d="M30.4,17.6 L0.0,35.2 L-30.4,17.6 L-30.4,-17.6 L-0.0,-35.2 L30.4,-17.6Z" fill="url(#rgrad2)" filter="url(#blur2)" opacity="0.89"/>
+        <ellipse cx="0" cy="0" rx="14.6" ry="9.8" fill="#FFFFFF" opacity="0.44"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(737.9, 96.5)">
+      <g transform="translate(-3.63,2.75) rotate(4.72) scale(1.000)">
+        <g transform="translate(-1.53,3.49) rotate(9.91) scale(0.980)">
+        <g transform="translate(0.94,3.91) rotate(14.97) scale(0.960)">
+        <g transform="translate(3.18,3.98) rotate(19.30) scale(0.940)" clip-path="url(#clipRect)">
+        <g transform="translate(4.64,3.70) rotate(22.34) scale(0.920)">
+        <g transform="translate(4.97,3.09) rotate(23.61) scale(0.900)">
+        <g transform="translate(4.08,2.20) rotate(22.70) scale(0.880)">
+        <circle cx="0" cy="0" r="23.3" fill="url(#lgrad3)" filter="url(#shadow)" opacity="0.84"/>
+        <text x="0" y="5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#FFFFFF" opacity="0.84">394</text>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(950.9, 113.3)">
+      <g transform="translate(0.94,3.93) rotate(4.72) scale(1.000)">
+        <g transform="translate(3.18,3.53) rotate(9.91) scale(0.980)">
+        <g transform="translate(4.64,2.82) rotate(14.97) scale(0.960)">
+        <g transform="translate(4.97,1.85) rotate(19.30) scale(0.940)">
+        <g transform="translate(4.08,0.72) rotate(22.34) scale(0.920)">
+        <g transform="translate(2.19,-0.47) rotate(23.61) scale(0.900)" mask="url(#maskGradient)">
+        <g transform="translate(-0.23,-1.62) rotate(22.70) scale(0.880)">
+        <path d="M0.0,-47.0 L13.8,-19.0 L44.7,-14.5 L22.4,7.3 L27.6,38.0 L0.0,23.5 L-27.6,38.0 L-22.4,7.3 L-44.7,-14.5 L-13.8,-19.0Z" fill="url(#rgrad4)" filter="url(#blur4)" opacity="0.76"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(1171.0, 123.8)">
+      <g transform="translate(4.64,1.49) rotate(4.72) scale(1.000)">
+        <g transform="translate(4.97,0.33) rotate(9.91) scale(0.980)">
+        <g transform="translate(4.08,-0.86) rotate(14.97) scale(0.960)">
+        <g transform="translate(2.19,-1.98) rotate(19.30) scale(0.940)">
+        <g transform="translate(-0.23,-2.92) rotate(22.34) scale(0.920)">
+        <g transform="translate(-2.60,-3.60) rotate(23.61) scale(0.900)">
+        <g transform="translate(-4.33,-3.95) rotate(22.70) scale(0.880)">
+        <rect x="-29.6" y="-29.6" width="59.3" height="59.3" rx="14.8" fill="url(#rgrad0)" filter="url(#shadow)" opacity="0.66"/>
+        <circle cx="0" cy="0" r="19.8" fill="url(#rgrad1)" opacity="0.46"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(1398.2, 123.1)">
+      <g transform="translate(4.08,-2.32) rotate(4.72) scale(1.000)">
+        <g transform="translate(2.19,-3.18) rotate(9.91) scale(0.980)">
+        <g transform="translate(-0.23,-3.75) rotate(14.97) scale(0.960)">
+        <g transform="translate(-2.60,-3.99) rotate(19.30) scale(0.940)" clip-path="url(#clipStar)">
+        <g transform="translate(-4.33,-3.88) rotate(22.34) scale(0.920)">
+        <g transform="translate(-5.00,-3.42) rotate(23.61) scale(0.900)">
+        <g transform="translate(-4.44,-2.65) rotate(22.70) scale(0.880)">
+        <path d="M37.5,21.7 L0.0,43.3 L-37.5,21.7 L-37.5,-21.7 L-0.0,-43.3 L37.5,-21.7Z" fill="url(#lgrad1)" filter="url(#blur1)" opacity="0.54"/>
+        <ellipse cx="0" cy="0" rx="18.1" ry="12.0" fill="#FFFFFF" opacity="0.27"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(1630.8, 111.6)">
+      <g transform="translate(-0.23,-4.00) rotate(4.72) scale(1.000)">
+        <g transform="translate(-2.60,-3.76) rotate(9.91) scale(0.980)">
+        <g transform="translate(-4.33,-3.19) rotate(14.97) scale(0.960)">
+        <g transform="translate(-5.00,-2.34) rotate(19.30) scale(0.940)">
+        <g transform="translate(-4.44,-1.27) rotate(22.34) scale(0.920)">
+        <g transform="translate(-2.80,-0.10) rotate(23.61) scale(0.900)" mask="url(#maskDynamic)">
+        <g transform="translate(-0.47,1.09) rotate(22.70) scale(0.880)">
+        <circle cx="0" cy="0" r="37.0" fill="url(#rgrad2)" filter="url(#shadow)" opacity="0.42"/>
+        <text x="0" y="5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#FFFFFF" opacity="0.42">394</text>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(105.6, 374.6)">
+      <g transform="translate(-4.33,-2.00) rotate(4.72) scale(1.000)">
+        <g transform="translate(-5.00,-0.89) rotate(9.91) scale(0.980)">
+        <g transform="translate(-4.44,0.30) rotate(14.97) scale(0.960)">
+        <g transform="translate(-2.80,1.47) rotate(19.30) scale(0.940)">
+        <g transform="translate(-0.47,2.50) rotate(22.34) scale(0.920)">
+        <g transform="translate(1.97,3.31) rotate(23.61) scale(0.900)">
+        <g transform="translate(3.93,3.83) rotate(22.70) scale(0.880)">
+        <path d="M0.0,-62.8 L18.5,-25.4 L59.7,-19.4 L29.9,9.7 L36.9,50.8 L0.0,31.4 L-36.9,50.8 L-29.9,9.7 L-59.7,-19.4 L-18.5,-25.4Z" fill="url(#rgrad3)" filter="url(#blur3)" opacity="0.31"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(339.1, 360.1)">
+      <g transform="translate(-4.44,1.83) rotate(4.72) scale(1.000)">
+        <g transform="translate(-2.80,2.80) rotate(9.91) scale(0.980)">
+        <g transform="translate(-0.47,3.52) rotate(14.97) scale(0.960)">
+        <g transform="translate(1.97,3.92) rotate(19.30) scale(0.940)" clip-path="url(#clipDynamic)">
+        <g transform="translate(3.93,3.98) rotate(22.34) scale(0.920)">
+        <g transform="translate(4.93,3.68) rotate(23.61) scale(0.900)">
+        <g transform="translate(4.72,3.05) rotate(22.70) scale(0.880)">
+        <rect x="-24.6" y="-24.6" width="49.1" height="49.1" rx="12.3" fill="url(#lgrad4)" filter="url(#shadow)" opacity="0.21"/>
+        <circle cx="0" cy="0" r="16.4" fill="url(#rgrad0)" opacity="0.15"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(567.8, 355.0)">
+      <g transform="translate(-0.47,3.98) rotate(4.72) scale(1.000)">
+        <g transform="translate(1.97,3.92) rotate(9.91) scale(0.980)">
+        <g transform="translate(3.93,3.50) rotate(14.97) scale(0.960)">
+        <g transform="translate(4.93,2.77) rotate(19.30) scale(0.940)">
+        <g transform="translate(4.72,1.80) rotate(22.34) scale(0.920)">
+        <g transform="translate(3.36,0.66) rotate(23.61) scale(0.900)" mask="url(#maskStripes)">
+        <g transform="translate(1.17,-0.54) rotate(22.70) scale(0.880)">
+        <path d="M23.6,13.6 L0.0,27.3 L-23.6,13.6 L-23.6,-13.6 L-0.0,-27.3 L23.6,-13.6Z" fill="url(#rgrad0)" filter="url(#blur0)" opacity="0.14"/>
+        <ellipse cx="0" cy="0" rx="11.4" ry="7.6" fill="#FFFFFF" opacity="0.07"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(789.8, 361.7)">
+      <g transform="translate(3.93,2.47) rotate(4.72) scale(1.000)">
+        <g transform="translate(4.93,1.43) rotate(9.91) scale(0.980)">
+        <g transform="translate(4.72,0.26) rotate(14.97) scale(0.960)">
+        <g transform="translate(3.36,-0.93) rotate(19.30) scale(0.940)">
+        <g transform="translate(1.17,-2.04) rotate(22.34) scale(0.920)">
+        <g transform="translate(-1.30,-2.96) rotate(23.61) scale(0.900)">
+        <g transform="translate(-3.46,-3.63) rotate(22.70) scale(0.880)">
+        <circle cx="0" cy="0" r="27.6" fill="url(#rgrad1)" filter="url(#shadow)" opacity="0.11"/>
+        <text x="0" y="5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#FFFFFF" opacity="0.11">394</text>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(1004.5, 376.9)">
+      <g transform="translate(4.72,-1.31) rotate(4.72) scale(1.000)">
+        <g transform="translate(3.36,-2.37) rotate(9.91) scale(0.980)">
+        <g transform="translate(1.17,-3.22) rotate(14.97) scale(0.960)">
+        <g transform="translate(-1.30,-3.78) rotate(19.30) scale(0.940)" clip-path="url(#clipHex)">
+        <g transform="translate(-3.46,-4.00) rotate(22.34) scale(0.920)">
+        <g transform="translate(-4.77,-3.86) rotate(23.61) scale(0.900)">
+        <g transform="translate(-4.91,-3.38) rotate(22.70) scale(0.880)">
+        <path d="M0.0,-69.3 L20.4,-28.0 L65.9,-21.4 L33.0,10.7 L40.7,56.1 L0.0,34.7 L-40.7,56.1 L-33.0,10.7 L-65.9,-21.4 L-20.4,-28.0Z" fill="url(#lgrad2)" filter="url(#blur2)" opacity="0.10"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(1213.1, 393.6)">
+      <g transform="translate(1.17,-3.89) rotate(4.72) scale(1.000)">
+        <g transform="translate(-1.30,-3.99) rotate(9.91) scale(0.980)">
+        <g transform="translate(-3.46,-3.74) rotate(14.97) scale(0.960)">
+        <g transform="translate(-4.77,-3.15) rotate(19.30) scale(0.940)">
+        <g transform="translate(-4.91,-2.28) rotate(22.34) scale(0.920)">
+        <g transform="translate(-3.85,-1.21) rotate(23.61) scale(0.900)" mask="url(#maskCircleFade)">
+        <g transform="translate(-1.84,-0.03) rotate(22.70) scale(0.880)">
+        <rect x="-37.5" y="-37.5" width="74.9" height="74.9" rx="18.7" fill="url(#rgrad3)" filter="url(#shadow)" opacity="0.14"/>
+        <circle cx="0" cy="0" r="25.0" fill="url(#rgrad4)" opacity="0.09"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(1418.6, 403.9)">
+      <g transform="translate(-3.46,-2.89) rotate(4.72) scale(1.000)">
+        <g transform="translate(-4.77,-1.94) rotate(9.91) scale(0.980)">
+        <g transform="translate(-4.91,-0.82) rotate(14.97) scale(0.960)">
+        <g transform="translate(-3.85,0.37) rotate(19.30) scale(0.940)">
+        <g transform="translate(-1.84,1.53) rotate(22.34) scale(0.920)">
+        <g transform="translate(0.61,2.56) rotate(23.61) scale(0.900)">
+        <g transform="translate(2.91,3.35) rotate(22.70) scale(0.880)">
+        <path d="M34.7,20.0 L0.0,40.1 L-34.7,20.0 L-34.7,-20.0 L-0.0,-40.1 L34.7,-20.0Z" fill="url(#rgrad4)" filter="url(#blur4)" opacity="0.20"/>
+        <ellipse cx="0" cy="0" rx="16.7" ry="11.1" fill="#FFFFFF" opacity="0.10"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(1624.4, 403.0)">
+      <g transform="translate(-4.91,0.77) rotate(4.72) scale(1.000)">
+        <g transform="translate(-3.85,1.89) rotate(9.91) scale(0.980)">
+        <g transform="translate(-1.84,2.85) rotate(14.97) scale(0.960)">
+        <g transform="translate(0.61,3.55) rotate(19.30) scale(0.940)" clip-path="url(#clipCircle)">
+        <g transform="translate(2.91,3.94) rotate(22.34) scale(0.920)">
+        <g transform="translate(4.51,3.97) rotate(23.61) scale(0.900)">
+        <g transform="translate(4.99,3.65) rotate(22.70) scale(0.880)">
+        <circle cx="0" cy="0" r="26.2" fill="url(#lgrad0)" filter="url(#shadow)" opacity="0.29"/>
+        <text x="0" y="5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#FFFFFF" opacity="0.29">394</text>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(74.0, 671.2)">
+      <g transform="translate(-1.84,3.72) rotate(4.72) scale(1.000)">
+        <g transform="translate(0.61,3.99) rotate(9.91) scale(0.980)">
+        <g transform="translate(2.91,3.90) rotate(14.97) scale(0.960)">
+        <g transform="translate(4.51,3.47) rotate(19.30) scale(0.940)">
+        <g transform="translate(4.99,2.72) rotate(22.34) scale(0.920)">
+        <g transform="translate(4.26,1.73) rotate(23.61) scale(0.900)" mask="url(#maskGradient)">
+        <g transform="translate(2.48,0.59) rotate(22.70) scale(0.880)">
+        <path d="M0.0,-45.0 L13.2,-18.2 L42.8,-13.9 L21.4,7.0 L26.5,36.4 L0.0,22.5 L-26.5,36.4 L-21.4,7.0 L-42.8,-13.9 L-13.2,-18.2Z" fill="url(#rgrad1)" filter="url(#blur1)" opacity="0.40"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(290.0, 654.2)">
+      <g transform="translate(2.91,3.25) rotate(4.72) scale(1.000)">
+        <g transform="translate(4.51,2.42) rotate(9.91) scale(0.980)">
+        <g transform="translate(4.99,1.37) rotate(14.97) scale(0.960)">
+        <g transform="translate(4.26,0.19) rotate(19.30) scale(0.940)">
+        <g transform="translate(2.48,-1.00) rotate(22.34) scale(0.920)">
+        <g transform="translate(0.10,-2.10) rotate(23.61) scale(0.900)">
+        <g transform="translate(-2.31,-3.01) rotate(22.70) scale(0.880)">
+        <rect x="-25.7" y="-25.7" width="51.4" height="51.4" rx="12.8" fill="url(#rgrad2)" filter="url(#shadow)" opacity="0.52"/>
+        <circle cx="0" cy="0" r="17.1" fill="url(#rgrad3)" opacity="0.36"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(513.3, 639.9)">
+      <g transform="translate(4.99,-0.21) rotate(4.72) scale(1.000)">
+        <g transform="translate(4.26,-1.38) rotate(9.91) scale(0.980)">
+        <g transform="translate(2.48,-2.43) rotate(14.97) scale(0.960)">
+        <g transform="translate(0.10,-3.26) rotate(19.30) scale(0.940)" clip-path="url(#clipRect)">
+        <g transform="translate(-2.31,-3.80) rotate(22.34) scale(0.920)">
+        <g transform="translate(-4.15,-4.00) rotate(23.61) scale(0.900)">
+        <g transform="translate(-4.98,-3.84) rotate(22.70) scale(0.880)">
+        <path d="M34.1,19.7 L0.0,39.4 L-34.1,19.7 L-34.1,-19.7 L-0.0,-39.4 L34.1,-19.7Z" fill="url(#lgrad3)" filter="url(#blur3)" opacity="0.64"/>
+        <ellipse cx="0" cy="0" rx="16.4" ry="10.9" fill="#FFFFFF" opacity="0.32"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(743.2, 635.1)">
+      <g transform="translate(2.48,-3.47) rotate(4.72) scale(1.000)">
+        <g transform="translate(0.10,-3.90) rotate(9.91) scale(0.980)">
+        <g transform="translate(-2.31,-3.99) rotate(14.97) scale(0.960)">
+        <g transform="translate(-4.15,-3.71) rotate(19.30) scale(0.940)">
+        <g transform="translate(-4.98,-3.11) rotate(22.34) scale(0.920)">
+        <g transform="translate(-4.59,-2.23) rotate(23.61) scale(0.900)" mask="url(#maskDynamic)">
+        <g transform="translate(-3.07,-1.14) rotate(22.70) scale(0.880)">
+        <circle cx="0" cy="0" r="37.4" fill="url(#rgrad4)" filter="url(#shadow)" opacity="0.74"/>
+        <text x="0" y="5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#FFFFFF" opacity="0.74">394</text>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(977.2, 641.9)">
+      <g transform="translate(-2.31,-3.55) rotate(4.72) scale(1.000)">
+        <g transform="translate(-4.15,-2.84) rotate(9.91) scale(0.980)">
+        <g transform="translate(-4.98,-1.88) rotate(14.97) scale(0.960)">
+        <g transform="translate(-4.59,-0.76) rotate(19.30) scale(0.940)">
+        <g transform="translate(-3.07,0.44) rotate(22.34) scale(0.920)">
+        <g transform="translate(-0.80,1.59) rotate(23.61) scale(0.900)">
+        <g transform="translate(1.66,2.61) rotate(22.70) scale(0.880)">
+        <path d="M0.0,-70.3 L20.7,-28.4 L66.8,-21.7 L33.4,10.9 L41.3,56.9 L0.0,35.1 L-41.3,56.9 L-33.4,10.9 L-66.8,-21.7 L-20.7,-28.4Z" fill="url(#rgrad0)" filter="url(#blur0)" opacity="0.83"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(1211.8, 657.3)">
+      <g transform="translate(-4.98,-0.36) rotate(4.72) scale(1.000)">
+        <g transform="translate(-4.59,0.83) rotate(9.91) scale(0.980)">
+        <g transform="translate(-3.07,1.95) rotate(14.97) scale(0.960)">
+        <g transform="translate(-0.80,2.90) rotate(19.30) scale(0.940)" clip-path="url(#clipStar)">
+        <g transform="translate(1.66,3.58) rotate(22.34) scale(0.920)">
+        <g transform="translate(3.72,3.95) rotate(23.61) scale(0.900)">
+        <g transform="translate(4.87,3.96) rotate(22.70) scale(0.880)">
+        <rect x="-28.2" y="-28.2" width="56.4" height="56.4" rx="14.1" fill="url(#lgrad1)" filter="url(#shadow)" opacity="0.88"/>
+        <circle cx="0" cy="0" r="18.8" fill="url(#rgrad2)" opacity="0.62"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(1443.6, 674.0)">
+      <g transform="translate(-3.07,3.16) rotate(4.72) scale(1.000)">
+        <g transform="translate(-0.80,3.74) rotate(9.91) scale(0.980)">
+        <g transform="translate(1.66,3.99) rotate(14.97) scale(0.960)">
+        <g transform="translate(3.72,3.89) rotate(19.30) scale(0.940)">
+        <g transform="translate(4.87,3.43) rotate(22.34) scale(0.920)">
+        <g transform="translate(4.82,2.67) rotate(23.61) scale(0.900)" mask="url(#maskStripes)">
+        <g transform="translate(3.60,1.67) rotate(22.70) scale(0.880)">
+        <path d="M23.8,13.7 L0.0,27.5 L-23.8,13.7 L-23.8,-13.7 L-0.0,-27.5 L23.8,-13.7Z" fill="url(#rgrad2)" filter="url(#blur2)" opacity="0.90"/>
+        <ellipse cx="0" cy="0" rx="11.4" ry="7.6" fill="#FFFFFF" opacity="0.45"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(1669.6, 684.0)">
+      <g transform="translate(1.66,3.77) rotate(4.72) scale(1.000)">
+        <g transform="translate(3.72,3.21) rotate(9.91) scale(0.980)">
+        <g transform="translate(4.87,2.36) rotate(14.97) scale(0.960)">
+        <g transform="translate(4.82,1.30) rotate(19.30) scale(0.940)">
+        <g transform="translate(3.60,0.13) rotate(22.34) scale(0.920)">
+        <g transform="translate(1.49,-1.06) rotate(23.61) scale(0.900)">
+        <g transform="translate(-0.98,-2.15) rotate(22.70) scale(0.880)">
+        <circle cx="0" cy="0" r="24.1" fill="url(#rgrad3)" filter="url(#shadow)" opacity="0.88"/>
+        <text x="0" y="5" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#FFFFFF" opacity="0.88">394</text>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(128.3, 962.8)">
+      <g transform="translate(4.87,0.92) rotate(4.72) scale(1.000)">
+        <g transform="translate(4.82,-0.27) rotate(9.91) scale(0.980)">
+        <g transform="translate(3.60,-1.44) rotate(14.97) scale(0.960)">
+        <g transform="translate(1.49,-2.48) rotate(19.30) scale(0.940)" clip-path="url(#clipDynamic)">
+        <g transform="translate(-0.98,-3.30) rotate(22.34) scale(0.920)">
+        <g transform="translate(-3.21,-3.82) rotate(23.61) scale(0.900)">
+        <g transform="translate(-4.66,-4.00) rotate(22.70) scale(0.880)">
+        <path d="M0.0,-61.5 L18.1,-24.9 L58.5,-19.0 L29.3,9.5 L36.2,49.8 L0.0,30.8 L-36.2,49.8 L-29.3,9.5 L-58.5,-19.0 L-18.1,-24.9Z" fill="url(#lgrad4)" filter="url(#blur4)" opacity="0.83"/>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+      </g>
+  </g>
+  <g transform="translate(362.1, 237.3)" mask="url(#maskGradient)">
+    <ellipse cx="0" cy="0" rx="200" ry="150" fill="url(#rgrad0)" filter="url(#blur3)" opacity="0.3"/>
+  </g>
+  <g transform="translate(767.6, 220.0)" mask="url(#maskCircleFade)">
+    <ellipse cx="0" cy="0" rx="200" ry="150" fill="url(#rgrad1)" filter="url(#blur3)" opacity="0.3"/>
+  </g>
+  <g transform="translate(1202.9, 240.4)" mask="url(#maskStripes)">
+    <ellipse cx="0" cy="0" rx="200" ry="150" fill="url(#rgrad2)" filter="url(#blur3)" opacity="0.3"/>
+  </g>
+</svg>

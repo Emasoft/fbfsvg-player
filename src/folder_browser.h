@@ -68,6 +68,7 @@ struct ButtonRegion {
 enum class HitTestResult {
     None,           // Clicked on empty space
     Entry,          // Clicked on a grid entry
+    PlayArrowEntry, // Clicked on play arrow overlay (for FrameFolder - plays content)
     CancelButton,   // Clicked Cancel button
     LoadButton,     // Clicked Load button
     PrevPage,       // Clicked previous page arrow
@@ -258,6 +259,7 @@ private:
     std::string generateSelectionHighlight(const GridCell& cell) const;
     std::string generateHoverHighlight(const GridCell& cell) const;
     std::string generateClickFeedbackHighlight(const GridCell& cell) const;
+    std::string generatePlayArrowOverlay(const GridCell& cell) const;  // Play arrow for FrameFolder cells
     std::string generateProgressOverlay() const;   // Loading progress bar overlay
     std::string generateCellLabel(const BrowserEntry& entry, float cellX, float cellWidth, float labelY) const;
     std::string formatModifiedTime(std::time_t time) const;

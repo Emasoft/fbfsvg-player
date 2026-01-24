@@ -1,0 +1,41 @@
+
+================================================================
+[0;34mSVG Player SDK - Test Suite[0m
+================================================================
+Date: Tue Jan  6 12:38:19 CET 2026
+Platform: Darwin arm64
+
+
+================================================================
+[0;34mTest: API Header Compilation[0m
+================================================================
+[0;34m[INFO][0m Compiling API header test...
+[0;32m[PASS][0m API header compiled successfully
+
+================================================================
+[0;34mTest: macOS Build Verification[0m
+================================================================
+[0;34m[INFO][0m Found macOS desktop player binary
+[0;32m[PASS][0m macOS binary is valid Mach-O executable
+[0;32m[PASS][0m macOS binary executes
+
+================================================================
+[0;34mTest: iOS XCFramework Verification[0m
+================================================================
+[0;34m[INFO][0m Found iOS XCFramework
+[0;32m[PASS][0m XCFramework has valid Info.plist
+
+================================================================
+[0;34mTest Summary[0m
+================================================================
+
+Test                                Result
+----                                ------
+ios_xcframework_valid               [0;32mPASS[0m
+macos_binary_valid                  [0;32mPASS[0m
+api_header_compile                  [0;32mPASS[0m
+macos_binary_runs                   [0;32mPASS[0m
+
+================================================================
+[0;32mAll tests passed: 4/4[0m
+================================================================

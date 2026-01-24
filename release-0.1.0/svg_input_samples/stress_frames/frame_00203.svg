@@ -1,0 +1,1730 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </linearGradient>
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="50%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </linearGradient>
+    <clipPath id="complexClip"><polygon points="1319.1,540.0 1400.9,595.7 1495.4,677.5 1427.6,725.1 1331.8,744.4 1333.4,811.3 1281.6,842.0 1269.2,913.7 1243.7,987.0 1128.0,897.0 1115.1,1017.4 1047.9,1000.7 986.0,953.2 938.3,884.8 870.1,1011.2 809.4,1003.5 822.3,832.6 703.0,945.0 739.9,806.0 638.3,842.1 537.0,847.3 627.3,722.9 608.0,679.3 480.8,663.0 466.6,602.3 588.7,540.0 508.1,482.9 551.2,435.0 521.0,366.2 602.7,343.6 701.6,352.2 594.2,196.5 656.2,172.8 674.2,89.6 816.2,234.3 811.0,81.6 890.7,176.9 933.8,124.3 989.2,75.7 1061.9,6.1 1134.2,3.8 1165.8,102.5 1198.5,164.2 1195.8,255.0 1285.5,234.4 1262.4,320.3 1261.5,374.3 1263.3,419.9 1256.0,464.0 1269.3,500.9"/></clipPath>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Leaf gradient definitions (235 leaves) -->
+    <radialGradient id="conicLeaf0" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf1" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf2" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf3" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf4" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf5" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#DC143C"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf6" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf7" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf8" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf9" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf10" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf11" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf12" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf13" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf14" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#45B7D1"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#45B7D1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf15" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#45B7D1"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#DC143C"/>
+      <stop offset="100%" stop-color="#45B7D1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf16" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#45B7D1"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#45B7D1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf17" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf18" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf19" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf20" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf21" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#FFD700"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf22" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#FFD700"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf23" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf24" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf25" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf26" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf27" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#DC143C"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf28" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf29" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf30" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf31" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#DC143C"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf32" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#00FA9A"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf33" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf34" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#00FA9A"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf35" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf36" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf37" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf38" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#45B7D1"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#45B7D1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf39" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf40" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf41" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf42" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf43" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#FFD700"/>
+      <stop offset="66%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf44" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf45" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf46" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf47" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#FFD700"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf48" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#00FA9A"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf49" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf50" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf51" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf52" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf53" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf54" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf55" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf56" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf57" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf58" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#00FA9A"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf59" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf60" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf61" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf62" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf63" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf64" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf65" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#45B7D1"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#DC143C"/>
+      <stop offset="100%" stop-color="#45B7D1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf66" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf67" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf68" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf69" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf70" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf71" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#00FA9A"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf72" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#45B7D1"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#45B7D1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf73" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#DC143C"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#DC143C"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf74" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf75" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf76" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf77" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf78" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf79" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf80" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf81" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf82" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf83" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf84" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#45B7D1"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#45B7D1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf85" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#45B7D1"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#45B7D1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf86" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf87" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#00FA9A"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf88" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf89" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf90" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf91" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf92" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#DC143C"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#DC143C"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf93" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#00FA9A"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf94" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#00FA9A"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf95" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf96" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf97" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf98" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#00FA9A"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf99" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf100" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf101" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf102" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf103" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf104" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf105" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf106" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf107" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf108" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#00FA9A"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf109" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf110" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#DC143C"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#DC143C"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf111" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#00FA9A"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf112" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf113" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf114" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#FFD700"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf115" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf116" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf117" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#00FA9A"/>
+      <stop offset="66%" stop-color="#00FA9A"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf118" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf119" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf120" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf121" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf122" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf123" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#DC143C"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#DC143C"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf124" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf125" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf126" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#FFD700"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf127" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#DC143C"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf128" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf129" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf130" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf131" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#FFD700"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf132" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#DC143C"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#DC143C"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf133" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf134" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf135" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf136" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf137" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf138" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#DC143C"/>
+      <stop offset="33%" stop-color="#FFD700"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#DC143C"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf139" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf140" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#00FA9A"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf141" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf142" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#DC143C"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#DC143C"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf143" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf144" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf145" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf146" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf147" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf148" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf149" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf150" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf151" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#DC143C"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#DC143C"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf152" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf153" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf154" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf155" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf156" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf157" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#DC143C"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf158" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf159" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf160" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf161" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#DC143C"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf162" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf163" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf164" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#45B7D1"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#45B7D1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf165" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf166" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf167" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf168" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf169" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf170" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf171" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf172" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#FFD700"/>
+      <stop offset="66%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf173" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf174" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf175" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf176" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#FFE66D"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf177" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf178" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf179" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf180" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf181" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#45B7D1"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#45B7D1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf182" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf183" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#00CED1"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf184" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf185" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#DC143C"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#DC143C"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf186" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#45B7D1"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#45B7D1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf187" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf188" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#00FA9A"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf189" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf190" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf191" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf192" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf193" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#7B68EE"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#7B68EE"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf194" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf195" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf196" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf197" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf198" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf199" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#FFD700"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf200" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf201" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf202" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf203" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#FFD700"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf204" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf205" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#32CD32"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf206" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf207" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf208" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf209" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#FF1493"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf210" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#FF69B4"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf211" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#00FA9A"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf212" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf213" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#FF4500"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf214" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#9370DB"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#9370DB"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf215" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00CED1"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#00CED1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf216" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#FF4500"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf217" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#32CD32"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#32CD32"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf218" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF1493"/>
+      <stop offset="33%" stop-color="#00FA9A"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#FF1493"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf219" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf220" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#45B7D1"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf221" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#FF69B4"/>
+      <stop offset="66%" stop-color="#4ECDC4"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf222" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#00FA9A"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#FFD700"/>
+      <stop offset="100%" stop-color="#00FA9A"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf223" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF4500"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#45B7D1"/>
+      <stop offset="100%" stop-color="#FF4500"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf224" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#96E6A1"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf225" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf226" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf227" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#7B68EE"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf228" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF6B6B"/>
+      <stop offset="33%" stop-color="#00CED1"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#FF6B6B"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf229" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFE66D"/>
+      <stop offset="33%" stop-color="#FF6B6B"/>
+      <stop offset="66%" stop-color="#96E6A1"/>
+      <stop offset="100%" stop-color="#FFE66D"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf230" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#FF1493"/>
+      <stop offset="66%" stop-color="#FFE66D"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf231" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#4ECDC4"/>
+      <stop offset="33%" stop-color="#4ECDC4"/>
+      <stop offset="66%" stop-color="#FF6B6B"/>
+      <stop offset="100%" stop-color="#4ECDC4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf232" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FF69B4"/>
+      <stop offset="33%" stop-color="#DC143C"/>
+      <stop offset="66%" stop-color="#32CD32"/>
+      <stop offset="100%" stop-color="#FF69B4"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf233" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#FFD700"/>
+      <stop offset="33%" stop-color="#9370DB"/>
+      <stop offset="66%" stop-color="#7B68EE"/>
+      <stop offset="100%" stop-color="#FFD700"/>
+    </radialGradient>
+    <radialGradient id="conicLeaf234" cx="50%" cy="50%" r="70%">
+      <stop offset="0%" stop-color="#96E6A1"/>
+      <stop offset="33%" stop-color="#00FA9A"/>
+      <stop offset="66%" stop-color="#9370DB"/>
+      <stop offset="100%" stop-color="#96E6A1"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background gradient -->
+  <rect width="1920" height="1080" fill="url(#bgGrad)"/>
+
+  <!-- SCALED CONTENT GROUP: 3x scale around center -->
+  <g transform="translate(960.0, 540.0) scale(3.00) translate(-960.0, -540.0)">
+
+    <!-- Background shapes -->
+    <g opacity="0.5">
+    <circle cx="1871.8" cy="936.5" r="66.2" fill="#FFE66D" opacity="0.33"/>
+    <circle cx="410.9" cy="38.5" r="82.9" fill="#FF6B6B" opacity="0.47"/>
+    <rect x="1590.3" y="269.8" width="65.0" height="65.0" fill="#9370DB" opacity="0.24"/>
+    <circle cx="1442.5" cy="938.4" r="125.3" fill="#FF6B6B" opacity="0.47"/>
+    <rect x="46.5" y="752.2" width="85.7" height="85.7" fill="#9370DB" opacity="0.27"/>
+    <circle cx="644.3" cy="423.1" r="73.0" fill="#9370DB" opacity="0.29"/>
+    <circle cx="151.0" cy="587.6" r="116.1" fill="#FF4500" opacity="0.21"/>
+    <rect x="260.7" y="1014.7" width="142.7" height="142.7" fill="#96E6A1" opacity="0.47"/>
+    <rect x="588.2" y="167.2" width="184.1" height="184.1" fill="#FF6B6B" opacity="0.34"/>
+    <circle cx="1190.5" cy="869.9" r="99.6" fill="#7B68EE" opacity="0.48"/>
+    <rect x="1065.1" y="835.5" width="97.9" height="97.9" fill="#00FA9A" opacity="0.46"/>
+    <rect x="1385.5" y="333.4" width="187.0" height="187.0" fill="#DC143C" opacity="0.48"/>
+    <rect x="301.2" y="70.3" width="95.2" height="95.2" fill="#4ECDC4" opacity="0.36"/>
+    <rect x="1574.1" y="972.4" width="62.0" height="62.0" fill="#7B68EE" opacity="0.34"/>
+    <rect x="1623.7" y="20.8" width="147.2" height="147.2" fill="#9370DB" opacity="0.28"/>
+    <rect x="1350.0" y="930.1" width="107.3" height="107.3" fill="#DC143C" opacity="0.30"/>
+    <circle cx="507.2" cy="323.6" r="127.6" fill="#FF69B4" opacity="0.24"/>
+    <rect x="1749.2" y="141.7" width="58.5" height="58.5" fill="#FF69B4" opacity="0.49"/>
+    <circle cx="646.6" cy="362.5" r="152.1" fill="#00CED1" opacity="0.26"/>
+    <rect x="83.4" y="725.3" width="187.6" height="187.6" fill="#4ECDC4" opacity="0.27"/>
+    </g>
+
+    <!-- Leaf shapes (200-300 bezier paths with 20% opacity) -->
+    <g>
+    <path d="M 1802.9,464.0 C 1851.3,512.4 1883.5,592.9 1867.4,641.3 C 1851.3,689.6 1819.0,738.0 1802.9,754.1 C 1786.8,738.0 1754.6,689.6 1738.5,641.3 C 1722.4,592.9 1754.6,512.4 1802.9,464.0 Z" fill="url(#conicLeaf0)" opacity="0.20" transform="rotate(257.1 1802.9 625.2)"/>
+    <path d="M 519.8,-79.6 C 565.6,-33.8 596.1,42.4 580.8,88.2 C 565.6,133.9 535.1,179.7 519.8,194.9 C 504.6,179.7 474.1,133.9 458.8,88.2 C 443.6,42.4 474.1,-33.8 519.8,-79.6 Z" fill="url(#conicLeaf1)" opacity="0.20" transform="rotate(336.4 519.8 72.9)"/>
+    <path d="M 935.4,199.1 C 964.8,228.5 984.5,277.6 974.7,307.0 C 964.8,336.5 945.2,365.9 935.4,375.7 C 925.6,365.9 906.0,336.5 896.1,307.0 C 886.3,277.6 906.0,228.5 935.4,199.1 Z" fill="url(#conicLeaf2)" opacity="0.20" transform="rotate(0.7 935.4 297.2)"/>
+    <path d="M 1562.0,621.9 C 1603.8,663.7 1631.6,733.2 1617.7,775.0 C 1603.8,816.7 1575.9,858.4 1562.0,872.4 C 1548.1,858.4 1520.3,816.7 1506.4,775.0 C 1492.5,733.2 1520.3,663.7 1562.0,621.9 Z" fill="url(#conicLeaf3)" opacity="0.20" transform="rotate(71.0 1562.0 761.0)"/>
+    <path d="M 300.0,-89.2 C 341.3,-47.8 368.8,21.0 355.0,62.3 C 341.3,103.6 313.7,145.0 300.0,158.7 C 286.2,145.0 258.6,103.6 244.9,62.3 C 231.1,21.0 258.6,-47.8 300.0,-89.2 Z" fill="url(#conicLeaf4)" opacity="0.20" transform="rotate(345.2 300.0 48.6)"/>
+    <path d="M 1364.6,244.4 C 1424.0,303.7 1463.6,402.6 1443.8,462.0 C 1424.0,521.3 1384.4,580.7 1364.6,600.5 C 1344.9,580.7 1305.3,521.3 1285.5,462.0 C 1265.7,402.6 1305.3,303.7 1364.6,244.4 Z" fill="url(#conicLeaf5)" opacity="0.20" transform="rotate(307.0 1364.6 442.2)"/>
+    <path d="M 1632.5,834.4 C 1675.1,877.1 1703.5,948.1 1689.3,990.7 C 1675.1,1033.3 1646.7,1075.9 1632.5,1090.1 C 1618.3,1075.9 1589.9,1033.3 1575.7,990.7 C 1561.5,948.1 1589.9,877.1 1632.5,834.4 Z" fill="url(#conicLeaf6)" opacity="0.20" transform="rotate(96.7 1632.5 976.5)"/>
+    <path d="M 427.0,466.7 C 453.8,493.6 471.7,538.3 462.8,565.2 C 453.8,592.1 435.9,618.9 427.0,627.9 C 418.0,618.9 400.1,592.1 391.2,565.2 C 382.2,538.3 400.1,493.6 427.0,466.7 Z" fill="url(#conicLeaf7)" opacity="0.20" transform="rotate(312.3 427.0 556.2)"/>
+    <path d="M 525.1,205.4 C 549.3,229.7 565.5,270.1 557.4,294.3 C 549.3,318.6 533.1,342.8 525.1,350.9 C 517.0,342.8 500.8,318.6 492.7,294.3 C 484.6,270.1 500.8,229.7 525.1,205.4 Z" fill="url(#conicLeaf8)" opacity="0.20" transform="rotate(60.6 525.1 286.3)"/>
+    <path d="M 1630.5,722.1 C 1678.0,769.7 1709.7,848.8 1693.9,896.3 C 1678.0,943.8 1646.4,991.3 1630.5,1007.2 C 1614.7,991.3 1583.0,943.8 1567.2,896.3 C 1551.3,848.8 1583.0,769.7 1630.5,722.1 Z" fill="url(#conicLeaf9)" opacity="0.20" transform="rotate(111.6 1630.5 880.5)"/>
+    <path d="M 1176.3,26.2 C 1202.7,52.6 1220.3,96.5 1211.5,122.9 C 1202.7,149.2 1185.1,175.6 1176.3,184.4 C 1167.5,175.6 1150.0,149.2 1141.2,122.9 C 1132.4,96.5 1150.0,52.6 1176.3,26.2 Z" fill="url(#conicLeaf10)" opacity="0.20" transform="rotate(295.1 1176.3 114.1)"/>
+    <path d="M 1322.5,475.0 C 1362.8,515.3 1389.7,582.5 1376.3,622.9 C 1362.8,663.2 1335.9,703.6 1322.5,717.0 C 1309.0,703.6 1282.2,663.2 1268.7,622.9 C 1255.3,582.5 1282.2,515.3 1322.5,475.0 Z" fill="url(#conicLeaf11)" opacity="0.20" transform="rotate(336.7 1322.5 609.4)"/>
+    <path d="M 1641.1,705.5 C 1673.3,737.7 1694.7,791.4 1684.0,823.6 C 1673.3,855.7 1651.8,887.9 1641.1,898.7 C 1630.4,887.9 1608.9,855.7 1598.2,823.6 C 1587.4,791.4 1608.9,737.7 1641.1,705.5 Z" fill="url(#conicLeaf12)" opacity="0.20" transform="rotate(88.6 1641.1 812.8)"/>
+    <path d="M 354.8,-77.3 C 394.1,-38.1 420.3,27.4 407.2,66.7 C 394.1,105.9 367.9,145.2 354.8,158.3 C 341.8,145.2 315.6,105.9 302.5,66.7 C 289.4,27.4 315.6,-38.1 354.8,-77.3 Z" fill="url(#conicLeaf13)" opacity="0.20" transform="rotate(352.9 354.8 53.6)"/>
+    <path d="M 1100.4,390.1 C 1154.3,444.0 1190.3,533.8 1172.3,587.8 C 1154.3,641.7 1118.4,695.6 1100.4,713.6 C 1082.4,695.6 1046.5,641.7 1028.5,587.8 C 1010.5,533.8 1046.5,444.0 1100.4,390.1 Z" fill="url(#conicLeaf14)" opacity="0.20" transform="rotate(148.0 1100.4 569.8)"/>
+    <path d="M -36.1,1023.6 C 2.1,1061.8 27.6,1125.5 14.8,1163.8 C 2.1,1202.0 -23.4,1240.2 -36.1,1253.0 C -48.9,1240.2 -74.4,1202.0 -87.1,1163.8 C -99.9,1125.5 -74.4,1061.8 -36.1,1023.6 Z" fill="url(#conicLeaf15)" opacity="0.20" transform="rotate(177.8 -36.1 1151.0)"/>
+    <path d="M 919.9,174.6 C 956.8,211.5 981.5,273.1 969.1,310.1 C 956.8,347.0 932.2,384.0 919.9,396.3 C 907.6,384.0 882.9,347.0 870.6,310.1 C 858.3,273.1 882.9,211.5 919.9,174.6 Z" fill="url(#conicLeaf16)" opacity="0.20" transform="rotate(295.3 919.9 297.8)"/>
+    <path d="M 834.3,951.4 C 881.5,998.6 913.0,1077.4 897.3,1124.6 C 881.5,1171.9 850.0,1219.2 834.3,1234.9 C 818.5,1219.2 787.0,1171.9 771.3,1124.6 C 755.5,1077.4 787.0,998.6 834.3,951.4 Z" fill="url(#conicLeaf17)" opacity="0.20" transform="rotate(307.4 834.3 1108.9)"/>
+    <path d="M 139.0,-119.3 C 191.6,-66.6 226.7,21.2 209.2,73.8 C 191.6,126.5 156.5,179.2 139.0,196.7 C 121.4,179.2 86.3,126.5 68.8,73.8 C 51.2,21.2 86.3,-66.6 139.0,-119.3 Z" fill="url(#conicLeaf18)" opacity="0.20" transform="rotate(355.4 139.0 56.3)"/>
+    <path d="M 720.0,1045.6 C 761.4,1086.9 789.0,1155.9 775.2,1197.3 C 761.4,1238.6 733.8,1280.0 720.0,1293.8 C 706.2,1280.0 678.7,1238.6 664.9,1197.3 C 651.1,1155.9 678.7,1086.9 720.0,1045.6 Z" fill="url(#conicLeaf19)" opacity="0.20" transform="rotate(307.9 720.0 1183.5)"/>
+    <path d="M 1297.4,862.8 C 1357.3,922.7 1397.3,1022.6 1377.3,1082.5 C 1357.3,1142.5 1317.4,1202.4 1297.4,1222.4 C 1277.4,1202.4 1237.5,1142.5 1217.5,1082.5 C 1197.5,1022.6 1237.5,922.7 1297.4,862.8 Z" fill="url(#conicLeaf20)" opacity="0.20" transform="rotate(13.9 1297.4 1062.6)"/>
+    <path d="M 1091.7,138.1 C 1128.0,174.4 1152.2,234.8 1140.1,271.1 C 1128.0,307.4 1103.8,343.6 1091.7,355.7 C 1079.6,343.6 1055.4,307.4 1043.4,271.1 C 1031.3,234.8 1055.4,174.4 1091.7,138.1 Z" fill="url(#conicLeaf21)" opacity="0.20" transform="rotate(236.2 1091.7 259.0)"/>
+    <path d="M 299.0,576.6 C 359.4,637.0 399.7,737.7 379.6,798.1 C 359.4,858.5 319.2,919.0 299.0,939.1 C 278.9,919.0 238.6,858.5 218.5,798.1 C 198.3,737.7 238.6,637.0 299.0,576.6 Z" fill="url(#conicLeaf22)" opacity="0.20" transform="rotate(260.5 299.0 778.0)"/>
+    <path d="M 891.9,335.7 C 941.8,385.6 975.0,468.8 958.4,518.6 C 941.8,568.5 908.5,618.4 891.9,635.1 C 875.3,618.4 842.0,568.5 825.4,518.6 C 808.7,468.8 842.0,385.6 891.9,335.7 Z" fill="url(#conicLeaf23)" opacity="0.20" transform="rotate(223.7 891.9 502.0)"/>
+    <path d="M 1310.4,115.3 C 1361.1,166.0 1394.9,250.5 1378.0,301.2 C 1361.1,351.9 1327.3,402.6 1310.4,419.5 C 1293.5,402.6 1259.7,351.9 1242.8,301.2 C 1225.9,250.5 1259.7,166.0 1310.4,115.3 Z" fill="url(#conicLeaf24)" opacity="0.20" transform="rotate(358.6 1310.4 284.3)"/>
+    <path d="M 1081.3,-23.1 C 1136.0,31.7 1172.5,122.9 1154.3,177.7 C 1136.0,232.4 1099.5,287.2 1081.3,305.4 C 1063.0,287.2 1026.5,232.4 1008.3,177.7 C 990.0,122.9 1026.5,31.7 1081.3,-23.1 Z" fill="url(#conicLeaf25)" opacity="0.20" transform="rotate(303.0 1081.3 159.4)"/>
+    <path d="M 2002.3,568.5 C 2030.3,596.6 2049.0,643.3 2039.7,671.3 C 2030.3,699.4 2011.6,727.4 2002.3,736.8 C 1992.9,727.4 1974.2,699.4 1964.9,671.3 C 1955.6,643.3 1974.2,596.6 2002.3,568.5 Z" fill="url(#conicLeaf26)" opacity="0.20" transform="rotate(191.9 2002.3 662.0)"/>
+    <path d="M 1349.4,879.4 C 1405.1,935.0 1442.2,1027.8 1423.7,1083.5 C 1405.1,1139.1 1368.0,1194.8 1349.4,1213.3 C 1330.9,1194.8 1293.8,1139.1 1275.2,1083.5 C 1256.7,1027.8 1293.8,935.0 1349.4,879.4 Z" fill="url(#conicLeaf27)" opacity="0.20" transform="rotate(47.0 1349.4 1064.9)"/>
+    <path d="M 2077.1,29.2 C 2101.5,53.6 2117.8,94.3 2109.6,118.7 C 2101.5,143.2 2085.2,167.6 2077.1,175.7 C 2069.0,167.6 2052.7,143.2 2044.5,118.7 C 2036.4,94.3 2052.7,53.6 2077.1,29.2 Z" fill="url(#conicLeaf28)" opacity="0.20" transform="rotate(10.9 2077.1 110.6)"/>
+    <path d="M 1134.1,-36.0 C 1170.0,-0.1 1193.9,59.7 1181.9,95.5 C 1170.0,131.4 1146.1,167.3 1134.1,179.2 C 1122.2,167.3 1098.2,131.4 1086.3,95.5 C 1074.3,59.7 1098.2,-0.1 1134.1,-36.0 Z" fill="url(#conicLeaf29)" opacity="0.20" transform="rotate(327.7 1134.1 83.6)"/>
+    <path d="M 2110.5,602.7 C 2147.0,639.1 2171.3,699.9 2159.1,736.3 C 2147.0,772.8 2122.7,809.2 2110.5,821.4 C 2098.4,809.2 2074.1,772.8 2061.9,736.3 C 2049.8,699.9 2074.1,639.1 2110.5,602.7 Z" fill="url(#conicLeaf30)" opacity="0.20" transform="rotate(105.0 2110.5 724.2)"/>
+    <path d="M 858.0,125.2 C 879.1,146.3 893.1,181.5 886.1,202.6 C 879.1,223.7 865.0,244.8 858.0,251.8 C 850.9,244.8 836.9,223.7 829.9,202.6 C 822.8,181.5 836.9,146.3 858.0,125.2 Z" fill="url(#conicLeaf31)" opacity="0.20" transform="rotate(279.8 858.0 195.5)"/>
+    <path d="M 1904.4,484.6 C 1947.2,527.3 1975.7,598.6 1961.4,641.4 C 1947.2,684.1 1918.7,726.9 1904.4,741.2 C 1890.2,726.9 1861.7,684.1 1847.4,641.4 C 1833.1,598.6 1861.7,527.3 1904.4,484.6 Z" fill="url(#conicLeaf32)" opacity="0.20" transform="rotate(232.4 1904.4 627.1)"/>
+    <path d="M 1209.1,596.4 C 1251.5,638.7 1279.7,709.3 1265.6,751.6 C 1251.5,794.0 1223.3,836.3 1209.1,850.4 C 1195.0,836.3 1166.8,794.0 1152.7,751.6 C 1138.6,709.3 1166.8,638.7 1209.1,596.4 Z" fill="url(#conicLeaf33)" opacity="0.20" transform="rotate(138.2 1209.1 737.5)"/>
+    <path d="M 274.4,169.5 C 314.5,209.6 341.3,276.5 327.9,316.7 C 314.5,356.8 287.8,397.0 274.4,410.3 C 261.0,397.0 234.2,356.8 220.9,316.7 C 207.5,276.5 234.2,209.6 274.4,169.5 Z" fill="url(#conicLeaf34)" opacity="0.20" transform="rotate(57.8 274.4 303.3)"/>
+    <path d="M 187.2,452.5 C 247.2,512.5 287.1,612.4 267.2,672.3 C 247.2,732.3 207.2,792.3 187.2,812.2 C 167.2,792.3 127.3,732.3 107.3,672.3 C 87.3,612.4 127.3,512.5 187.2,452.5 Z" fill="url(#conicLeaf35)" opacity="0.20" transform="rotate(204.8 187.2 652.4)"/>
+    <path d="M 1991.7,19.7 C 2028.0,56.0 2052.1,116.4 2040.0,152.6 C 2028.0,188.9 2003.8,225.1 1991.7,237.2 C 1979.6,225.1 1955.5,188.9 1943.4,152.6 C 1931.3,116.4 1955.5,56.0 1991.7,19.7 Z" fill="url(#conicLeaf36)" opacity="0.20" transform="rotate(94.9 1991.7 140.6)"/>
+    <path d="M 1669.7,966.9 C 1699.7,997.0 1719.8,1047.0 1709.8,1077.1 C 1699.7,1107.1 1679.7,1137.2 1669.7,1147.2 C 1659.7,1137.2 1639.6,1107.1 1629.6,1077.1 C 1619.6,1047.0 1639.6,997.0 1669.7,966.9 Z" fill="url(#conicLeaf37)" opacity="0.20" transform="rotate(352.9 1669.7 1067.1)"/>
+    <path d="M 36.1,185.9 C 89.2,239.0 124.6,327.6 106.9,380.7 C 89.2,433.8 53.8,487.0 36.1,504.7 C 18.3,487.0 -17.1,433.8 -34.8,380.7 C -52.5,327.6 -17.1,239.0 36.1,185.9 Z" fill="url(#conicLeaf38)" opacity="0.20" transform="rotate(345.0 36.1 363.0)"/>
+    <path d="M 1921.6,151.9 C 1951.0,181.3 1970.5,230.2 1960.7,259.6 C 1951.0,289.0 1931.4,318.4 1921.6,328.2 C 1911.8,318.4 1892.2,289.0 1882.4,259.6 C 1872.6,230.2 1892.2,181.3 1921.6,151.9 Z" fill="url(#conicLeaf39)" opacity="0.20" transform="rotate(309.7 1921.6 249.8)"/>
+    <path d="M 1576.9,100.2 C 1604.2,127.5 1622.4,173.1 1613.3,200.4 C 1604.2,227.7 1586.0,255.0 1576.9,264.1 C 1567.8,255.0 1549.6,227.7 1540.5,200.4 C 1531.4,173.1 1549.6,127.5 1576.9,100.2 Z" fill="url(#conicLeaf40)" opacity="0.20" transform="rotate(316.5 1576.9 191.3)"/>
+    <path d="M 895.7,198.8 C 936.1,239.3 963.1,306.8 949.6,347.3 C 936.1,387.8 909.1,428.3 895.7,441.8 C 882.2,428.3 855.2,387.8 841.7,347.3 C 828.2,306.8 855.2,239.3 895.7,198.8 Z" fill="url(#conicLeaf41)" opacity="0.20" transform="rotate(324.4 895.7 333.8)"/>
+    <path d="M -10.5,395.6 C 49.2,455.3 89.0,554.8 69.1,614.5 C 49.2,674.2 9.4,733.9 -10.5,753.8 C -30.4,733.9 -70.2,674.2 -90.0,614.5 C -109.9,554.8 -70.2,455.3 -10.5,395.6 Z" fill="url(#conicLeaf42)" opacity="0.20" transform="rotate(5.9 -10.5 594.6)"/>
+    <path d="M 1999.1,240.7 C 2030.6,272.2 2051.5,324.6 2041.1,356.0 C 2030.6,387.5 2009.6,419.0 1999.1,429.5 C 1988.6,419.0 1967.7,387.5 1957.2,356.0 C 1946.7,324.6 1967.7,272.2 1999.1,240.7 Z" fill="url(#conicLeaf43)" opacity="0.20" transform="rotate(6.8 1999.1 345.6)"/>
+    <path d="M 91.1,33.5 C 136.7,79.1 167.0,155.0 151.9,200.6 C 136.7,246.2 106.3,291.7 91.1,306.9 C 75.9,291.7 45.5,246.2 30.4,200.6 C 15.2,155.0 45.5,79.1 91.1,33.5 Z" fill="url(#conicLeaf44)" opacity="0.20" transform="rotate(140.7 91.1 185.4)"/>
+    <path d="M 1739.6,1042.0 C 1769.4,1071.8 1789.3,1121.5 1779.3,1151.3 C 1769.4,1181.1 1749.5,1210.9 1739.6,1220.8 C 1729.7,1210.9 1709.8,1181.1 1699.9,1151.3 C 1689.9,1121.5 1709.8,1071.8 1739.6,1042.0 Z" fill="url(#conicLeaf45)" opacity="0.20" transform="rotate(328.5 1739.6 1141.4)"/>
+    <path d="M 1167.6,-0.5 C 1221.2,53.1 1256.9,142.4 1239.1,196.0 C 1221.2,249.5 1185.5,303.1 1167.6,321.0 C 1149.8,303.1 1114.0,249.5 1096.2,196.0 C 1078.3,142.4 1114.0,53.1 1167.6,-0.5 Z" fill="url(#conicLeaf46)" opacity="0.20" transform="rotate(21.8 1167.6 178.1)"/>
+    <path d="M 1275.2,922.4 C 1316.2,963.4 1343.5,1031.8 1329.9,1072.8 C 1316.2,1113.8 1288.9,1154.8 1275.2,1168.5 C 1261.5,1154.8 1234.2,1113.8 1220.5,1072.8 C 1206.9,1031.8 1234.2,963.4 1275.2,922.4 Z" fill="url(#conicLeaf47)" opacity="0.20" transform="rotate(83.6 1275.2 1059.1)"/>
+    <path d="M 143.3,-151.7 C 169.5,-125.5 186.9,-82.0 178.2,-55.8 C 169.5,-29.7 152.0,-3.6 143.3,5.1 C 134.6,-3.6 117.2,-29.7 108.5,-55.8 C 99.8,-82.0 117.2,-125.5 143.3,-151.7 Z" fill="url(#conicLeaf48)" opacity="0.20" transform="rotate(119.0 143.3 -64.6)"/>
+    <path d="M 1136.5,453.9 C 1194.3,511.7 1232.9,608.1 1213.6,665.9 C 1194.3,723.7 1155.8,781.5 1136.5,800.8 C 1117.2,781.5 1078.7,723.7 1059.4,665.9 C 1040.1,608.1 1078.7,511.7 1136.5,453.9 Z" fill="url(#conicLeaf49)" opacity="0.20" transform="rotate(278.4 1136.5 646.6)"/>
+    <path d="M 227.3,1036.8 C 263.2,1072.6 287.1,1132.4 275.2,1168.3 C 263.2,1204.2 239.3,1240.1 227.3,1252.0 C 215.4,1240.1 191.4,1204.2 179.5,1168.3 C 167.5,1132.4 191.4,1072.6 227.3,1036.8 Z" fill="url(#conicLeaf50)" opacity="0.20" transform="rotate(354.4 227.3 1156.4)"/>
+    <path d="M 1011.2,931.9 C 1033.4,954.0 1048.2,991.0 1040.8,1013.1 C 1033.4,1035.3 1018.6,1057.4 1011.2,1064.8 C 1003.9,1057.4 989.1,1035.3 981.7,1013.1 C 974.3,991.0 989.1,954.0 1011.2,931.9 Z" fill="url(#conicLeaf51)" opacity="0.20" transform="rotate(189.9 1011.2 1005.7)"/>
+    <path d="M 104.0,376.9 C 157.1,430.0 192.5,518.6 174.8,571.7 C 157.1,624.9 121.7,678.1 104.0,695.8 C 86.2,678.1 50.8,624.9 33.1,571.7 C 15.4,518.6 50.8,430.0 104.0,376.9 Z" fill="url(#conicLeaf52)" opacity="0.20" transform="rotate(285.8 104.0 554.0)"/>
+    <path d="M 179.6,683.2 C 218.9,722.5 245.1,788.0 232.0,827.3 C 218.9,866.6 192.7,905.9 179.6,918.9 C 166.5,905.9 140.4,866.6 127.3,827.3 C 114.2,788.0 140.4,722.5 179.6,683.2 Z" fill="url(#conicLeaf53)" opacity="0.20" transform="rotate(8.8 179.6 814.2)"/>
+    <path d="M -168.4,597.1 C -120.9,644.6 -89.2,723.8 -105.0,771.3 C -120.9,818.8 -152.5,866.3 -168.4,882.1 C -184.2,866.3 -215.9,818.8 -231.7,771.3 C -247.6,723.8 -215.9,644.6 -168.4,597.1 Z" fill="url(#conicLeaf54)" opacity="0.20" transform="rotate(324.8 -168.4 755.4)"/>
+    <path d="M 1512.6,495.8 C 1563.2,546.3 1596.8,630.5 1580.0,681.0 C 1563.2,731.6 1529.5,782.1 1512.6,798.9 C 1495.8,782.1 1462.1,731.6 1445.3,681.0 C 1428.5,630.5 1462.1,546.3 1512.6,495.8 Z" fill="url(#conicLeaf55)" opacity="0.20" transform="rotate(291.8 1512.6 664.2)"/>
+    <path d="M 627.6,182.1 C 687.3,241.8 727.0,341.2 707.2,400.8 C 687.3,460.5 647.5,520.1 627.6,540.0 C 607.8,520.1 568.0,460.5 548.1,400.8 C 528.2,341.2 568.0,241.8 627.6,182.1 Z" fill="url(#conicLeaf56)" opacity="0.20" transform="rotate(328.3 627.6 380.9)"/>
+    <path d="M 726.1,901.8 C 765.0,940.7 790.9,1005.5 777.9,1044.4 C 765.0,1083.3 739.1,1122.2 726.1,1135.2 C 713.1,1122.2 687.2,1083.3 674.2,1044.4 C 661.3,1005.5 687.2,940.7 726.1,901.8 Z" fill="url(#conicLeaf57)" opacity="0.20" transform="rotate(161.9 726.1 1031.5)"/>
+    <path d="M 1746.7,-14.0 C 1779.9,19.1 1802.0,74.4 1791.0,107.6 C 1779.9,140.7 1757.8,173.9 1746.7,184.9 C 1735.7,173.9 1713.6,140.7 1702.5,107.6 C 1691.5,74.4 1713.6,19.1 1746.7,-14.0 Z" fill="url(#conicLeaf58)" opacity="0.20" transform="rotate(208.4 1746.7 96.5)"/>
+    <path d="M 1711.7,667.8 C 1772.0,728.1 1812.2,828.6 1792.1,888.9 C 1772.0,949.3 1731.8,1009.6 1711.7,1029.7 C 1691.6,1009.6 1651.4,949.3 1631.3,888.9 C 1611.2,828.6 1651.4,728.1 1711.7,667.8 Z" fill="url(#conicLeaf59)" opacity="0.20" transform="rotate(172.2 1711.7 868.8)"/>
+    <path d="M 1890.6,-164.5 C 1933.6,-121.5 1962.2,-49.9 1947.9,-6.9 C 1933.6,36.1 1904.9,79.0 1890.6,93.4 C 1876.3,79.0 1847.6,36.1 1833.3,-6.9 C 1819.0,-49.9 1847.6,-121.5 1890.6,-164.5 Z" fill="url(#conicLeaf60)" opacity="0.20" transform="rotate(341.9 1890.6 -21.2)"/>
+    <path d="M 1980.9,829.4 C 2020.5,869.0 2046.9,935.0 2033.7,974.7 C 2020.5,1014.3 1994.1,1053.9 1980.9,1067.1 C 1967.7,1053.9 1941.3,1014.3 1928.0,974.7 C 1914.8,935.0 1941.3,869.0 1980.9,829.4 Z" fill="url(#conicLeaf61)" opacity="0.20" transform="rotate(284.8 1980.9 961.5)"/>
+    <path d="M 1457.8,965.0 C 1487.0,994.2 1506.4,1042.8 1496.7,1072.0 C 1487.0,1101.2 1467.5,1130.4 1457.8,1140.1 C 1448.0,1130.4 1428.6,1101.2 1418.8,1072.0 C 1409.1,1042.8 1428.6,994.2 1457.8,965.0 Z" fill="url(#conicLeaf62)" opacity="0.20" transform="rotate(225.3 1457.8 1062.3)"/>
+    <path d="M 1568.6,417.4 C 1616.9,465.7 1649.1,546.2 1633.0,594.5 C 1616.9,642.8 1584.7,691.1 1568.6,707.2 C 1552.5,691.1 1520.3,642.8 1504.2,594.5 C 1488.1,546.2 1520.3,465.7 1568.6,417.4 Z" fill="url(#conicLeaf63)" opacity="0.20" transform="rotate(28.7 1568.6 578.4)"/>
+    <path d="M 131.2,901.6 C 161.9,932.3 182.4,983.5 172.1,1014.2 C 161.9,1044.8 141.5,1075.5 131.2,1085.8 C 121.0,1075.5 100.5,1044.8 90.3,1014.2 C 80.1,983.5 100.5,932.3 131.2,901.6 Z" fill="url(#conicLeaf64)" opacity="0.20" transform="rotate(299.5 131.2 1003.9)"/>
+    <path d="M 1579.3,179.9 C 1624.4,225.0 1654.5,300.3 1639.5,345.4 C 1624.4,390.6 1594.3,435.7 1579.3,450.8 C 1564.2,435.7 1534.1,390.6 1519.1,345.4 C 1504.0,300.3 1534.1,225.0 1579.3,179.9 Z" fill="url(#conicLeaf65)" opacity="0.20" transform="rotate(237.6 1579.3 330.4)"/>
+    <path d="M -96.0,-139.4 C -49.9,-93.3 -19.2,-16.5 -34.6,29.6 C -49.9,75.7 -80.7,121.7 -96.0,137.1 C -111.4,121.7 -142.1,75.7 -157.5,29.6 C -172.8,-16.5 -142.1,-93.3 -96.0,-139.4 Z" fill="url(#conicLeaf66)" opacity="0.20" transform="rotate(232.8 -96.0 14.2)"/>
+    <path d="M 1988.8,434.8 C 2023.5,469.5 2046.7,527.4 2035.1,562.1 C 2023.5,596.8 2000.4,631.6 1988.8,643.1 C 1977.2,631.6 1954.1,596.8 1942.5,562.1 C 1930.9,527.4 1954.1,469.5 1988.8,434.8 Z" fill="url(#conicLeaf67)" opacity="0.20" transform="rotate(230.9 1988.8 550.5)"/>
+    <path d="M 297.6,162.4 C 348.4,213.2 382.3,298.0 365.4,348.9 C 348.4,399.7 314.5,450.6 297.6,467.6 C 280.6,450.6 246.7,399.7 229.7,348.9 C 212.8,298.0 246.7,213.2 297.6,162.4 Z" fill="url(#conicLeaf68)" opacity="0.20" transform="rotate(164.7 297.6 331.9)"/>
+    <path d="M 1462.5,-47.3 C 1485.5,-24.2 1500.9,14.2 1493.2,37.3 C 1485.5,60.3 1470.1,83.4 1462.5,91.1 C 1454.8,83.4 1439.4,60.3 1431.7,37.3 C 1424.0,14.2 1439.4,-24.2 1462.5,-47.3 Z" fill="url(#conicLeaf69)" opacity="0.20" transform="rotate(218.7 1462.5 29.6)"/>
+    <path d="M 1625.5,315.1 C 1669.1,358.6 1698.1,431.2 1683.6,474.8 C 1669.1,518.3 1640.0,561.9 1625.5,576.4 C 1611.0,561.9 1582.0,518.3 1567.4,474.8 C 1552.9,431.2 1582.0,358.6 1625.5,315.1 Z" fill="url(#conicLeaf70)" opacity="0.20" transform="rotate(136.9 1625.5 460.3)"/>
+    <path d="M 1155.9,77.8 C 1187.3,109.1 1208.2,161.4 1197.7,192.7 C 1187.3,224.1 1166.4,255.5 1155.9,265.9 C 1145.5,255.5 1124.6,224.1 1114.1,192.7 C 1103.7,161.4 1124.6,109.1 1155.9,77.8 Z" fill="url(#conicLeaf71)" opacity="0.20" transform="rotate(293.3 1155.9 182.3)"/>
+    <path d="M -148.5,790.2 C -113.2,825.5 -89.7,884.3 -101.4,919.6 C -113.2,954.8 -136.7,990.1 -148.5,1001.9 C -160.2,990.1 -183.8,954.8 -195.5,919.6 C -207.3,884.3 -183.8,825.5 -148.5,790.2 Z" fill="url(#conicLeaf72)" opacity="0.20" transform="rotate(301.1 -148.5 907.8)"/>
+    <path d="M 878.6,494.6 C 911.2,527.2 933.0,581.6 922.1,614.2 C 911.2,646.8 889.5,679.5 878.6,690.3 C 867.7,679.5 846.0,646.8 835.1,614.2 C 824.2,581.6 846.0,527.2 878.6,494.6 Z" fill="url(#conicLeaf73)" opacity="0.20" transform="rotate(102.2 878.6 603.3)"/>
+    <path d="M 526.8,40.5 C 569.2,82.9 597.5,153.6 583.3,196.1 C 569.2,238.5 540.9,280.9 526.8,295.1 C 512.6,280.9 484.3,238.5 470.2,196.1 C 456.0,153.6 484.3,82.9 526.8,40.5 Z" fill="url(#conicLeaf74)" opacity="0.20" transform="rotate(23.0 526.8 181.9)"/>
+    <path d="M 53.4,490.3 C 82.6,519.5 102.0,568.0 92.3,597.2 C 82.6,626.3 63.1,655.4 53.4,665.1 C 43.7,655.4 24.3,626.3 14.6,597.2 C 4.9,568.0 24.3,519.5 53.4,490.3 Z" fill="url(#conicLeaf75)" opacity="0.20" transform="rotate(283.3 53.4 587.4)"/>
+    <path d="M 108.9,859.3 C 143.0,893.5 165.8,950.4 154.4,984.6 C 143.0,1018.7 120.3,1052.9 108.9,1064.3 C 97.5,1052.9 74.7,1018.7 63.4,984.6 C 52.0,950.4 74.7,893.5 108.9,859.3 Z" fill="url(#conicLeaf76)" opacity="0.20" transform="rotate(147.2 108.9 973.2)"/>
+    <path d="M 1163.7,429.7 C 1190.8,456.8 1208.9,502.0 1199.9,529.1 C 1190.8,556.2 1172.8,583.3 1163.7,592.4 C 1154.7,583.3 1136.6,556.2 1127.6,529.1 C 1118.6,502.0 1136.6,456.8 1163.7,429.7 Z" fill="url(#conicLeaf77)" opacity="0.20" transform="rotate(97.4 1163.7 520.1)"/>
+    <path d="M 1644.9,30.2 C 1679.6,64.9 1702.7,122.8 1691.1,157.5 C 1679.6,192.2 1656.4,226.9 1644.9,238.5 C 1633.3,226.9 1610.1,192.2 1598.6,157.5 C 1587.0,122.8 1610.1,64.9 1644.9,30.2 Z" fill="url(#conicLeaf78)" opacity="0.20" transform="rotate(271.2 1644.9 145.9)"/>
+    <path d="M 2059.7,-216.3 C 2096.3,-179.7 2120.7,-118.8 2108.5,-82.3 C 2096.3,-45.7 2071.9,-9.2 2059.7,3.0 C 2047.6,-9.2 2023.2,-45.7 2011.0,-82.3 C 1998.8,-118.8 2023.2,-179.7 2059.7,-216.3 Z" fill="url(#conicLeaf79)" opacity="0.20" transform="rotate(77.0 2059.7 -94.5)"/>
+    <path d="M 257.4,998.4 C 301.7,1042.7 331.2,1116.5 316.5,1160.7 C 301.7,1205.0 272.2,1249.3 257.4,1264.0 C 242.7,1249.3 213.2,1205.0 198.4,1160.7 C 183.7,1116.5 213.2,1042.7 257.4,998.4 Z" fill="url(#conicLeaf80)" opacity="0.20" transform="rotate(15.8 257.4 1146.0)"/>
+    <path d="M 1449.7,410.0 C 1481.5,441.9 1502.7,494.9 1492.1,526.7 C 1481.5,558.5 1460.3,590.3 1449.7,600.9 C 1439.1,590.3 1417.9,558.5 1407.3,526.7 C 1396.7,494.9 1417.9,441.9 1449.7,410.0 Z" fill="url(#conicLeaf81)" opacity="0.20" transform="rotate(159.6 1449.7 516.1)"/>
+    <path d="M 379.8,57.8 C 407.7,85.7 426.3,132.1 417.0,160.0 C 407.7,187.9 389.1,215.8 379.8,225.0 C 370.5,215.8 352.0,187.9 342.7,160.0 C 333.4,132.1 352.0,85.7 379.8,57.8 Z" fill="url(#conicLeaf82)" opacity="0.20" transform="rotate(287.5 379.8 150.7)"/>
+    <path d="M 1866.5,160.3 C 1916.5,210.2 1949.8,293.5 1933.1,343.5 C 1916.5,393.4 1883.2,443.4 1866.5,460.1 C 1849.9,443.4 1816.6,393.4 1799.9,343.5 C 1783.2,293.5 1816.6,210.2 1866.5,160.3 Z" fill="url(#conicLeaf83)" opacity="0.20" transform="rotate(325.7 1866.5 326.8)"/>
+    <path d="M 723.7,794.6 C 754.9,825.7 775.6,877.7 765.2,908.8 C 754.9,939.9 734.1,971.1 723.7,981.5 C 713.3,971.1 692.6,939.9 682.2,908.8 C 671.8,877.7 692.6,825.7 723.7,794.6 Z" fill="url(#conicLeaf84)" opacity="0.20" transform="rotate(180.5 723.7 898.4)"/>
+    <path d="M 1447.1,763.2 C 1481.5,797.5 1504.4,854.8 1492.9,889.1 C 1481.5,923.5 1458.6,957.8 1447.1,969.3 C 1435.7,957.8 1412.8,923.5 1401.3,889.1 C 1389.9,854.8 1412.8,797.5 1447.1,763.2 Z" fill="url(#conicLeaf85)" opacity="0.20" transform="rotate(31.2 1447.1 877.7)"/>
+    <path d="M -20.6,-136.0 C 5.4,-110.0 22.7,-66.8 14.1,-40.8 C 5.4,-14.8 -11.9,11.2 -20.6,19.8 C -29.2,11.2 -46.5,-14.8 -55.2,-40.8 C -63.9,-66.8 -46.5,-110.0 -20.6,-136.0 Z" fill="url(#conicLeaf86)" opacity="0.20" transform="rotate(76.6 -20.6 -49.4)"/>
+    <path d="M 865.0,388.1 C 906.1,429.2 933.5,497.7 919.8,538.7 C 906.1,579.8 878.7,620.9 865.0,634.6 C 851.3,620.9 823.9,579.8 810.2,538.7 C 796.6,497.7 823.9,429.2 865.0,388.1 Z" fill="url(#conicLeaf87)" opacity="0.20" transform="rotate(251.4 865.0 525.0)"/>
+    <path d="M 1936.8,425.3 C 1979.1,467.6 2007.3,538.1 1993.2,580.4 C 1979.1,622.7 1950.9,665.0 1936.8,679.1 C 1922.7,665.0 1894.5,622.7 1880.4,580.4 C 1866.3,538.1 1894.5,467.6 1936.8,425.3 Z" fill="url(#conicLeaf88)" opacity="0.20" transform="rotate(192.3 1936.8 566.3)"/>
+    <path d="M 1989.1,967.7 C 2035.0,1013.6 2065.6,1090.1 2050.3,1136.0 C 2035.0,1181.9 2004.4,1227.8 1989.1,1243.1 C 1973.8,1227.8 1943.1,1181.9 1927.8,1136.0 C 1912.5,1090.1 1943.1,1013.6 1989.1,967.7 Z" fill="url(#conicLeaf89)" opacity="0.20" transform="rotate(311.3 1989.1 1120.7)"/>
+    <path d="M -140.2,811.5 C -104.6,847.1 -80.8,906.5 -92.7,942.1 C -104.6,977.7 -128.3,1013.4 -140.2,1025.2 C -152.1,1013.4 -175.8,977.7 -187.7,942.1 C -199.5,906.5 -175.8,847.1 -140.2,811.5 Z" fill="url(#conicLeaf90)" opacity="0.20" transform="rotate(108.9 -140.2 930.3)"/>
+    <path d="M 1238.4,972.4 C 1290.2,1024.2 1324.8,1110.6 1307.5,1162.5 C 1290.2,1214.3 1255.6,1266.2 1238.4,1283.5 C 1221.1,1266.2 1186.5,1214.3 1169.2,1162.5 C 1151.9,1110.6 1186.5,1024.2 1238.4,972.4 Z" fill="url(#conicLeaf91)" opacity="0.20" transform="rotate(234.6 1238.4 1145.2)"/>
+    <path d="M 1208.9,1055.5 C 1246.3,1093.0 1271.3,1155.4 1258.8,1192.9 C 1246.3,1230.4 1221.4,1267.8 1208.9,1280.3 C 1196.4,1267.8 1171.4,1230.4 1158.9,1192.9 C 1146.4,1155.4 1171.4,1093.0 1208.9,1055.5 Z" fill="url(#conicLeaf92)" opacity="0.20" transform="rotate(223.4 1208.9 1180.4)"/>
+    <path d="M 57.5,-95.5 C 110.9,-42.0 146.6,47.0 128.8,100.5 C 110.9,153.9 75.3,207.4 57.5,225.2 C 39.7,207.4 4.0,153.9 -13.8,100.5 C -31.6,47.0 4.0,-42.0 57.5,-95.5 Z" fill="url(#conicLeaf93)" opacity="0.20" transform="rotate(164.4 57.5 82.7)"/>
+    <path d="M 562.6,-47.9 C 590.5,-20.0 609.1,26.5 599.8,54.3 C 590.5,82.2 571.9,110.1 562.6,119.4 C 553.3,110.1 534.8,82.2 525.5,54.3 C 516.2,26.5 534.8,-20.0 562.6,-47.9 Z" fill="url(#conicLeaf94)" opacity="0.20" transform="rotate(31.3 562.6 45.0)"/>
+    <path d="M 833.7,-231.0 C 883.0,-181.8 915.8,-99.7 899.4,-50.5 C 883.0,-1.3 850.2,47.9 833.7,64.3 C 817.3,47.9 784.5,-1.3 768.1,-50.5 C 751.7,-99.7 784.5,-181.8 833.7,-231.0 Z" fill="url(#conicLeaf95)" opacity="0.20" transform="rotate(358.3 833.7 -66.9)"/>
+    <path d="M 1459.5,293.9 C 1480.2,314.6 1493.9,349.1 1487.1,369.8 C 1480.2,390.5 1466.4,411.2 1459.5,418.1 C 1452.6,411.2 1438.8,390.5 1431.9,369.8 C 1425.0,349.1 1438.8,314.6 1459.5,293.9 Z" fill="url(#conicLeaf96)" opacity="0.20" transform="rotate(235.3 1459.5 362.9)"/>
+    <path d="M 1180.1,33.5 C 1233.6,87.0 1269.3,176.2 1251.5,229.7 C 1233.6,283.2 1198.0,336.7 1180.1,354.5 C 1162.3,336.7 1126.6,283.2 1108.8,229.7 C 1091.0,176.2 1126.6,87.0 1180.1,33.5 Z" fill="url(#conicLeaf97)" opacity="0.20" transform="rotate(86.6 1180.1 211.8)"/>
+    <path d="M 170.2,800.8 C 196.5,827.1 214.1,871.0 205.3,897.3 C 196.5,923.6 179.0,949.9 170.2,958.7 C 161.5,949.9 143.9,923.6 135.1,897.3 C 126.4,871.0 143.9,827.1 170.2,800.8 Z" fill="url(#conicLeaf98)" opacity="0.20" transform="rotate(255.3 170.2 888.5)"/>
+    <path d="M 1492.7,790.4 C 1526.9,824.6 1549.7,881.6 1538.3,915.9 C 1526.9,950.1 1504.1,984.3 1492.7,995.7 C 1481.3,984.3 1458.5,950.1 1447.1,915.9 C 1435.7,881.6 1458.5,824.6 1492.7,790.4 Z" fill="url(#conicLeaf99)" opacity="0.20" transform="rotate(114.5 1492.7 904.4)"/>
+    <path d="M 1387.7,-43.1 C 1426.5,-4.3 1452.3,60.3 1439.4,99.1 C 1426.5,137.8 1400.6,176.6 1387.7,189.5 C 1374.8,176.6 1349.0,137.8 1336.0,99.1 C 1323.1,60.3 1349.0,-4.3 1387.7,-43.1 Z" fill="url(#conicLeaf100)" opacity="0.20" transform="rotate(12.5 1387.7 86.1)"/>
+    <path d="M 587.3,419.6 C 639.5,471.8 674.3,558.8 656.9,611.0 C 639.5,663.2 604.7,715.4 587.3,732.8 C 569.9,715.4 535.1,663.2 517.7,611.0 C 500.3,558.8 535.1,471.8 587.3,419.6 Z" fill="url(#conicLeaf101)" opacity="0.20" transform="rotate(139.4 587.3 593.6)"/>
+    <path d="M 396.0,408.9 C 442.7,455.6 473.8,533.5 458.3,580.2 C 442.7,626.9 411.5,673.7 396.0,689.2 C 380.4,673.7 349.2,626.9 333.7,580.2 C 318.1,533.5 349.2,455.6 396.0,408.9 Z" fill="url(#conicLeaf102)" opacity="0.20" transform="rotate(113.0 396.0 564.6)"/>
+    <path d="M 1706.4,-184.3 C 1751.3,-139.4 1781.2,-64.5 1766.3,-19.6 C 1751.3,25.4 1721.3,70.3 1706.4,85.3 C 1691.4,70.3 1661.4,25.4 1646.5,-19.6 C 1631.5,-64.5 1661.4,-139.4 1706.4,-184.3 Z" fill="url(#conicLeaf103)" opacity="0.20" transform="rotate(60.4 1706.4 -34.5)"/>
+    <path d="M 1331.5,475.3 C 1366.3,510.1 1389.5,568.1 1377.9,603.0 C 1366.3,637.8 1343.1,672.6 1331.5,684.2 C 1319.9,672.6 1296.7,637.8 1285.1,603.0 C 1273.4,568.1 1296.7,510.1 1331.5,475.3 Z" fill="url(#conicLeaf104)" opacity="0.20" transform="rotate(27.9 1331.5 591.3)"/>
+    <path d="M 1651.5,58.9 C 1705.5,112.9 1741.5,202.9 1723.5,256.8 C 1705.5,310.8 1669.5,364.8 1651.5,382.8 C 1633.5,364.8 1597.5,310.8 1579.5,256.8 C 1561.6,202.9 1597.5,112.9 1651.5,58.9 Z" fill="url(#conicLeaf105)" opacity="0.20" transform="rotate(256.4 1651.5 238.8)"/>
+    <path d="M 489.6,1096.9 C 514.6,1121.9 531.3,1163.6 522.9,1188.6 C 514.6,1213.6 497.9,1238.6 489.6,1246.9 C 481.3,1238.6 464.6,1213.6 456.3,1188.6 C 447.9,1163.6 464.6,1121.9 489.6,1096.9 Z" fill="url(#conicLeaf106)" opacity="0.20" transform="rotate(124.9 489.6 1180.3)"/>
+    <path d="M 1447.0,450.6 C 1467.7,471.3 1481.5,505.9 1474.6,526.6 C 1467.7,547.3 1453.9,568.0 1447.0,574.9 C 1440.1,568.0 1426.3,547.3 1419.4,526.6 C 1412.5,505.9 1426.3,471.3 1447.0,450.6 Z" fill="url(#conicLeaf107)" opacity="0.20" transform="rotate(66.6 1447.0 519.7)"/>
+    <path d="M 2095.3,915.9 C 2136.0,956.7 2163.2,1024.6 2149.6,1065.4 C 2136.0,1106.1 2108.8,1146.9 2095.3,1160.4 C 2081.7,1146.9 2054.5,1106.1 2040.9,1065.4 C 2027.3,1024.6 2054.5,956.7 2095.3,915.9 Z" fill="url(#conicLeaf108)" opacity="0.20" transform="rotate(106.4 2095.3 1051.8)"/>
+    <path d="M 1501.7,808.0 C 1538.5,844.8 1563.1,906.2 1550.8,943.0 C 1538.5,979.9 1514.0,1016.7 1501.7,1029.0 C 1489.4,1016.7 1464.9,979.9 1452.6,943.0 C 1440.3,906.2 1464.9,844.8 1501.7,808.0 Z" fill="url(#conicLeaf109)" opacity="0.20" transform="rotate(167.1 1501.7 930.7)"/>
+    <path d="M 2096.8,1007.7 C 2128.8,1039.7 2150.1,1093.0 2139.5,1125.0 C 2128.8,1157.0 2107.5,1189.0 2096.8,1199.7 C 2086.1,1189.0 2064.8,1157.0 2054.1,1125.0 C 2043.5,1093.0 2064.8,1039.7 2096.8,1007.7 Z" fill="url(#conicLeaf110)" opacity="0.20" transform="rotate(226.9 2096.8 1114.3)"/>
+    <path d="M 461.3,-12.2 C 514.1,40.6 549.3,128.6 531.7,181.4 C 514.1,234.2 478.9,287.0 461.3,304.6 C 443.7,287.0 408.5,234.2 390.9,181.4 C 373.3,128.6 408.5,40.6 461.3,-12.2 Z" fill="url(#conicLeaf111)" opacity="0.20" transform="rotate(56.7 461.3 163.8)"/>
+    <path d="M 124.3,733.8 C 148.4,757.9 164.5,798.1 156.5,822.3 C 148.4,846.4 132.3,870.5 124.3,878.6 C 116.2,870.5 100.2,846.4 92.1,822.3 C 84.1,798.1 100.2,757.9 124.3,733.8 Z" fill="url(#conicLeaf112)" opacity="0.20" transform="rotate(122.5 124.3 814.2)"/>
+    <path d="M 440.4,439.7 C 475.1,474.4 498.3,532.2 486.7,566.9 C 475.1,601.6 452.0,636.4 440.4,647.9 C 428.8,636.4 405.7,601.6 394.1,566.9 C 382.6,532.2 405.7,474.4 440.4,439.7 Z" fill="url(#conicLeaf113)" opacity="0.20" transform="rotate(151.1 440.4 555.4)"/>
+    <path d="M 1277.5,734.0 C 1318.6,775.0 1345.9,843.5 1332.3,884.6 C 1318.6,925.7 1291.2,966.7 1277.5,980.4 C 1263.8,966.7 1236.4,925.7 1222.7,884.6 C 1209.0,843.5 1236.4,775.0 1277.5,734.0 Z" fill="url(#conicLeaf114)" opacity="0.20" transform="rotate(294.8 1277.5 870.9)"/>
+    <path d="M 145.7,644.5 C 195.1,693.8 228.0,776.0 211.5,825.4 C 195.1,874.7 162.2,924.1 145.7,940.5 C 129.3,924.1 96.4,874.7 79.9,825.4 C 63.5,776.0 96.4,693.8 145.7,644.5 Z" fill="url(#conicLeaf115)" opacity="0.20" transform="rotate(298.9 145.7 808.9)"/>
+    <path d="M 1551.1,1047.1 C 1581.7,1077.8 1602.2,1128.9 1592.0,1159.6 C 1581.7,1190.3 1561.3,1221.0 1551.1,1231.2 C 1540.9,1221.0 1520.4,1190.3 1510.2,1159.6 C 1500.0,1128.9 1520.4,1077.8 1551.1,1047.1 Z" fill="url(#conicLeaf116)" opacity="0.20" transform="rotate(203.6 1551.1 1149.4)"/>
+    <path d="M -127.2,561.0 C -82.3,605.9 -52.3,680.7 -67.3,725.6 C -82.3,770.5 -112.2,815.4 -127.2,830.4 C -142.1,815.4 -172.1,770.5 -187.0,725.6 C -202.0,680.7 -172.1,605.9 -127.2,561.0 Z" fill="url(#conicLeaf117)" opacity="0.20" transform="rotate(183.1 -127.2 710.6)"/>
+    <path d="M 975.0,547.4 C 1022.8,595.3 1054.7,675.0 1038.8,722.9 C 1022.8,770.7 990.9,818.6 975.0,834.5 C 959.0,818.6 927.1,770.7 911.2,722.9 C 895.2,675.0 927.1,595.3 975.0,547.4 Z" fill="url(#conicLeaf118)" opacity="0.20" transform="rotate(309.9 975.0 706.9)"/>
+    <path d="M 1750.6,187.3 C 1800.4,237.1 1833.6,320.1 1817.0,369.9 C 1800.4,419.7 1767.2,469.5 1750.6,486.1 C 1734.0,469.5 1700.8,419.7 1684.2,369.9 C 1667.6,320.1 1700.8,237.1 1750.6,187.3 Z" fill="url(#conicLeaf119)" opacity="0.20" transform="rotate(302.9 1750.6 353.3)"/>
+    <path d="M 1991.1,-232.4 C 2051.3,-172.2 2091.5,-71.8 2071.4,-11.6 C 2051.3,48.6 2011.2,108.9 1991.1,128.9 C 1971.0,108.9 1930.9,48.6 1910.8,-11.6 C 1890.7,-71.8 1930.9,-172.2 1991.1,-232.4 Z" fill="url(#conicLeaf120)" opacity="0.20" transform="rotate(187.4 1991.1 -31.7)"/>
+    <path d="M 332.7,117.8 C 358.0,143.0 374.8,185.0 366.4,210.3 C 358.0,235.5 341.1,260.7 332.7,269.1 C 324.3,260.7 307.5,235.5 299.1,210.3 C 290.7,185.0 307.5,143.0 332.7,117.8 Z" fill="url(#conicLeaf121)" opacity="0.20" transform="rotate(129.1 332.7 201.9)"/>
+    <path d="M 1655.5,-182.6 C 1699.5,-138.6 1728.9,-65.2 1714.2,-21.2 C 1699.5,22.9 1670.2,66.9 1655.5,81.6 C 1640.8,66.9 1611.5,22.9 1596.8,-21.2 C 1582.1,-65.2 1611.5,-138.6 1655.5,-182.6 Z" fill="url(#conicLeaf122)" opacity="0.20" transform="rotate(158.8 1655.5 -35.9)"/>
+    <path d="M 1004.7,564.1 C 1060.4,619.8 1097.4,712.5 1078.9,768.1 C 1060.4,823.7 1023.3,879.3 1004.7,897.8 C 986.2,879.3 949.1,823.7 930.6,768.1 C 912.1,712.5 949.1,619.8 1004.7,564.1 Z" fill="url(#conicLeaf123)" opacity="0.20" transform="rotate(269.6 1004.7 749.5)"/>
+    <path d="M 1874.2,-35.3 C 1922.0,12.5 1953.9,92.2 1938.0,140.0 C 1922.0,187.8 1890.1,235.6 1874.2,251.6 C 1858.3,235.6 1826.4,187.8 1810.4,140.0 C 1794.5,92.2 1826.4,12.5 1874.2,-35.3 Z" fill="url(#conicLeaf124)" opacity="0.20" transform="rotate(27.7 1874.2 124.1)"/>
+    <path d="M 1488.8,675.8 C 1518.3,705.3 1537.9,754.3 1528.1,783.7 C 1518.3,813.1 1498.7,842.5 1488.8,852.4 C 1479.0,842.5 1459.4,813.1 1449.6,783.7 C 1439.8,754.3 1459.4,705.3 1488.8,675.8 Z" fill="url(#conicLeaf125)" opacity="0.20" transform="rotate(71.2 1488.8 773.9)"/>
+    <path d="M 1766.1,10.1 C 1815.5,59.5 1848.4,141.9 1832.0,191.3 C 1815.5,240.7 1782.6,290.1 1766.1,306.6 C 1749.6,290.1 1716.7,240.7 1700.2,191.3 C 1683.8,141.9 1716.7,59.5 1766.1,10.1 Z" fill="url(#conicLeaf126)" opacity="0.20" transform="rotate(137.3 1766.1 174.8)"/>
+    <path d="M 1956.8,1074.4 C 1985.1,1102.7 2004.0,1149.9 1994.6,1178.2 C 1985.1,1206.5 1966.3,1234.8 1956.8,1244.3 C 1947.4,1234.8 1928.5,1206.5 1919.1,1178.2 C 1909.6,1149.9 1928.5,1102.7 1956.8,1074.4 Z" fill="url(#conicLeaf127)" opacity="0.20" transform="rotate(344.2 1956.8 1168.8)"/>
+    <path d="M 556.3,904.4 C 587.2,935.3 607.8,986.9 597.5,1017.8 C 587.2,1048.8 566.6,1079.7 556.3,1090.0 C 546.0,1079.7 525.3,1048.8 515.0,1017.8 C 504.7,986.9 525.3,935.3 556.3,904.4 Z" fill="url(#conicLeaf128)" opacity="0.20" transform="rotate(313.4 556.3 1007.5)"/>
+    <path d="M 1358.6,121.7 C 1413.2,176.4 1449.7,267.5 1431.5,322.2 C 1413.2,376.9 1376.8,431.5 1358.6,449.8 C 1340.4,431.5 1303.9,376.9 1285.7,322.2 C 1267.5,267.5 1303.9,176.4 1358.6,121.7 Z" fill="url(#conicLeaf129)" opacity="0.20" transform="rotate(118.6 1358.6 304.0)"/>
+    <path d="M 206.6,305.4 C 257.9,356.8 292.1,442.4 275.0,493.7 C 257.9,545.1 223.7,596.4 206.6,613.5 C 189.4,596.4 155.2,545.1 138.1,493.7 C 121.0,442.4 155.2,356.8 206.6,305.4 Z" fill="url(#conicLeaf130)" opacity="0.20" transform="rotate(21.2 206.6 476.6)"/>
+    <path d="M 1501.2,420.9 C 1558.0,477.8 1596.0,572.6 1577.0,629.5 C 1558.0,686.4 1520.1,743.2 1501.2,762.2 C 1482.2,743.2 1444.3,686.4 1425.3,629.5 C 1406.3,572.6 1444.3,477.8 1501.2,420.9 Z" fill="url(#conicLeaf131)" opacity="0.20" transform="rotate(299.8 1501.2 610.5)"/>
+    <path d="M 618.3,809.8 C 670.2,861.7 704.8,948.2 687.5,1000.1 C 670.2,1052.0 635.6,1103.9 618.3,1121.2 C 601.0,1103.9 566.4,1052.0 549.1,1000.1 C 531.8,948.2 566.4,861.7 618.3,809.8 Z" fill="url(#conicLeaf132)" opacity="0.20" transform="rotate(125.5 618.3 982.8)"/>
+    <path d="M 1660.2,-192.8 C 1699.4,-153.6 1725.5,-88.3 1712.4,-49.2 C 1699.4,-10.0 1673.2,29.2 1660.2,42.2 C 1647.1,29.2 1621.0,-10.0 1608.0,-49.2 C 1594.9,-88.3 1621.0,-153.6 1660.2,-192.8 Z" fill="url(#conicLeaf133)" opacity="0.20" transform="rotate(108.6 1660.2 -62.2)"/>
+    <path d="M 1544.8,691.9 C 1595.4,742.4 1629.1,826.7 1612.3,877.3 C 1595.4,927.9 1561.7,978.4 1544.8,995.3 C 1528.0,978.4 1494.3,927.9 1477.4,877.3 C 1460.6,826.7 1494.3,742.4 1544.8,691.9 Z" fill="url(#conicLeaf134)" opacity="0.20" transform="rotate(111.2 1544.8 860.4)"/>
+    <path d="M 1955.8,717.6 C 2001.5,763.2 2031.9,839.3 2016.7,884.9 C 2001.5,930.6 1971.0,976.2 1955.8,991.4 C 1940.6,976.2 1910.2,930.6 1895.0,884.9 C 1879.8,839.3 1910.2,763.2 1955.8,717.6 Z" fill="url(#conicLeaf135)" opacity="0.20" transform="rotate(332.2 1955.8 869.7)"/>
+    <path d="M 1822.4,32.3 C 1854.3,64.2 1875.6,117.5 1865.0,149.4 C 1854.3,181.3 1833.1,213.3 1822.4,223.9 C 1811.8,213.3 1790.5,181.3 1779.8,149.4 C 1769.2,117.5 1790.5,64.2 1822.4,32.3 Z" fill="url(#conicLeaf136)" opacity="0.20" transform="rotate(315.8 1822.4 138.7)"/>
+    <path d="M 1170.0,420.5 C 1200.9,451.4 1221.5,503.0 1211.2,533.9 C 1200.9,564.9 1180.3,595.8 1170.0,606.1 C 1159.6,595.8 1139.0,564.9 1128.7,533.9 C 1118.4,503.0 1139.0,451.4 1170.0,420.5 Z" fill="url(#conicLeaf137)" opacity="0.20" transform="rotate(298.0 1170.0 523.6)"/>
+    <path d="M 803.6,361.3 C 862.4,420.1 901.6,518.2 882.0,577.0 C 862.4,635.8 823.2,694.6 803.6,714.2 C 784.0,694.6 744.7,635.8 725.1,577.0 C 705.5,518.2 744.7,420.1 803.6,361.3 Z" fill="url(#conicLeaf138)" opacity="0.20" transform="rotate(93.4 803.6 557.4)"/>
+    <path d="M 967.7,968.6 C 993.4,994.3 1010.6,1037.2 1002.0,1063.0 C 993.4,1088.7 976.2,1114.5 967.7,1123.1 C 959.1,1114.5 941.9,1088.7 933.3,1063.0 C 924.7,1037.2 941.9,994.3 967.7,968.6 Z" fill="url(#conicLeaf139)" opacity="0.20" transform="rotate(159.9 967.7 1054.4)"/>
+    <path d="M 1988.9,321.0 C 2014.4,346.5 2031.4,389.1 2022.9,414.6 C 2014.4,440.2 1997.4,465.7 1988.9,474.2 C 1980.4,465.7 1963.3,440.2 1954.8,414.6 C 1946.3,389.1 1963.3,346.5 1988.9,321.0 Z" fill="url(#conicLeaf140)" opacity="0.20" transform="rotate(69.2 1988.9 406.1)"/>
+    <path d="M 1780.2,900.0 C 1805.8,925.6 1822.8,968.1 1814.3,993.6 C 1805.8,1019.1 1788.7,1044.7 1780.2,1053.2 C 1771.7,1044.7 1754.7,1019.1 1746.2,993.6 C 1737.7,968.1 1754.7,925.6 1780.2,900.0 Z" fill="url(#conicLeaf141)" opacity="0.20" transform="rotate(133.9 1780.2 985.1)"/>
+    <path d="M -177.4,403.2 C -149.4,431.3 -130.7,478.0 -140.0,506.0 C -149.4,534.0 -168.1,562.0 -177.4,571.4 C -186.7,562.0 -205.4,534.0 -214.8,506.0 C -224.1,478.0 -205.4,431.3 -177.4,403.2 Z" fill="url(#conicLeaf142)" opacity="0.20" transform="rotate(339.6 -177.4 496.7)"/>
+    <path d="M 387.7,460.2 C 442.8,515.3 479.6,607.2 461.2,662.4 C 442.8,717.5 406.1,772.6 387.7,791.0 C 369.3,772.6 332.6,717.5 314.2,662.4 C 295.8,607.2 332.6,515.3 387.7,460.2 Z" fill="url(#conicLeaf143)" opacity="0.20" transform="rotate(261.6 387.7 644.0)"/>
+    <path d="M 999.0,70.8 C 1021.5,93.4 1036.5,130.9 1029.0,153.5 C 1021.5,176.0 1006.5,198.5 999.0,206.1 C 991.4,198.5 976.4,176.0 968.9,153.5 C 961.4,130.9 976.4,93.4 999.0,70.8 Z" fill="url(#conicLeaf144)" opacity="0.20" transform="rotate(258.5 999.0 146.0)"/>
+    <path d="M 2060.1,810.9 C 2093.9,844.7 2116.4,901.0 2105.1,934.8 C 2093.9,968.6 2071.3,1002.4 2060.1,1013.7 C 2048.8,1002.4 2026.3,968.6 2015.0,934.8 C 2003.7,901.0 2026.3,844.7 2060.1,810.9 Z" fill="url(#conicLeaf145)" opacity="0.20" transform="rotate(315.1 2060.1 923.6)"/>
+    <path d="M 1808.7,896.4 C 1867.1,954.8 1906.0,1052.1 1886.5,1110.4 C 1867.1,1168.8 1828.2,1227.1 1808.7,1246.6 C 1789.3,1227.1 1750.4,1168.8 1730.9,1110.4 C 1711.5,1052.1 1750.4,954.8 1808.7,896.4 Z" fill="url(#conicLeaf146)" opacity="0.20" transform="rotate(223.2 1808.7 1091.0)"/>
+    <path d="M 1576.9,507.2 C 1631.7,562.1 1668.3,653.5 1650.0,708.4 C 1631.7,763.2 1595.2,818.1 1576.9,836.4 C 1558.6,818.1 1522.0,763.2 1503.7,708.4 C 1485.4,653.5 1522.0,562.1 1576.9,507.2 Z" fill="url(#conicLeaf147)" opacity="0.20" transform="rotate(260.9 1576.9 690.1)"/>
+    <path d="M 1982.9,747.2 C 2026.6,790.9 2055.7,863.8 2041.1,907.5 C 2026.6,951.2 1997.4,994.9 1982.9,1009.5 C 1968.3,994.9 1939.1,951.2 1924.6,907.5 C 1910.0,863.8 1939.1,790.9 1982.9,747.2 Z" fill="url(#conicLeaf148)" opacity="0.20" transform="rotate(60.9 1982.9 892.9)"/>
+    <path d="M 1936.0,658.5 C 1963.2,685.6 1981.2,730.8 1972.2,758.0 C 1963.2,785.1 1945.1,812.2 1936.0,821.3 C 1927.0,812.2 1908.9,785.1 1899.9,758.0 C 1890.8,730.8 1908.9,685.6 1936.0,658.5 Z" fill="url(#conicLeaf149)" opacity="0.20" transform="rotate(199.1 1936.0 748.9)"/>
+    <path d="M 1008.4,789.5 C 1053.0,834.1 1082.8,908.6 1067.9,953.2 C 1053.0,997.9 1023.3,1042.5 1008.4,1057.4 C 993.5,1042.5 963.7,997.9 948.8,953.2 C 934.0,908.6 963.7,834.1 1008.4,789.5 Z" fill="url(#conicLeaf150)" opacity="0.20" transform="rotate(24.8 1008.4 938.3)"/>
+    <path d="M 979.6,-115.4 C 1016.1,-79.0 1040.4,-18.2 1028.3,18.3 C 1016.1,54.8 991.8,91.3 979.6,103.4 C 967.5,91.3 943.2,54.8 931.0,18.3 C 918.9,-18.2 943.2,-79.0 979.6,-115.4 Z" fill="url(#conicLeaf151)" opacity="0.20" transform="rotate(235.2 979.6 6.2)"/>
+    <path d="M 2009.6,65.0 C 2054.1,109.5 2083.8,183.7 2069.0,228.2 C 2054.1,272.7 2024.5,317.2 2009.6,332.0 C 1994.8,317.2 1965.1,272.7 1950.3,228.2 C 1935.5,183.7 1965.1,109.5 2009.6,65.0 Z" fill="url(#conicLeaf152)" opacity="0.20" transform="rotate(146.9 2009.6 213.4)"/>
+    <path d="M 81.7,499.8 C 142.1,560.1 182.3,660.7 162.2,721.0 C 142.1,781.4 101.8,841.7 81.7,861.9 C 61.6,841.7 21.4,781.4 1.2,721.0 C -18.9,660.7 21.4,560.1 81.7,499.8 Z" fill="url(#conicLeaf153)" opacity="0.20" transform="rotate(71.3 81.7 700.9)"/>
+    <path d="M 1712.4,363.8 C 1768.2,419.6 1805.3,512.6 1786.7,568.4 C 1768.2,624.1 1731.0,679.9 1712.4,698.5 C 1693.8,679.9 1656.6,624.1 1638.0,568.4 C 1619.4,512.6 1656.6,419.6 1712.4,363.8 Z" fill="url(#conicLeaf154)" opacity="0.20" transform="rotate(57.7 1712.4 549.8)"/>
+    <path d="M 27.4,-192.0 C 62.3,-157.0 85.6,-98.8 74.0,-63.8 C 62.3,-28.9 39.0,6.1 27.4,17.8 C 15.7,6.1 -7.6,-28.9 -19.2,-63.8 C -30.9,-98.8 -7.6,-157.0 27.4,-192.0 Z" fill="url(#conicLeaf155)" opacity="0.20" transform="rotate(245.0 27.4 -75.5)"/>
+    <path d="M 1332.5,-57.8 C 1388.0,-2.3 1425.0,90.2 1406.5,145.8 C 1388.0,201.3 1351.0,256.8 1332.5,275.3 C 1313.9,256.8 1276.9,201.3 1258.4,145.8 C 1239.9,90.2 1276.9,-2.3 1332.5,-57.8 Z" fill="url(#conicLeaf156)" opacity="0.20" transform="rotate(69.6 1332.5 127.3)"/>
+    <path d="M 2034.7,765.3 C 2077.6,808.3 2106.3,879.9 2092.0,922.9 C 2077.6,965.9 2049.0,1008.9 2034.7,1023.2 C 2020.3,1008.9 1991.7,965.9 1977.3,922.9 C 1963.0,879.9 1991.7,808.3 2034.7,765.3 Z" fill="url(#conicLeaf157)" opacity="0.20" transform="rotate(310.1 2034.7 908.6)"/>
+    <path d="M 1091.3,242.5 C 1131.5,282.7 1158.3,349.7 1144.9,389.9 C 1131.5,430.1 1104.7,470.3 1091.3,483.7 C 1077.9,470.3 1051.1,430.1 1037.7,389.9 C 1024.3,349.7 1051.1,282.7 1091.3,242.5 Z" fill="url(#conicLeaf158)" opacity="0.20" transform="rotate(118.4 1091.3 376.5)"/>
+    <path d="M 35.0,571.0 C 74.1,610.0 100.1,675.1 87.1,714.2 C 74.1,753.2 48.0,792.3 35.0,805.3 C 22.0,792.3 -4.0,753.2 -17.1,714.2 C -30.1,675.1 -4.0,610.0 35.0,571.0 Z" fill="url(#conicLeaf159)" opacity="0.20" transform="rotate(63.9 35.0 701.2)"/>
+    <path d="M 87.0,100.0 C 144.6,157.6 183.0,253.6 163.8,311.2 C 144.6,368.8 106.2,426.4 87.0,445.6 C 67.8,426.4 29.4,368.8 10.2,311.2 C -9.0,253.6 29.4,157.6 87.0,100.0 Z" fill="url(#conicLeaf160)" opacity="0.20" transform="rotate(6.0 87.0 292.0)"/>
+    <path d="M 1749.6,50.9 C 1782.9,84.2 1805.0,139.6 1794.0,172.9 C 1782.9,206.1 1760.7,239.4 1749.6,250.5 C 1738.5,239.4 1716.4,206.1 1705.3,172.9 C 1694.2,139.6 1716.4,84.2 1749.6,50.9 Z" fill="url(#conicLeaf161)" opacity="0.20" transform="rotate(208.1 1749.6 161.8)"/>
+    <path d="M 1721.8,-168.9 C 1774.4,-116.3 1809.5,-28.6 1792.0,24.0 C 1774.4,76.6 1739.4,129.2 1721.8,146.7 C 1704.3,129.2 1669.2,76.6 1651.7,24.0 C 1634.1,-28.6 1669.2,-116.3 1721.8,-168.9 Z" fill="url(#conicLeaf162)" opacity="0.20" transform="rotate(205.3 1721.8 6.4)"/>
+    <path d="M 1298.8,-103.9 C 1319.9,-82.9 1333.9,-47.7 1326.9,-26.7 C 1319.9,-5.6 1305.8,15.5 1298.8,22.5 C 1291.8,15.5 1277.7,-5.6 1270.7,-26.7 C 1263.7,-47.7 1277.7,-82.9 1298.8,-103.9 Z" fill="url(#conicLeaf163)" opacity="0.20" transform="rotate(107.1 1298.8 -33.7)"/>
+    <path d="M 2041.0,949.9 C 2062.8,971.8 2077.3,1008.2 2070.1,1030.0 C 2062.8,1051.8 2048.2,1073.7 2041.0,1080.9 C 2033.7,1073.7 2019.1,1051.8 2011.8,1030.0 C 2004.6,1008.2 2019.1,971.8 2041.0,949.9 Z" fill="url(#conicLeaf164)" opacity="0.20" transform="rotate(12.7 2041.0 1022.7)"/>
+    <path d="M 2103.8,536.9 C 2144.9,578.1 2172.4,646.7 2158.7,687.8 C 2144.9,729.0 2117.5,770.2 2103.8,783.9 C 2090.0,770.2 2062.6,729.0 2048.9,687.8 C 2035.2,646.7 2062.6,578.1 2103.8,536.9 Z" fill="url(#conicLeaf165)" opacity="0.20" transform="rotate(271.9 2103.8 674.1)"/>
+    <path d="M 771.8,326.9 C 796.7,351.8 813.3,393.3 805.0,418.3 C 796.7,443.2 780.1,468.1 771.8,476.4 C 763.5,468.1 746.9,443.2 738.6,418.3 C 730.3,393.3 746.9,351.8 771.8,326.9 Z" fill="url(#conicLeaf166)" opacity="0.20" transform="rotate(7.3 771.8 410.0)"/>
+    <path d="M 53.1,665.1 C 105.4,717.4 140.3,804.6 122.8,856.9 C 105.4,909.2 70.5,961.5 53.1,978.9 C 35.7,961.5 0.8,909.2 -16.6,856.9 C -34.1,804.6 0.8,717.4 53.1,665.1 Z" fill="url(#conicLeaf167)" opacity="0.20" transform="rotate(26.8 53.1 839.4)"/>
+    <path d="M 467.2,545.6 C 512.9,591.3 543.4,667.4 528.2,713.1 C 512.9,758.8 482.5,804.5 467.2,819.7 C 452.0,804.5 421.6,758.8 406.3,713.1 C 391.1,667.4 421.6,591.3 467.2,545.6 Z" fill="url(#conicLeaf168)" opacity="0.20" transform="rotate(186.3 467.2 697.9)"/>
+    <path d="M 561.8,436.7 C 595.3,470.3 617.7,526.2 606.5,559.8 C 595.3,593.3 572.9,626.9 561.8,638.1 C 550.6,626.9 528.2,593.3 517.0,559.8 C 505.8,526.2 528.2,470.3 561.8,436.7 Z" fill="url(#conicLeaf169)" opacity="0.20" transform="rotate(161.7 561.8 548.6)"/>
+    <path d="M 1247.0,-196.6 C 1303.4,-140.1 1341.1,-45.9 1322.3,10.6 C 1303.4,67.1 1265.8,123.5 1247.0,142.4 C 1228.1,123.5 1190.5,67.1 1171.6,10.6 C 1152.8,-45.9 1190.5,-140.1 1247.0,-196.6 Z" fill="url(#conicLeaf170)" opacity="0.20" transform="rotate(159.8 1247.0 -8.3)"/>
+    <path d="M 443.0,-22.7 C 482.9,17.3 509.6,83.9 496.3,123.8 C 482.9,163.8 456.3,203.7 443.0,217.1 C 429.7,203.7 403.0,163.8 389.7,123.8 C 376.4,83.9 403.0,17.3 443.0,-22.7 Z" fill="url(#conicLeaf171)" opacity="0.20" transform="rotate(204.1 443.0 110.5)"/>
+    <path d="M 818.8,800.4 C 841.8,823.3 857.0,861.5 849.4,884.5 C 841.8,907.4 826.5,930.3 818.8,938.0 C 811.2,930.3 795.9,907.4 788.3,884.5 C 780.6,861.5 795.9,823.3 818.8,800.4 Z" fill="url(#conicLeaf172)" opacity="0.20" transform="rotate(219.1 818.8 876.8)"/>
+    <path d="M -121.4,-4.8 C -86.3,30.3 -62.9,88.8 -74.6,123.9 C -86.3,159.0 -109.7,194.1 -121.4,205.8 C -133.1,194.1 -156.5,159.0 -168.3,123.9 C -180.0,88.8 -156.5,30.3 -121.4,-4.8 Z" fill="url(#conicLeaf173)" opacity="0.20" transform="rotate(230.4 -121.4 112.2)"/>
+    <path d="M 1128.5,421.9 C 1172.7,466.0 1202.1,539.6 1187.4,583.7 C 1172.7,627.9 1143.2,672.0 1128.5,686.7 C 1113.8,672.0 1084.4,627.9 1069.7,583.7 C 1055.0,539.6 1084.4,466.0 1128.5,421.9 Z" fill="url(#conicLeaf174)" opacity="0.20" transform="rotate(241.5 1128.5 569.0)"/>
+    <path d="M 237.0,880.1 C 258.0,901.1 271.9,936.0 265.0,956.9 C 258.0,977.8 244.0,998.8 237.0,1005.8 C 230.1,998.8 216.1,977.8 209.1,956.9 C 202.1,936.0 216.1,901.1 237.0,880.1 Z" fill="url(#conicLeaf175)" opacity="0.20" transform="rotate(105.5 237.0 949.9)"/>
+    <path d="M 558.2,-0.7 C 580.9,22.1 596.1,60.0 588.5,82.8 C 580.9,105.5 565.7,128.3 558.2,135.9 C 550.6,128.3 535.4,105.5 527.8,82.8 C 520.2,60.0 535.4,22.1 558.2,-0.7 Z" fill="url(#conicLeaf176)" opacity="0.20" transform="rotate(55.0 558.2 75.2)"/>
+    <path d="M 1393.6,861.6 C 1422.4,890.3 1441.6,938.3 1432.0,967.1 C 1422.4,995.8 1403.2,1024.6 1393.6,1034.2 C 1384.0,1024.6 1364.9,995.8 1355.3,967.1 C 1345.7,938.3 1364.9,890.3 1393.6,861.6 Z" fill="url(#conicLeaf177)" opacity="0.20" transform="rotate(148.3 1393.6 957.5)"/>
+    <path d="M 2045.6,200.5 C 2067.6,222.5 2082.3,259.2 2075.0,281.2 C 2067.6,303.2 2053.0,325.2 2045.6,332.5 C 2038.3,325.2 2023.6,303.2 2016.3,281.2 C 2009.0,259.2 2023.6,222.5 2045.6,200.5 Z" fill="url(#conicLeaf178)" opacity="0.20" transform="rotate(260.7 2045.6 273.8)"/>
+    <path d="M 2018.3,-151.5 C 2051.7,-118.1 2074.0,-62.4 2062.9,-29.0 C 2051.7,4.5 2029.4,37.9 2018.3,49.0 C 2007.1,37.9 1984.9,4.5 1973.7,-29.0 C 1962.6,-62.4 1984.9,-118.1 2018.3,-151.5 Z" fill="url(#conicLeaf179)" opacity="0.20" transform="rotate(342.3 2018.3 -40.1)"/>
+    <path d="M 882.8,950.5 C 936.2,1003.9 971.9,1093.0 954.0,1146.5 C 936.2,1199.9 900.6,1253.4 882.8,1271.2 C 864.9,1253.4 829.3,1199.9 811.5,1146.5 C 793.7,1093.0 829.3,1003.9 882.8,950.5 Z" fill="url(#conicLeaf180)" opacity="0.20" transform="rotate(194.9 882.8 1128.7)"/>
+    <path d="M 771.0,1017.6 C 810.4,1056.9 836.6,1122.5 823.5,1161.9 C 810.4,1201.2 784.2,1240.5 771.0,1253.6 C 757.9,1240.5 731.7,1201.2 718.6,1161.9 C 705.5,1122.5 731.7,1056.9 771.0,1017.6 Z" fill="url(#conicLeaf181)" opacity="0.20" transform="rotate(45.9 771.0 1148.7)"/>
+    <path d="M 697.3,289.2 C 756.5,348.4 796.0,447.1 776.3,506.3 C 756.5,565.6 717.0,624.8 697.3,644.5 C 677.6,624.8 638.1,565.6 618.3,506.3 C 598.6,447.1 638.1,348.4 697.3,289.2 Z" fill="url(#conicLeaf182)" opacity="0.20" transform="rotate(253.1 697.3 486.6)"/>
+    <path d="M -103.8,1052.5 C -72.3,1084.0 -51.3,1136.6 -61.8,1168.1 C -72.3,1199.6 -93.3,1231.1 -103.8,1241.6 C -114.3,1231.1 -135.3,1199.6 -145.8,1168.1 C -156.3,1136.6 -135.3,1084.0 -103.8,1052.5 Z" fill="url(#conicLeaf183)" opacity="0.20" transform="rotate(280.1 -103.8 1157.6)"/>
+    <path d="M 697.4,470.4 C 750.6,523.6 786.1,612.3 768.4,665.5 C 750.6,718.7 715.1,771.9 697.4,789.7 C 679.7,771.9 644.2,718.7 626.4,665.5 C 608.7,612.3 644.2,523.6 697.4,470.4 Z" fill="url(#conicLeaf184)" opacity="0.20" transform="rotate(330.1 697.4 647.8)"/>
+    <path d="M 1318.3,958.6 C 1340.0,980.3 1354.5,1016.6 1347.3,1038.3 C 1340.0,1060.1 1325.5,1081.8 1318.3,1089.1 C 1311.0,1081.8 1296.5,1060.1 1289.3,1038.3 C 1282.0,1016.6 1296.5,980.3 1318.3,958.6 Z" fill="url(#conicLeaf185)" opacity="0.20" transform="rotate(34.6 1318.3 1031.1)"/>
+    <path d="M 1572.4,37.8 C 1606.4,71.8 1629.1,128.5 1617.7,162.5 C 1606.4,196.6 1583.7,230.6 1572.4,242.0 C 1561.0,230.6 1538.3,196.6 1527.0,162.5 C 1515.6,128.5 1538.3,71.8 1572.4,37.8 Z" fill="url(#conicLeaf186)" opacity="0.20" transform="rotate(251.9 1572.4 151.2)"/>
+    <path d="M 1951.4,1006.8 C 1993.2,1048.6 2021.1,1118.4 2007.2,1160.2 C 1993.2,1202.1 1965.3,1243.9 1951.4,1257.9 C 1937.4,1243.9 1909.5,1202.1 1895.6,1160.2 C 1881.6,1118.4 1909.5,1048.6 1951.4,1006.8 Z" fill="url(#conicLeaf187)" opacity="0.20" transform="rotate(297.1 1951.4 1146.3)"/>
+    <path d="M 59.3,-14.4 C 99.2,25.5 125.8,92.1 112.5,132.0 C 99.2,171.9 72.6,211.8 59.3,225.1 C 46.0,211.8 19.4,171.9 6.1,132.0 C -7.2,92.1 19.4,25.5 59.3,-14.4 Z" fill="url(#conicLeaf188)" opacity="0.20" transform="rotate(105.8 59.3 118.7)"/>
+    <path d="M 1525.6,255.6 C 1552.6,282.6 1570.6,327.6 1561.6,354.6 C 1552.6,381.6 1534.6,408.6 1525.6,417.6 C 1516.6,408.6 1498.6,381.6 1489.6,354.6 C 1480.6,327.6 1498.6,282.6 1525.6,255.6 Z" fill="url(#conicLeaf189)" opacity="0.20" transform="rotate(54.4 1525.6 345.6)"/>
+    <path d="M 1384.8,498.8 C 1435.6,549.7 1469.5,634.4 1452.6,685.3 C 1435.6,736.1 1401.7,787.0 1384.8,803.9 C 1367.8,787.0 1333.9,736.1 1317.0,685.3 C 1300.0,634.4 1333.9,549.7 1384.8,498.8 Z" fill="url(#conicLeaf190)" opacity="0.20" transform="rotate(73.2 1384.8 668.3)"/>
+    <path d="M 1882.1,849.1 C 1906.4,873.3 1922.5,913.8 1914.4,938.0 C 1906.4,962.2 1890.2,986.5 1882.1,994.6 C 1874.0,986.5 1857.9,962.2 1849.8,938.0 C 1841.7,913.8 1857.9,873.3 1882.1,849.1 Z" fill="url(#conicLeaf191)" opacity="0.20" transform="rotate(64.9 1882.1 929.9)"/>
+    <path d="M 286.7,899.3 C 316.5,929.1 336.3,978.6 326.4,1008.4 C 316.5,1038.2 296.6,1067.9 286.7,1077.8 C 276.8,1067.9 256.9,1038.2 247.0,1008.4 C 237.1,978.6 256.9,929.1 286.7,899.3 Z" fill="url(#conicLeaf192)" opacity="0.20" transform="rotate(296.1 286.7 998.5)"/>
+    <path d="M 940.1,4.0 C 977.8,41.7 1002.8,104.4 990.3,142.0 C 977.8,179.6 952.7,217.2 940.1,229.8 C 927.6,217.2 902.5,179.6 890.0,142.0 C 877.4,104.4 902.5,41.7 940.1,4.0 Z" fill="url(#conicLeaf193)" opacity="0.20" transform="rotate(277.6 940.1 129.5)"/>
+    <path d="M 1714.8,528.0 C 1775.3,588.5 1815.6,689.3 1795.5,749.8 C 1775.3,810.4 1735.0,870.9 1714.8,891.1 C 1694.6,870.9 1654.3,810.4 1634.1,749.8 C 1613.9,689.3 1654.3,588.5 1714.8,528.0 Z" fill="url(#conicLeaf194)" opacity="0.20" transform="rotate(69.9 1714.8 729.7)"/>
+    <path d="M 591.6,705.9 C 623.4,737.7 644.6,790.7 634.0,822.5 C 623.4,854.3 602.2,886.1 591.6,896.7 C 581.0,886.1 559.8,854.3 549.2,822.5 C 538.6,790.7 559.8,737.7 591.6,705.9 Z" fill="url(#conicLeaf195)" opacity="0.20" transform="rotate(267.9 591.6 811.9)"/>
+    <path d="M 118.3,369.4 C 177.5,428.6 217.0,527.2 197.2,586.4 C 177.5,645.5 138.1,704.7 118.3,724.4 C 98.6,704.7 59.2,645.5 39.4,586.4 C 19.7,527.2 59.2,428.6 118.3,369.4 Z" fill="url(#conicLeaf196)" opacity="0.20" transform="rotate(233.9 118.3 566.6)"/>
+    <path d="M 153.4,669.0 C 205.3,720.9 240.0,807.5 222.6,859.4 C 205.3,911.3 170.7,963.3 153.4,980.6 C 136.1,963.3 101.5,911.3 84.2,859.4 C 66.9,807.5 101.5,720.9 153.4,669.0 Z" fill="url(#conicLeaf197)" opacity="0.20" transform="rotate(322.3 153.4 842.1)"/>
+    <path d="M 1753.9,3.6 C 1791.9,41.7 1817.3,105.1 1804.6,143.2 C 1791.9,181.3 1766.6,219.4 1753.9,232.1 C 1741.2,219.4 1715.8,181.3 1703.1,143.2 C 1690.4,105.1 1715.8,41.7 1753.9,3.6 Z" fill="url(#conicLeaf198)" opacity="0.20" transform="rotate(250.3 1753.9 130.5)"/>
+    <path d="M 37.1,404.3 C 85.4,452.6 117.6,533.0 101.5,581.3 C 85.4,629.6 53.2,677.8 37.1,693.9 C 21.0,677.8 -11.2,629.6 -27.3,581.3 C -43.3,533.0 -11.2,452.6 37.1,404.3 Z" fill="url(#conicLeaf199)" opacity="0.20" transform="rotate(270.6 37.1 565.2)"/>
+    <path d="M 584.3,39.6 C 622.0,77.3 647.1,140.2 634.5,177.9 C 622.0,215.6 596.8,253.3 584.3,265.8 C 571.7,253.3 546.6,215.6 534.0,177.9 C 521.4,140.2 546.6,77.3 584.3,39.6 Z" fill="url(#conicLeaf200)" opacity="0.20" transform="rotate(317.0 584.3 165.3)"/>
+    <path d="M 423.8,535.9 C 444.2,556.3 457.8,590.3 451.0,610.7 C 444.2,631.1 430.6,651.5 423.8,658.3 C 417.0,651.5 403.4,631.1 396.6,610.7 C 389.8,590.3 403.4,556.3 423.8,535.9 Z" fill="url(#conicLeaf201)" opacity="0.20" transform="rotate(149.8 423.8 603.9)"/>
+    <path d="M 473.9,619.7 C 515.5,661.3 543.2,730.5 529.3,772.1 C 515.5,813.6 487.8,855.2 473.9,869.1 C 460.1,855.2 432.4,813.6 418.5,772.1 C 404.7,730.5 432.4,661.3 473.9,619.7 Z" fill="url(#conicLeaf202)" opacity="0.20" transform="rotate(309.3 473.9 758.2)"/>
+    <path d="M 725.2,522.5 C 771.7,568.9 802.6,646.3 787.1,692.7 C 771.7,739.1 740.7,785.6 725.2,801.0 C 709.8,785.6 678.8,739.1 663.3,692.7 C 647.9,646.3 678.8,568.9 725.2,522.5 Z" fill="url(#conicLeaf203)" opacity="0.20" transform="rotate(260.6 725.2 677.2)"/>
+    <path d="M 1360.7,688.8 C 1402.7,730.7 1430.6,800.6 1416.6,842.5 C 1402.7,884.5 1374.7,926.4 1360.7,940.4 C 1346.8,926.4 1318.8,884.5 1304.8,842.5 C 1290.9,800.6 1318.8,730.7 1360.7,688.8 Z" fill="url(#conicLeaf204)" opacity="0.20" transform="rotate(159.1 1360.7 828.6)"/>
+    <path d="M 1203.9,71.4 C 1256.7,124.2 1291.9,212.2 1274.3,264.9 C 1256.7,317.7 1221.5,370.5 1203.9,388.1 C 1186.3,370.5 1151.1,317.7 1133.5,264.9 C 1115.9,212.2 1151.1,124.2 1203.9,71.4 Z" fill="url(#conicLeaf205)" opacity="0.20" transform="rotate(336.6 1203.9 247.3)"/>
+    <path d="M 887.2,458.4 C 918.1,489.3 938.7,540.9 928.4,571.8 C 918.1,602.7 897.5,633.6 887.2,643.9 C 876.9,633.6 856.3,602.7 846.0,571.8 C 835.7,540.9 856.3,489.3 887.2,458.4 Z" fill="url(#conicLeaf206)" opacity="0.20" transform="rotate(282.6 887.2 561.5)"/>
+    <path d="M 32.7,1033.3 C 68.3,1069.0 92.1,1128.4 80.2,1164.0 C 68.3,1199.7 44.6,1235.4 32.7,1247.2 C 20.8,1235.4 -3.0,1199.7 -14.9,1164.0 C -26.7,1128.4 -3.0,1069.0 32.7,1033.3 Z" fill="url(#conicLeaf207)" opacity="0.20" transform="rotate(174.5 32.7 1152.2)"/>
+    <path d="M 72.8,871.3 C 102.0,900.5 121.4,949.1 111.7,978.3 C 102.0,1007.4 82.5,1036.6 72.8,1046.3 C 63.1,1036.6 43.6,1007.4 33.9,978.3 C 24.2,949.1 43.6,900.5 72.8,871.3 Z" fill="url(#conicLeaf208)" opacity="0.20" transform="rotate(238.1 72.8 968.5)"/>
+    <path d="M 1922.3,956.7 C 1957.6,992.0 1981.1,1050.7 1969.3,1085.9 C 1957.6,1121.2 1934.1,1156.4 1922.3,1168.1 C 1910.6,1156.4 1887.1,1121.2 1875.3,1085.9 C 1863.6,1050.7 1887.1,992.0 1922.3,956.7 Z" fill="url(#conicLeaf209)" opacity="0.20" transform="rotate(312.5 1922.3 1074.2)"/>
+    <path d="M 21.4,912.3 C 60.5,951.4 86.6,1016.6 73.6,1055.7 C 60.5,1094.8 34.4,1133.9 21.4,1147.0 C 8.3,1133.9 -17.7,1094.8 -30.8,1055.7 C -43.8,1016.6 -17.7,951.4 21.4,912.3 Z" fill="url(#conicLeaf210)" opacity="0.20" transform="rotate(132.9 21.4 1042.7)"/>
+    <path d="M 270.5,390.1 C 315.8,435.5 346.0,511.0 330.9,556.3 C 315.8,601.7 285.6,647.0 270.5,662.1 C 255.4,647.0 225.1,601.7 210.0,556.3 C 194.9,511.0 225.1,435.5 270.5,390.1 Z" fill="url(#conicLeaf211)" opacity="0.20" transform="rotate(352.0 270.5 541.2)"/>
+    <path d="M 1403.4,122.0 C 1445.3,164.0 1473.3,234.0 1459.3,275.9 C 1445.3,317.9 1417.4,359.9 1403.4,373.9 C 1389.4,359.9 1361.4,317.9 1347.4,275.9 C 1333.4,234.0 1361.4,164.0 1403.4,122.0 Z" fill="url(#conicLeaf212)" opacity="0.20" transform="rotate(167.9 1403.4 262.0)"/>
+    <path d="M 1810.5,121.8 C 1868.8,180.1 1907.7,277.3 1888.3,335.6 C 1868.8,393.9 1830.0,452.2 1810.5,471.6 C 1791.1,452.2 1752.2,393.9 1732.8,335.6 C 1713.4,277.3 1752.2,180.1 1810.5,121.8 Z" fill="url(#conicLeaf213)" opacity="0.20" transform="rotate(175.4 1810.5 316.1)"/>
+    <path d="M 1710.5,65.2 C 1751.6,106.4 1779.1,175.0 1765.4,216.2 C 1751.6,257.3 1724.2,298.5 1710.5,312.2 C 1696.7,298.5 1669.3,257.3 1655.6,216.2 C 1641.9,175.0 1669.3,106.4 1710.5,65.2 Z" fill="url(#conicLeaf214)" opacity="0.20" transform="rotate(34.1 1710.5 202.5)"/>
+    <path d="M 2036.7,250.4 C 2089.3,303.0 2124.4,390.7 2106.9,443.4 C 2089.3,496.0 2054.2,548.6 2036.7,566.2 C 2019.1,548.6 1984.1,496.0 1966.5,443.4 C 1949.0,390.7 1984.1,303.0 2036.7,250.4 Z" fill="url(#conicLeaf215)" opacity="0.20" transform="rotate(171.1 2036.7 425.8)"/>
+    <path d="M 434.5,-108.4 C 461.0,-81.9 478.7,-37.6 469.9,-11.1 C 461.0,15.5 443.3,42.0 434.5,50.9 C 425.6,42.0 407.9,15.5 399.1,-11.1 C 390.2,-37.6 407.9,-81.9 434.5,-108.4 Z" fill="url(#conicLeaf216)" opacity="0.20" transform="rotate(147.9 434.5 -19.9)"/>
+    <path d="M 868.6,664.9 C 902.1,698.4 924.5,754.4 913.3,788.0 C 902.1,821.5 879.8,855.1 868.6,866.3 C 857.4,855.1 835.0,821.5 823.8,788.0 C 812.6,754.4 835.0,698.4 868.6,664.9 Z" fill="url(#conicLeaf217)" opacity="0.20" transform="rotate(75.5 868.6 776.8)"/>
+    <path d="M 82.8,1031.2 C 117.5,1066.0 140.7,1123.9 129.1,1158.6 C 117.5,1193.3 94.4,1228.1 82.8,1239.6 C 71.2,1228.1 48.1,1193.3 36.5,1158.6 C 24.9,1123.9 48.1,1066.0 82.8,1031.2 Z" fill="url(#conicLeaf218)" opacity="0.20" transform="rotate(278.5 82.8 1147.0)"/>
+    <path d="M 372.3,-71.6 C 403.5,-40.4 424.3,11.6 413.9,42.8 C 403.5,74.0 382.7,105.2 372.3,115.6 C 361.9,105.2 341.1,74.0 330.7,42.8 C 320.3,11.6 341.1,-40.4 372.3,-71.6 Z" fill="url(#conicLeaf219)" opacity="0.20" transform="rotate(286.9 372.3 32.4)"/>
+    <path d="M 1317.5,19.1 C 1358.5,60.1 1385.9,128.4 1372.2,169.4 C 1358.5,210.4 1331.2,251.4 1317.5,265.1 C 1303.9,251.4 1276.6,210.4 1262.9,169.4 C 1249.2,128.4 1276.6,60.1 1317.5,19.1 Z" fill="url(#conicLeaf220)" opacity="0.20" transform="rotate(298.6 1317.5 155.8)"/>
+    <path d="M 1148.6,950.9 C 1208.3,1010.7 1248.2,1110.2 1228.3,1170.0 C 1208.3,1229.8 1168.5,1289.5 1148.6,1309.4 C 1128.7,1289.5 1088.8,1229.8 1068.9,1170.0 C 1049.0,1110.2 1088.8,1010.7 1148.6,950.9 Z" fill="url(#conicLeaf221)" opacity="0.20" transform="rotate(228.5 1148.6 1150.1)"/>
+    <path d="M 352.0,-174.8 C 405.4,-121.4 441.0,-32.5 423.2,20.9 C 405.4,74.2 369.8,127.6 352.0,145.4 C 334.2,127.6 298.7,74.2 280.9,20.9 C 263.1,-32.5 298.7,-121.4 352.0,-174.8 Z" fill="url(#conicLeaf222)" opacity="0.20" transform="rotate(239.7 352.0 3.1)"/>
+    <path d="M 1112.5,410.3 C 1160.4,458.2 1192.4,538.1 1176.4,586.0 C 1160.4,634.0 1128.5,681.9 1112.5,697.9 C 1096.5,681.9 1064.6,634.0 1048.6,586.0 C 1032.6,538.1 1064.6,458.2 1112.5,410.3 Z" fill="url(#conicLeaf223)" opacity="0.20" transform="rotate(40.0 1112.5 570.1)"/>
+    <path d="M -168.6,991.8 C -138.8,1021.6 -119.0,1071.2 -128.9,1101.0 C -138.8,1130.8 -158.7,1160.5 -168.6,1170.5 C -178.6,1160.5 -198.4,1130.8 -208.3,1101.0 C -218.3,1071.2 -198.4,1021.6 -168.6,991.8 Z" fill="url(#conicLeaf224)" opacity="0.20" transform="rotate(169.9 -168.6 1091.0)"/>
+    <path d="M 71.7,829.5 C 118.0,875.8 148.9,953.0 133.4,999.3 C 118.0,1045.5 87.2,1091.8 71.7,1107.2 C 56.3,1091.8 25.5,1045.5 10.0,999.3 C -5.4,953.0 25.5,875.8 71.7,829.5 Z" fill="url(#conicLeaf225)" opacity="0.20" transform="rotate(334.9 71.7 983.8)"/>
+    <path d="M 1631.0,135.6 C 1671.0,175.6 1697.7,242.3 1684.4,282.4 C 1671.0,322.4 1644.3,362.4 1631.0,375.7 C 1617.7,362.4 1591.0,322.4 1577.6,282.4 C 1564.3,242.3 1591.0,175.6 1631.0,135.6 Z" fill="url(#conicLeaf226)" opacity="0.20" transform="rotate(268.4 1631.0 269.0)"/>
+    <path d="M 1464.2,712.4 C 1507.7,755.9 1536.7,828.4 1522.2,871.9 C 1507.7,915.4 1478.7,958.8 1464.2,973.3 C 1449.7,958.8 1420.7,915.4 1406.2,871.9 C 1391.7,828.4 1420.7,755.9 1464.2,712.4 Z" fill="url(#conicLeaf227)" opacity="0.20" transform="rotate(264.5 1464.2 857.4)"/>
+    <path d="M 393.6,806.5 C 441.6,854.5 473.6,934.5 457.6,982.5 C 441.6,1030.5 409.6,1078.5 393.6,1094.5 C 377.6,1078.5 345.6,1030.5 329.6,982.5 C 313.6,934.5 345.6,854.5 393.6,806.5 Z" fill="url(#conicLeaf228)" opacity="0.20" transform="rotate(122.4 393.6 966.5)"/>
+    <path d="M 968.1,-206.9 C 997.8,-177.1 1017.7,-127.5 1007.8,-97.8 C 997.8,-68.0 978.0,-38.2 968.1,-28.3 C 958.2,-38.2 938.3,-68.0 928.4,-97.8 C 918.5,-127.5 938.3,-177.1 968.1,-206.9 Z" fill="url(#conicLeaf229)" opacity="0.20" transform="rotate(208.2 968.1 -107.7)"/>
+    <path d="M 126.5,-111.0 C 154.6,-82.9 173.3,-36.2 163.9,-8.2 C 154.6,19.8 135.9,47.9 126.5,57.2 C 117.2,47.9 98.5,19.8 89.2,-8.2 C 79.8,-36.2 98.5,-82.9 126.5,-111.0 Z" fill="url(#conicLeaf230)" opacity="0.20" transform="rotate(11.2 126.5 -17.5)"/>
+    <path d="M 77.3,973.8 C 110.3,1006.8 132.2,1061.7 121.3,1094.7 C 110.3,1127.7 88.3,1160.7 77.3,1171.7 C 66.3,1160.7 44.3,1127.7 33.3,1094.7 C 22.3,1061.7 44.3,1006.8 77.3,973.8 Z" fill="url(#conicLeaf231)" opacity="0.20" transform="rotate(203.6 77.3 1083.7)"/>
+    <path d="M 1207.6,-236.7 C 1267.0,-177.2 1306.7,-78.2 1286.9,-18.7 C 1267.0,40.7 1227.4,100.2 1207.6,120.0 C 1187.8,100.2 1148.2,40.7 1128.3,-18.7 C 1108.5,-78.2 1148.2,-177.2 1207.6,-236.7 Z" fill="url(#conicLeaf232)" opacity="0.20" transform="rotate(154.8 1207.6 -38.5)"/>
+    <path d="M 1569.2,404.0 C 1596.0,430.9 1613.9,475.6 1604.9,502.4 C 1596.0,529.2 1578.1,556.0 1569.2,565.0 C 1560.2,556.0 1542.3,529.2 1533.4,502.4 C 1524.5,475.6 1542.3,430.9 1569.2,404.0 Z" fill="url(#conicLeaf233)" opacity="0.20" transform="rotate(54.4 1569.2 493.4)"/>
+    <path d="M 44.4,237.9 C 90.8,284.3 121.7,361.6 106.2,408.0 C 90.8,454.4 59.8,500.8 44.4,516.3 C 28.9,500.8 -2.0,454.4 -17.5,408.0 C -32.9,361.6 -2.0,284.3 44.4,237.9 Z" fill="url(#conicLeaf234)" opacity="0.20" transform="rotate(31.2 44.4 392.6)"/>
+    </g>
+
+    <!-- Full-height text with complex clip path -->
+    <g clip-path="url(#complexClip)">
+      <text x="922.1" y="916.9"
+            font-family="Arial, Helvetica, sans-serif"
+            font-size="1080px"
+            font-weight="bold"
+            fill="url(#textGrad)"
+            stroke="#FF1493"
+            stroke-width="8"
+            text-anchor="middle"
+            filter="url(#glow)"
+            transform="rotate(5.1 960.0 540.0)">
+        H
+      </text>
+    </g>
+
+  </g>
+
+  <!-- Frame counter (not scaled) -->
+  <text x="960.0" y="1050.0"
+        font-family="monospace"
+        font-size="24px"
+        fill="#FFFFFF"
+        text-anchor="middle"
+        opacity="0.7">
+    Frame 00203 - Scale 3.0x
+  </text>
+</svg>

@@ -253,13 +253,38 @@ if [ $? -eq 0 ]; then
     file "$TARGET"
     lipo -info "$TARGET" 2>/dev/null || true
 
-    # Sign the executable (required for macOS to run unsigned binaries)
-    log_info "Signing executable..."
-    codesign --force --sign - "$TARGET"
-    if [ $? -eq 0 ]; then
-        log_info "Code signing successful"
+    # Code signing
+    if [ -n "${CODESIGN_IDENTITY:-}" ]; then
+        log_info "Code signing with identity: $CODESIGN_IDENTITY"
+        ENTITLEMENTS_FILE="$PROJECT_ROOT/macos-sdk/FBFSVGPlayer/entitlements.plist"
+        if [ -f "$ENTITLEMENTS_FILE" ]; then
+            codesign --force --sign "$CODESIGN_IDENTITY" \
+                     --options runtime \
+                     --entitlements "$ENTITLEMENTS_FILE" \
+                     "$TARGET"
+        else
+            log_warn "Entitlements file not found at $ENTITLEMENTS_FILE, signing without entitlements"
+            codesign --force --sign "$CODESIGN_IDENTITY" \
+                     --options runtime \
+                     "$TARGET"
+        fi
+        # Verify signature
+        codesign --verify --verbose=2 "$TARGET"
+        if [ $? -eq 0 ]; then
+            log_info "Code signing successful (identity: $CODESIGN_IDENTITY)"
+        else
+            log_error "Code signature verification failed"
+            exit 1
+        fi
     else
-        log_warn "Code signing failed - binary may not run on macOS"
+        # Ad-hoc signing (required for macOS to run unsigned binaries)
+        log_info "Ad-hoc signing executable (CODESIGN_IDENTITY not set)..."
+        codesign --force --sign - "$TARGET"
+        if [ $? -eq 0 ]; then
+            log_info "Ad-hoc code signing successful"
+        else
+            log_warn "Code signing failed - binary may not run on macOS"
+        fi
     fi
 else
     log_error "Build failed"

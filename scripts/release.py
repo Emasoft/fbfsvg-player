@@ -20,6 +20,7 @@ Usage:
     python3 scripts/release.py --version 0.2.0 --skip-build
     python3 scripts/release.py --version 0.2.0 --platform macos
     python3 scripts/release.py --version 0.2.0 --no-confirm
+    python3 scripts/release.py --version 0.2.0 --ci  # GitHub Actions mode
 """
 
 import argparse
@@ -121,6 +122,15 @@ PLATFORM_ALIASES = {
 # =============================================================================
 
 LOG_FILE: Optional[Path] = None
+CI_MODE: bool = (
+    False  # Set to True to suppress colors and enable machine-readable output
+)
+
+
+def set_ci_mode(enabled: bool) -> None:
+    """Enable or disable CI mode globally."""
+    global CI_MODE
+    CI_MODE = enabled
 
 
 def init_logging(log_dir: Path) -> None:
@@ -135,15 +145,28 @@ def init_logging(log_dir: Path) -> None:
 def log(msg: str, level: str = "INFO") -> None:
     """Print a log message with timestamp and level."""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    colors = {
-        "INFO": "\033[0;36m",  # Cyan
-        "SUCCESS": "\033[0;32m",  # Green
-        "WARNING": "\033[0;33m",  # Yellow
-        "ERROR": "\033[0;31m",  # Red
-        "STEP": "\033[1;35m",  # Bold Magenta
-        "DEBUG": "\033[0;90m",  # Gray
-    }
-    reset = "\033[0m"
+
+    # Suppress colors in CI mode for machine-readable output
+    if CI_MODE:
+        colors: dict[str, str] = {
+            "INFO": "",
+            "SUCCESS": "",
+            "WARNING": "",
+            "ERROR": "",
+            "STEP": "",
+            "DEBUG": "",
+        }
+        reset = ""
+    else:
+        colors = {
+            "INFO": "\033[0;36m",  # Cyan
+            "SUCCESS": "\033[0;32m",  # Green
+            "WARNING": "\033[0;33m",  # Yellow
+            "ERROR": "\033[0;31m",  # Red
+            "STEP": "\033[1;35m",  # Bold Magenta
+            "DEBUG": "\033[0;90m",  # Gray
+        }
+        reset = "\033[0m"
     color = colors.get(level, "")
 
     # Console output
@@ -169,6 +192,7 @@ def run_cmd(
     retry: int = 0,
     retry_delay: int = NETWORK_RETRY_DELAY,
     timeout: Optional[int] = None,
+    env: Optional[dict[str, str]] = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run a shell command with logging and optional retry."""
     cmd_str = " ".join(str(c) for c in cmd)
@@ -177,6 +201,12 @@ def run_cmd(
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     log(f"Executing: {cmd_str}", "DEBUG")
+
+    # Merge custom env with current environment if provided
+    run_env = None
+    if env:
+        run_env = os.environ.copy()
+        run_env.update(env)
 
     last_error = None
     for attempt in range(retry + 1):
@@ -188,6 +218,7 @@ def run_cmd(
                 text=True,
                 check=check,
                 timeout=timeout,
+                env=run_env,
             )
             return result
         except subprocess.CalledProcessError as e:
@@ -595,7 +626,20 @@ def build_macos_arch(
             if rosetta_prefix:
                 cmd = rosetta_prefix + cmd
 
-        run_cmd(cmd, cwd=project_root, dry_run=dry_run, timeout=1800)  # 30 min timeout
+        # Pass CODESIGN_IDENTITY to build script if available
+        build_env = {}
+        codesign_identity = os.environ.get("CODESIGN_IDENTITY")
+        if codesign_identity:
+            build_env["CODESIGN_IDENTITY"] = codesign_identity
+            log(f"Code signing enabled with identity: {codesign_identity}", "INFO")
+
+        run_cmd(
+            cmd,
+            cwd=project_root,
+            dry_run=dry_run,
+            timeout=1800,
+            env=build_env if build_env else None,
+        )  # 30 min timeout
 
         binary_name = config["binary_name"]
         binary_path = project_root / "build" / binary_name
@@ -1463,6 +1507,35 @@ def confirm_publish(
 
 
 # =============================================================================
+# CI Summary
+# =============================================================================
+
+
+def write_ci_summary(
+    release_dir: Path,
+    version: str,
+    tag: str,
+    success: bool,
+    packages: list["PackageResult"],
+    errors: list[str],
+) -> None:
+    """Write JSON summary for CI systems to release/release-summary.json."""
+    summary = {
+        "version": version,
+        "tag": tag,
+        "success": success,
+        "packages": [
+            {"name": pkg.path.name, "sha256": pkg.sha256, "size": pkg.size}
+            for pkg in packages
+        ],
+        "errors": errors,
+    }
+    summary_path = release_dir / "release-summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2) + "\n")
+    log(f"CI summary written to {summary_path}", "INFO")
+
+
+# =============================================================================
 # Main Release Workflow
 # =============================================================================
 
@@ -1474,10 +1547,32 @@ def run_release(
     dry_run: bool = False,
     no_confirm: bool = False,
     parallel_macos: bool = True,
-) -> None:
-    """Run the complete release workflow."""
+    ci_mode: bool = False,
+) -> int:
+    """Run the complete release workflow.
+
+    Args:
+        version: Version string (e.g., "0.2.0")
+        platforms: List of platforms to build (default: all)
+        skip_build: Skip build step and use existing binaries
+        dry_run: Show what would be done without making changes
+        no_confirm: Skip interactive publish confirmation
+        parallel_macos: Build macOS architectures in parallel
+        ci_mode: Enable CI mode (no colors, JSON summary, exit codes)
+
+    Returns:
+        Exit code: 0=success, 1=error, 2=partial success
+    """
+    # Enable CI mode globally if requested
+    if ci_mode:
+        set_ci_mode(True)
+        no_confirm = True  # CI mode implies no interactive confirmation
+
     project_root = Path(__file__).parent.parent.resolve()
     release_dir = project_root / "release"
+
+    # Track errors for CI summary
+    errors: list[str] = []
 
     # Initialize logging
     init_logging(release_dir)
@@ -1492,7 +1587,10 @@ def run_release(
     if not validate_version(version):
         log(f"Invalid version format: {version}", "ERROR")
         log("Expected format: X.Y.Z or X.Y.Z-suffix", "ERROR")
-        sys.exit(1)
+        errors.append(f"Invalid version format: {version}")
+        if ci_mode:
+            write_ci_summary(release_dir, version, "", False, [], errors)
+        return 1
 
     # Determine platforms to build
     if platforms is None:
@@ -1519,7 +1617,10 @@ def run_release(
 
     if not run_preflight_checks(project_root, platforms, skip_build):
         if not dry_run:
-            sys.exit(1)
+            errors.append("Pre-flight checks failed")
+            if ci_mode:
+                write_ci_summary(release_dir, version, f"v{version}", False, [], errors)
+            return 1
         else:
             log("[DRY-RUN] Continuing despite preflight failures", "WARNING")
 
@@ -1592,7 +1693,10 @@ def run_release(
     successful_builds = [r for r in build_results.values() if r.success]
     if not successful_builds and not dry_run:
         log("No successful builds, aborting release", "ERROR")
-        sys.exit(1)
+        errors.append("No successful builds")
+        if ci_mode:
+            write_ci_summary(release_dir, version, f"v{version}", False, [], errors)
+        return 1
 
     # Step 2: Create packages
     log("=" * 60)
@@ -1603,7 +1707,10 @@ def run_release(
 
     if not packages and not dry_run:
         log("No packages created, aborting release", "ERROR")
-        sys.exit(1)
+        errors.append("No packages created")
+        if ci_mode:
+            write_ci_summary(release_dir, version, f"v{version}", False, [], errors)
+        return 1
 
     # Create checksums file
     if packages:
@@ -1620,7 +1727,12 @@ def run_release(
     tag = create_draft_release(version, packages, checksums_path, dry_run)
     if not tag:
         log("Failed to create draft release", "ERROR")
-        sys.exit(1)
+        errors.append("Failed to create draft release")
+        if ci_mode:
+            write_ci_summary(
+                release_dir, version, f"v{version}", False, packages, errors
+            )
+        return 1
 
     # Step 4: Validate release
     log("=" * 60)
@@ -1630,7 +1742,10 @@ def run_release(
     if not validate_release(tag, packages, dry_run):
         log("Release validation failed", "ERROR")
         log("Draft release preserved for manual inspection", "WARNING")
-        sys.exit(1)
+        errors.append("Release validation failed")
+        if ci_mode:
+            write_ci_summary(release_dir, version, tag, False, packages, errors)
+        return 1
 
     # Step 5: Interactive confirmation
     log("=" * 60)
@@ -1643,7 +1758,12 @@ def run_release(
             f"Draft release preserved: https://github.com/{GITHUB_REPO}/releases/tag/{tag}",
             "INFO",
         )
-        sys.exit(0)
+        # User cancellation is not an error, exit code 0
+        if ci_mode:
+            write_ci_summary(
+                release_dir, version, tag, True, packages, ["Cancelled by user"]
+            )
+        return 0
 
     # Step 6: Publish release
     log("=" * 60)
@@ -1652,7 +1772,10 @@ def run_release(
 
     if not publish_release(tag, dry_run):
         log("Failed to publish release", "ERROR")
-        sys.exit(1)
+        errors.append("Failed to publish release")
+        if ci_mode:
+            write_ci_summary(release_dir, version, tag, False, packages, errors)
+        return 1
 
     # Step 7: Update package manifests
     log("=" * 60)
@@ -1676,6 +1799,12 @@ def run_release(
     if LOG_FILE:
         log(f"Full log: {LOG_FILE}")
 
+    # Write CI summary on success
+    if ci_mode:
+        write_ci_summary(release_dir, version, tag, True, packages, [])
+
+    return 0
+
 
 # =============================================================================
 # CLI Entry Point
@@ -1693,6 +1822,7 @@ Examples:
   python3 scripts/release.py --version 0.2.0 --skip-build
   python3 scripts/release.py --version 0.2.0 --platform macos linux
   python3 scripts/release.py --version 0.2.0 --no-confirm
+  python3 scripts/release.py --version 0.2.0 --ci  # GitHub Actions mode
 
 Features:
   • Pre-flight checks for dependencies, Skia libraries, disk space
@@ -1702,6 +1832,7 @@ Features:
   • Network retry logic for GitHub API calls
   • Interactive publish confirmation
   • Detailed logging to file
+  • CI mode for GitHub Actions (--ci)
         """,
     )
 
@@ -1744,17 +1875,25 @@ Features:
         help="Build macOS architectures sequentially (default: parallel)",
     )
 
+    parser.add_argument(
+        "--ci",
+        action="store_true",
+        help="CI mode: no colors, JSON summary, exit codes (0=success, 1=error, 2=partial)",
+    )
+
     args = parser.parse_args()
 
     try:
-        run_release(
+        exit_code = run_release(
             version=args.version,
             platforms=args.platform,
             skip_build=args.skip_build,
             dry_run=args.dry_run,
             no_confirm=args.no_confirm,
             parallel_macos=not args.sequential_macos,
+            ci_mode=args.ci,
         )
+        sys.exit(exit_code)
     except KeyboardInterrupt:
         log("\nRelease cancelled by user", "WARNING")
         sys.exit(130)

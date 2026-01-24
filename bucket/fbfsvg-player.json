@@ -18,5 +18,12 @@
                 "url": "https://github.com/Emasoft/fbfsvg-player/releases/download/v$version/fbfsvg-player-$version-windows-x64.zip"
             }
         }
+    },
+    "test": {
+        "script": [
+            "$output = & \"$dir\\fbfsvg-player.exe\" --version 2>&1",
+            "if ($LASTEXITCODE -ne 0) { throw \"Version check failed\" }",
+            "if ($output -notmatch 'FBF\\.SVG Player') { throw \"Unexpected output: $output\" }"
+        ]
     }
 }

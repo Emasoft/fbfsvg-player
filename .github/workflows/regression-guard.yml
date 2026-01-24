@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.platform }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   issues: write
@@ -13,7 +17,15 @@ permissions:
 
 jobs:
   regression-test:
-    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos
+          - os: ubuntu-24.04
+            platform: linux
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
 
     steps:
@@ -24,8 +36,14 @@ jobs:
 
       - name: Setup Build Environment
         run: |
-          # Install dependencies if needed
-          brew install jq || true
+          if [[ "${{ matrix.platform }}" == "macos" ]]; then
+            brew install jq || true
+          else
+            sudo apt-get update
+            sudo apt-get install -y jq build-essential clang ninja-build pkg-config \
+              libsdl2-dev libgl1-mesa-dev libegl1-mesa-dev libfreetype6-dev \
+              libfontconfig1-dev libicu-dev libpng-dev libjpeg-dev libwebp-dev
+          fi
 
       - name: Build Test Suite
         run: |
@@ -46,7 +64,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: test-report-${{ github.sha }}
+          name: test-report-${{ matrix.platform }}-${{ github.sha }}
           path: |
             test-report.json
             test-output.log
@@ -70,7 +88,7 @@ jobs:
 
           # Get last known good commit
           PLATFORM=$(uname -m)
-          BASELINE_DIR="tests/baselines/macos_${PLATFORM}"
+          BASELINE_DIR="tests/baselines/${{ matrix.platform }}_${PLATFORM}"
           LAST_GOOD=$(cat "${BASELINE_DIR}/commit_hash.txt" 2>/dev/null || echo "unknown")
 
           # Create GitHub issue
@@ -118,11 +136,11 @@ See issue for details."
             echo "Performance improved, updating baselines"
 
             PLATFORM=$(uname -m)
-            BASELINE_DIR="tests/baselines/macos_${PLATFORM}"
+            BASELINE_DIR="tests/baselines/${{ matrix.platform }}_${PLATFORM}"
             TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
             # Update baselines with proper format (version, timestamp, platform, metrics)
-            jq --arg ts "${TIMESTAMP}" --arg plat "macos_${PLATFORM}" \
+            jq --arg ts "${TIMESTAMP}" --arg plat "${{ matrix.platform }}_${PLATFORM}" \
               '{version: 1, timestamp: $ts, platform: $plat, metrics: .metrics}' \
               test-report.json > "${BASELINE_DIR}/performance.json"
             git rev-parse HEAD > "${BASELINE_DIR}/commit_hash.txt"

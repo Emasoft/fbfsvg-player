@@ -397,7 +397,7 @@ log_info "Target: $TARGET"
 # Includes folder browser, file dialog, thumbnail cache, and remote control for browser mode
 # Link order: source -> Skia modules -> Skia core -> Skia deps -> ICU -> system libs
 # Conditionally include Graphite Vulkan context if Vulkan is available
-GRAPHITE_SOURCE=""
+GRAPHITE_SOURCE="$SRC_DIR/graphite_context_stub.cpp"
 if [ "$VULKAN_AVAILABLE" = true ]; then
     GRAPHITE_SOURCE="$SRC_DIR/graphite_context_vulkan.cpp"
 fi

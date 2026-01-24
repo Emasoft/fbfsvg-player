@@ -73,7 +73,7 @@
 // Metal GPU backend for macOS (optional, enabled with --metal flag)
 #ifdef __APPLE__
 #include "metal_context.h"
-#include "graphite_context.h"  // Graphite next-gen GPU backend (--graphite flag)
+#include "graphite_context.h"  // Graphite next-gen GPU backend (default, use --cpu to disable)
 #endif
 
 // =============================================================================
@@ -539,7 +539,7 @@ void printHelp(const char* programName) {
     std::cerr << "    --json            Output benchmark stats as JSON (for scripting)\n";
 #ifdef __APPLE__
     std::cerr << "    --metal           Enable Metal GPU backend (Ganesh)\n";
-    std::cerr << "    --graphite        Enable Graphite GPU backend (next-gen, Metal)\n";
+    std::cerr << "    --cpu             Use CPU raster rendering instead of Graphite GPU\n";
 #endif
     std::cerr << "\n";
     std::cerr << "KEYBOARD CONTROLS:\n";
@@ -1901,7 +1901,7 @@ int main(int argc, char* argv[]) {
     int remoteControlPort = 9999;  // Default remote control port
 #ifdef __APPLE__
     bool useMetalBackend = false;  // Use Metal GPU backend (Ganesh)
-    bool useGraphiteBackend = false;  // Use Graphite GPU backend (next-gen)
+    bool useGraphiteBackend = true;  // Use Graphite GPU backend (next-gen, default)
 #endif
     int benchmarkDuration = 0;  // Benchmark mode: run for N seconds then exit (0 = disabled)
     std::string screenshotPath;  // Auto-save screenshot after first frame (for benchmarks)
@@ -1989,9 +1989,10 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--metal") == 0) {
             // Enable Metal GPU backend (Ganesh)
             useMetalBackend = true;
-        } else if (strcmp(argv[i], "--graphite") == 0) {
-            // Enable Graphite GPU backend (next-gen Metal)
-            useGraphiteBackend = true;
+        } else if (strcmp(argv[i], "--cpu") == 0) {
+            // Use CPU raster rendering instead of Graphite GPU
+            useGraphiteBackend = false;
+            std::cerr << "CPU raster rendering enabled (Graphite GPU disabled)\n";
 #endif
         } else if (strncmp(argv[i], "--screenshot=", 13) == 0) {
             // Auto-save screenshot after first frame (for benchmarks)

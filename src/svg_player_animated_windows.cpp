@@ -29,6 +29,8 @@
 #include <sstream>
 #include <thread>
 #include <vector>
+#include <algorithm>  // For std::sort
+#include <regex>      // For frame number extraction
 
 // Windows-specific includes (replacing Unix equivalents)
 #include <windows.h>
@@ -61,8 +63,11 @@
 // Thumbnail cache for background-threaded SVG thumbnail loading
 #include "thumbnail_cache.h"
 
-// Graphite next-gen GPU backend (Vulkan on Windows, enabled with --graphite flag)
+// Graphite next-gen GPU backend (Vulkan on Windows, default, use --cpu to disable)
 #include "graphite_context.h"
+
+// Remote control server for programmatic control via TCP/JSON
+#include "remote_control.h"
 
 // Windows PATH_MAX equivalent
 #ifndef PATH_MAX
@@ -109,6 +114,7 @@ static std::atomic<bool> g_shutdownRequested{false};
 // - Handles user input and rendering
 // =============================================================================
 static bool g_browserMode = false;
+static bool g_jsonOutput = false;              // --json flag for benchmark JSON output
 static bool g_browserAsyncScanning = false;  // True when async scan in progress
 static svgplayer::FolderBrowser g_folderBrowser;
 static sk_sp<SkSVGDOM> g_browserSvgDom;  // Parsed browser SVG for rendering
@@ -321,6 +327,100 @@ bool fileExists(const char* path) {
     return (attrs & FILE_ATTRIBUTE_DIRECTORY) == 0;
 }
 
+// Check if path is a directory using Windows API
+bool isDirectory(const char* path) {
+    DWORD attrs = GetFileAttributesA(path);
+    if (attrs == INVALID_FILE_ATTRIBUTES) {
+        return false;
+    }
+    return (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+// =============================================================================
+// SVG Image Sequence (folder of individual SVG frames) support
+// =============================================================================
+
+// Extract frame number from filename (e.g., "frame_0001.svg" -> 1)
+int extractFrameNumber(const std::string& filename) {
+    // Try pattern: name_NNNN.svg (underscore before number)
+    std::regex pattern("_(\\d+)\\.svg$", std::regex::icase);
+    std::smatch match;
+    if (std::regex_search(filename, match, pattern)) {
+        return std::stoi(match[1].str());
+    }
+    // Try fallback: NNNN.svg (just number before extension)
+    std::regex fallback("(\\d+)\\.svg$", std::regex::icase);
+    if (std::regex_search(filename, match, fallback)) {
+        return std::stoi(match[1].str());
+    }
+    return -1;  // No number found
+}
+
+// Scan folder for SVG files and return sorted list of paths (Windows API)
+std::vector<std::string> scanFolderForSVGSequence(const std::string& folderPath) {
+    std::vector<std::pair<int, std::string>> frameFiles;
+
+    // Build search pattern: folderPath\*.svg
+    std::string searchPattern = folderPath + "\\*.svg";
+
+    WIN32_FIND_DATAA findData;
+    HANDLE hFind = FindFirstFileA(searchPattern.c_str(), &findData);
+
+    if (hFind == INVALID_HANDLE_VALUE) {
+        // Try with forward slashes
+        searchPattern = folderPath + "/*.svg";
+        hFind = FindFirstFileA(searchPattern.c_str(), &findData);
+        if (hFind == INVALID_HANDLE_VALUE) {
+            std::cerr << "Error: Cannot open folder or no SVG files found: " << folderPath << std::endl;
+            return {};
+        }
+    }
+
+    do {
+        std::string name = findData.cFileName;
+        // Skip directories
+        if (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+            continue;
+        }
+        // Check for .svg extension (case-insensitive)
+        if (name.size() > 4) {
+            std::string ext = name.substr(name.size() - 4);
+            // Convert to lowercase for comparison
+            for (auto& c : ext) c = static_cast<char>(tolower(c));
+            if (ext == ".svg") {
+                int frameNum = extractFrameNumber(name);
+                // Use forward slashes for consistency
+                std::string fullPath = folderPath + "/" + name;
+                // Convert backslashes to forward slashes
+                std::replace(fullPath.begin(), fullPath.end(), '\\', '/');
+                frameFiles.push_back({frameNum, fullPath});
+            }
+        }
+    } while (FindNextFileA(hFind, &findData));
+
+    FindClose(hFind);
+
+    if (frameFiles.empty()) {
+        std::cerr << "Error: No SVG files found in folder: " << folderPath << std::endl;
+        return {};
+    }
+
+    // Sort by frame number (files without numbers sorted alphabetically at end)
+    std::sort(frameFiles.begin(), frameFiles.end(), [](const auto& a, const auto& b) {
+        if (a.first == -1 && b.first == -1) return a.second < b.second;  // Both no number: alphabetical
+        if (a.first == -1) return false;  // No number goes after numbered
+        if (b.first == -1) return true;   // Numbered comes before no number
+        return a.first < b.first;         // Both have numbers: sort by number
+    });
+
+    std::vector<std::string> result;
+    result.reserve(frameFiles.size());
+    for (const auto& [num, path] : frameFiles) {
+        result.push_back(path);
+    }
+    return result;
+}
+
 // Get file size in bytes
 size_t getFileSize(const char* path) {
     struct _stat64 st;
@@ -360,16 +460,34 @@ void printHelp(const char* programName) {
     std::cerr << "    -h, --help        Show this help message and exit\n";
     std::cerr << "    -v, --version     Show version information and exit\n";
     std::cerr << "    -f, --fullscreen  Start in fullscreen mode\n";
-    std::cerr << "    --graphite        Enable Graphite GPU backend (next-gen, Vulkan)\n\n";
+    std::cerr << "    -w, --windowed    Start in windowed mode (default)\n";
+    std::cerr << "    -m, --maximize    Start maximized (windowed mode)\n";
+    std::cerr << "    --pos=X,Y         Set initial window position\n";
+    std::cerr << "    --size=WxH        Set initial window size (e.g., --size=800x600)\n";
+    std::cerr << "    --cpu             Use CPU raster rendering instead of Graphite GPU\n";
+    std::cerr << "    --sequential      Disable parallel rendering\n";
+    std::cerr << "    --duration=SECS   Run for specified duration then exit (benchmark mode)\n";
+    std::cerr << "    --benchmark=N     Run N frames then exit (benchmark mode)\n";
+    std::cerr << "    --json            Output benchmark results as JSON\n";
+    std::cerr << "    --screenshot=PATH Save screenshot to file and exit\n";
+    std::cerr << "    --remote-control[=PORT]  Enable TCP remote control (default port: 9999)\n";
+    std::cerr << "    --port=PORT       Alias for --remote-control=PORT\n\n";
     std::cerr << "KEYBOARD CONTROLS:\n";
     std::cerr << "    Space         Play/Pause animation\n";
     std::cerr << "    R             Restart animation from beginning\n";
-    std::cerr << "    F             Toggle fullscreen mode\n";
+    std::cerr << "    F/G           Toggle fullscreen mode\n";
+    std::cerr << "    M             Toggle maximize/restore window\n";
     std::cerr << "    Left/Right    Seek backward/forward 1 second\n";
-    std::cerr << "    Up/Down       Speed up/slow down playback\n";
+    std::cerr << "    Up/Down       Seek forward/backward 1 second\n";
     std::cerr << "    L             Toggle loop mode\n";
+    std::cerr << "    T             Toggle frame limiter\n";
+    std::cerr << "    V             Toggle VSync\n";
     std::cerr << "    P             Toggle parallel rendering mode\n";
-    std::cerr << "    S             Show/hide statistics overlay\n";
+    std::cerr << "    D             Toggle debug overlay\n";
+    std::cerr << "    S             Toggle stress test\n";
+    std::cerr << "    C             Capture screenshot\n";
+    std::cerr << "    O             Open file dialog\n";
+    std::cerr << "    B             Toggle folder browser\n";
     std::cerr << "    Q, Escape     Quit player\n\n";
     std::cerr << "SUPPORTED FORMATS:\n";
     std::cerr << "    - SVG 1.1 with SMIL animations\n";
@@ -1449,7 +1567,21 @@ int main(int argc, char* argv[]) {
     // Parse command-line arguments
     const char* inputPath = nullptr;
     bool startFullscreen = false;
-    bool useGraphiteBackend = false;  // Graphite GPU backend (Vulkan on Windows)
+    bool startMaximized = false;        // --maximize flag
+    int startPosX = SDL_WINDOWPOS_UNDEFINED;   // --pos=X,Y
+    int startPosY = SDL_WINDOWPOS_UNDEFINED;   // --pos=X,Y
+    int startWidth = 0;                 // --size=WxH (0 = use SVG size)
+    int startHeight = 0;                // --size=WxH (0 = use SVG size)
+    bool sequentialMode = false;        // --sequential
+    bool isImageSequence = false;       // Playing from folder of individual SVG files
+    std::vector<std::string> sequenceFiles;         // List of SVG files for image sequence mode
+    std::vector<std::string> sequenceSvgContents;   // Pre-loaded SVG contents for image sequence mode
+    int benchmarkDuration = 0;          // --duration=SECS
+    int benchmarkFrames = 0;            // --benchmark=N (run N frames then exit)
+    std::string screenshotPath;         // --screenshot=PATH
+    bool useGraphiteBackend = true;  // Graphite GPU backend (Vulkan on Windows)
+    bool remoteControlEnabled = false;  // --remote-control flag for TCP control
+    int remoteControlPort = 9999;       // Default remote control port
 
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
@@ -1465,9 +1597,75 @@ int main(int argc, char* argv[]) {
         }
         if (strcmp(argv[i], "--fullscreen") == 0 || strcmp(argv[i], "-f") == 0) {
             startFullscreen = true;
-        } else if (strcmp(argv[i], "--graphite") == 0) {
-            // Enable Graphite GPU backend (Vulkan on Windows)
-            useGraphiteBackend = true;
+        } else if (strcmp(argv[i], "--cpu") == 0) {
+            // Use CPU raster rendering instead of Graphite GPU
+            useGraphiteBackend = false;
+            std::cerr << "CPU raster rendering enabled (Graphite GPU disabled)" << std::endl;
+        } else if (strcmp(argv[i], "--windowed") == 0 || strcmp(argv[i], "-w") == 0) {
+            startFullscreen = false;
+        } else if (strcmp(argv[i], "--maximize") == 0 || strcmp(argv[i], "-m") == 0) {
+            startMaximized = true;
+            startFullscreen = false;  // Maximize implies windowed mode
+        } else if (strncmp(argv[i], "--pos=", 6) == 0) {
+            int x, y;
+            if (sscanf(argv[i] + 6, "%d,%d", &x, &y) == 2) {
+                startPosX = x;
+                startPosY = y;
+            } else {
+                std::cerr << "Invalid position format: " << argv[i] << " (use --pos=X,Y)" << std::endl;
+                return 1;
+            }
+        } else if (strncmp(argv[i], "--size=", 7) == 0) {
+            int w, h;
+            if (sscanf(argv[i] + 7, "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
+                startWidth = w;
+                startHeight = h;
+            } else {
+                std::cerr << "Invalid size format: " << argv[i] << " (use --size=WxH)" << std::endl;
+                return 1;
+            }
+        } else if (strncmp(argv[i], "--duration=", 11) == 0) {
+            benchmarkDuration = atoi(argv[i] + 11);
+            if (benchmarkDuration <= 0) {
+                std::cerr << "Invalid duration: must be positive" << std::endl;
+                return 1;
+            }
+        } else if (strncmp(argv[i], "--benchmark=", 12) == 0) {
+            // Run N frames then exit (benchmark mode)
+            benchmarkFrames = atoi(argv[i] + 12);
+            if (benchmarkFrames <= 0) {
+                std::cerr << "Invalid benchmark frames: must be positive" << std::endl;
+                return 1;
+            }
+        } else if (strcmp(argv[i], "--json") == 0) {
+            g_jsonOutput = true;
+        } else if (strncmp(argv[i], "--screenshot=", 13) == 0) {
+            screenshotPath = argv[i] + 13;
+            if (screenshotPath.empty()) {
+                std::cerr << "--screenshot requires a file path" << std::endl;
+                return 1;
+            }
+        } else if (strcmp(argv[i], "--sequential") == 0) {
+            sequentialMode = true;
+        } else if (strcmp(argv[i], "--remote-control") == 0) {
+            // Enable remote control with default port
+            remoteControlEnabled = true;
+        } else if (strncmp(argv[i], "--remote-control=", 17) == 0) {
+            // Enable remote control with custom port
+            remoteControlEnabled = true;
+            remoteControlPort = atoi(argv[i] + 17);
+            if (remoteControlPort <= 0 || remoteControlPort > 65535) {
+                std::cerr << "Invalid remote control port: " << (argv[i] + 17) << std::endl;
+                return 1;
+            }
+        } else if (strncmp(argv[i], "--port=", 7) == 0) {
+            // Alias for --remote-control=PORT (enables remote control)
+            remoteControlEnabled = true;
+            remoteControlPort = atoi(argv[i] + 7);
+            if (remoteControlPort <= 0 || remoteControlPort > 65535) {
+                std::cerr << "Invalid port: " << (argv[i] + 7) << std::endl;
+                return 1;
+            }
         } else if (argv[i][0] != '-') {
             // Non-option argument is the input file
             inputPath = argv[i];
@@ -1484,6 +1682,40 @@ int main(int argc, char* argv[]) {
         std::cerr << "Error: No input file specified.\n" << std::endl;
         printHelp(argv[0]);
         return 1;
+    }
+
+    // Check if input is a directory (image sequence mode)
+    if (isDirectory(inputPath)) {
+        isImageSequence = true;
+        sequentialMode = true;  // Image sequences always use sequential mode
+        sequenceFiles = scanFolderForSVGSequence(inputPath);
+        if (sequenceFiles.empty()) {
+            std::cerr << "Error: No SVG files found in folder: " << inputPath << std::endl;
+            return 1;
+        }
+        // Use first file for initial loading (for dimensions and window setup)
+        inputPath = sequenceFiles[0].c_str();
+        if (!g_jsonOutput) {
+            std::cerr << "Image sequence mode: " << sequenceFiles.size() << " frames from folder" << std::endl;
+            std::cerr << "Sequential rendering mode enabled (ignoring SMIL timing)" << std::endl;
+            std::cerr << "Pre-loading all SVG frames..." << std::endl;
+        }
+        // Pre-load all SVG file contents for image sequence mode
+        // This allows fast frame switching without file I/O during playback
+        sequenceSvgContents.reserve(sequenceFiles.size());
+        for (const auto& filePath : sequenceFiles) {
+            std::ifstream file(filePath);
+            if (!file) {
+                std::cerr << "Error: Cannot read SVG file: " << filePath << std::endl;
+                continue;
+            }
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            sequenceSvgContents.push_back(buffer.str());
+        }
+        if (!g_jsonOutput) {
+            std::cerr << "Pre-loaded " << sequenceSvgContents.size() << " SVG frames into memory" << std::endl;
+        }
     }
 
     // Validate input file before processing
@@ -1621,18 +1853,22 @@ int main(int argc, char* argv[]) {
 
     // Window creation with optional exclusive fullscreen
     // For fullscreen: use native display resolution
-    // For windowed: use SVG-based dimensions
+    // For windowed: use SVG-based dimensions or --size override
     Uint32 windowFlags = SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
-    int createWidth = windowWidth;
-    int createHeight = windowHeight;
+    int createWidth = (startWidth > 0) ? startWidth : windowWidth;
+    int createHeight = (startHeight > 0) ? startHeight : windowHeight;
+    int posX = (startPosX != SDL_WINDOWPOS_UNDEFINED) ? startPosX : SDL_WINDOWPOS_CENTERED;
+    int posY = (startPosY != SDL_WINDOWPOS_UNDEFINED) ? startPosY : SDL_WINDOWPOS_CENTERED;
     if (startFullscreen) {
         windowFlags |= SDL_WINDOW_FULLSCREEN;
         // Use native display resolution for fullscreen
         createWidth = displayMode.w;
         createHeight = displayMode.h;
+    } else if (startMaximized) {
+        windowFlags |= SDL_WINDOW_MAXIMIZED;
     }
-    SDL_Window* window = SDL_CreateWindow("SVG Player (Animated) - Windows", SDL_WINDOWPOS_CENTERED,
-                                          SDL_WINDOWPOS_CENTERED, createWidth, createHeight, windowFlags);
+    SDL_Window* window = SDL_CreateWindow("SVG Player (Animated) - Windows", posX,
+                                          posY, createWidth, createHeight, windowFlags);
 
     // Track fullscreen state (matches command line flag)
     bool isFullscreen = startFullscreen;
@@ -1751,6 +1987,7 @@ int main(int argc, char* argv[]) {
     uint64_t displayCycles = 0;    // Total main loop iterations (display refresh attempts)
     uint64_t framesDelivered = 0;  // Frames actually received from render thread
     uint64_t frameCount = 0;
+    bool screenshotSaved = false;  // Auto-screenshot flag for benchmark mode
     auto startTime = Clock::now();
     auto lastFrameTime = Clock::now();
     auto animationStartTime = Clock::now();
@@ -1770,6 +2007,10 @@ int main(int argc, char* argv[]) {
     size_t framesRendered = 0;  // Actual frames we rendered
     size_t framesSkipped = 0;   // Frames skipped due to slow rendering
     size_t lastRenderedAnimFrame = 0;
+
+    // Sequential frame mode counter - increments each cycle instead of using wall-clock time
+    // When sequentialMode is true, frames are rendered 0,1,2,3... as fast as possible
+    size_t sequentialFrameCounter = 0;
 
     // Stress test mode (press 'S' to toggle)
     bool stressTestEnabled = false;
@@ -1827,6 +2068,7 @@ int main(int argc, char* argv[]) {
     // maxDuration: longest animation duration (for time-based frame calculation)
     size_t maxFrames = 1;
     double maxDuration = 1.0;
+    bool loopEnabled = true;  // Loop mode enabled by default (L key toggles)
     if (!animations.empty()) {
         for (const auto& anim : animations) {
             if (anim.values.size() > maxFrames) {
@@ -1859,37 +2101,341 @@ int main(int argc, char* argv[]) {
     // Set total animation frames so PreBuffer mode can pre-render ahead
     threadedRenderer.setTotalAnimationFrames(maxFrames);
 
-    std::cout << "\nCPU cores detected: " << totalCores << std::endl;
-    std::cout << "Skia thread pool size: " << availableCores << " (1 reserved for system)" << std::endl;
-    std::cout << "PreBuffer mode: ON (default)" << std::endl;
-    std::cout << "UI thread: Non-blocking (render thread active)" << std::endl;
+    // Suppress startup messages in JSON benchmark mode
+    if (!g_jsonOutput) {
+        std::cout << "\nCPU cores detected: " << totalCores << std::endl;
+        std::cout << "Skia thread pool size: " << availableCores << " (1 reserved for system)" << std::endl;
+        std::cout << "PreBuffer mode: ON (default)" << std::endl;
+        std::cout << "UI thread: Non-blocking (render thread active)" << std::endl;
 
-    std::cout << "\nControls:" << std::endl;
-    std::cout << "  ESC/Q - Quit" << std::endl;
-    std::cout << "  SPACE - Pause/Resume animation" << std::endl;
-    std::cout << "  D - Toggle debug info overlay" << std::endl;
-    std::cout << "  G - Toggle fullscreen mode" << std::endl;
-    std::cout << "  S - Toggle stress test (50ms delay per frame)" << std::endl;
-    std::cout << "  V - Toggle VSync" << std::endl;
-    std::cout << "  F - Toggle frame limiter (" << displayRefreshRate << " FPS cap)" << std::endl;
-    std::cout << "  P - Toggle parallel mode: Off <-> PreBuffer" << std::endl;
-    std::cout << "      Off: Direct single-threaded rendering" << std::endl;
-    std::cout << "      PreBuffer: Pre-render animation frames ahead using thread pool" << std::endl;
-    std::cout << "  R - Reset statistics" << std::endl;
-    std::cout << "  C - Capture screenshot (PPM format, uncompressed)" << std::endl;
-    std::cout << "  Resize window to change render resolution" << std::endl;
-    std::cout << "\nSMIL Sync Guarantee:" << std::endl;
-    std::cout << "  Animation timing uses steady_clock (monotonic)" << std::endl;
-    std::cout << "  Frame shown = f(current_time), NOT f(frame_count)" << std::endl;
-    std::cout << "  If rendering is slow, frames SKIP but sync is PERFECT" << std::endl;
-    std::cout << "  Press 'S' to enable stress test and verify sync" << std::endl;
-    std::cout << "\nNote: Occasional stutters may be caused by Windows system tasks." << std::endl;
-    std::cout << "      Animation sync remains correct even during stutters." << std::endl;
-    std::cout << "\nRendering..." << std::endl;
+        std::cout << "\nControls:" << std::endl;
+        std::cout << "  ESC/Q - Quit" << std::endl;
+        std::cout << "  SPACE - Pause/Resume animation" << std::endl;
+        std::cout << "  Left/Right/Up/Down - Seek forward/backward 1 second" << std::endl;
+        std::cout << "  L - Toggle loop mode" << std::endl;
+        std::cout << "  D - Toggle debug info overlay" << std::endl;
+        std::cout << "  F/G - Toggle fullscreen mode" << std::endl;
+        std::cout << "  M - Toggle maximize/restore window" << std::endl;
+        std::cout << "  S - Toggle stress test (50ms delay per frame)" << std::endl;
+        std::cout << "  V - Toggle VSync" << std::endl;
+        std::cout << "  T - Toggle frame limiter (" << displayRefreshRate << " FPS cap)" << std::endl;
+        std::cout << "  P - Toggle parallel mode: Off <-> PreBuffer" << std::endl;
+        std::cout << "      Off: Direct single-threaded rendering" << std::endl;
+        std::cout << "      PreBuffer: Pre-render animation frames ahead using thread pool" << std::endl;
+        std::cout << "  R - Reset statistics" << std::endl;
+        std::cout << "  C - Capture screenshot (PPM format, uncompressed)" << std::endl;
+        std::cout << "  O - Open file dialog" << std::endl;
+        std::cout << "  B - Toggle folder browser" << std::endl;
+        std::cout << "  Resize window to change render resolution" << std::endl;
+        std::cout << "\nSMIL Sync Guarantee:" << std::endl;
+        std::cout << "  Animation timing uses steady_clock (monotonic)" << std::endl;
+        std::cout << "  Frame shown = f(current_time), NOT f(frame_count)" << std::endl;
+        std::cout << "  If rendering is slow, frames SKIP but sync is PERFECT" << std::endl;
+        std::cout << "  Press 'S' to enable stress test and verify sync" << std::endl;
+        std::cout << "\nNote: Occasional stutters may be caused by Windows system tasks." << std::endl;
+        std::cout << "      Animation sync remains correct even during stutters." << std::endl;
+        std::cout << "\nRendering..." << std::endl;
+    }
+
+    // Remote control server for programmatic control via TCP/JSON
+    // Create pointer for use in lambda captures
+    ThreadedRenderer* threadedRendererPtr = &threadedRenderer;
+    std::unique_ptr<svgplayer::RemoteControlServer> remoteServer;
+    if (remoteControlEnabled) {
+        remoteServer = std::make_unique<svgplayer::RemoteControlServer>(remoteControlPort);
+
+        // Register command handlers - these capture player state by reference
+        using namespace svgplayer;
+
+        // Ping - simple health check
+        remoteServer->registerHandler(RemoteCommand::Ping, [](const std::string&) {
+            return json::success("\"pong\"");
+        });
+
+        // Play - resume animation
+        remoteServer->registerHandler(RemoteCommand::Play, [&animationPaused, &pausedTime, &animationStartTimeSteady](const std::string&) {
+            if (animationPaused) {
+                DurationSec pauseDuration(pausedTime);
+                animationStartTimeSteady = SteadyClock::now() - std::chrono::duration_cast<SteadyClock::duration>(pauseDuration);
+                animationPaused = false;
+                std::cout << "Remote: Animation resumed" << std::endl;
+            }
+            return json::success();
+        });
+
+        // Pause - pause animation
+        remoteServer->registerHandler(RemoteCommand::Pause, [&animationPaused, &pausedTime, &animationStartTimeSteady](const std::string&) {
+            if (!animationPaused) {
+                DurationSec elapsed = SteadyClock::now() - animationStartTimeSteady;
+                pausedTime = elapsed.count();
+                animationPaused = true;
+                std::cout << "Remote: Animation paused at " << pausedTime << "s" << std::endl;
+            }
+            return json::success();
+        });
+
+        // Stop - stop and reset to beginning
+        remoteServer->registerHandler(RemoteCommand::Stop, [&animationPaused, &pausedTime, &animationStartTimeSteady](const std::string&) {
+            animationPaused = true;
+            pausedTime = 0;
+            animationStartTimeSteady = SteadyClock::now();
+            std::cout << "Remote: Animation stopped" << std::endl;
+            return json::success();
+        });
+
+        // TogglePlay - toggle play/pause
+        remoteServer->registerHandler(RemoteCommand::TogglePlay, [&animationPaused, &pausedTime, &animationStartTimeSteady](const std::string&) {
+            if (animationPaused) {
+                DurationSec pauseDuration(pausedTime);
+                animationStartTimeSteady = SteadyClock::now() - std::chrono::duration_cast<SteadyClock::duration>(pauseDuration);
+                animationPaused = false;
+                std::cout << "Remote: Animation resumed" << std::endl;
+            } else {
+                DurationSec elapsed = SteadyClock::now() - animationStartTimeSteady;
+                pausedTime = elapsed.count();
+                animationPaused = true;
+                std::cout << "Remote: Animation paused at " << pausedTime << "s" << std::endl;
+            }
+            return json::success();
+        });
+
+        // Seek - seek to specific time
+        remoteServer->registerHandler(RemoteCommand::Seek, [&animationPaused, &pausedTime, &animationStartTimeSteady, &maxDuration](const std::string& params) {
+            // Parse time from JSON params
+            std::string timeStr;
+            size_t pos = params.find("\"time\"");
+            if (pos != std::string::npos) {
+                pos = params.find(':', pos);
+                if (pos != std::string::npos) {
+                    pos++;
+                    while (pos < params.size() && (params[pos] == ' ' || params[pos] == '\t')) pos++;
+                    try {
+                        double targetTime = std::stod(params.substr(pos));
+                        // Clamp to valid range
+                        if (targetTime < 0) targetTime = 0;
+                        if (targetTime > maxDuration) targetTime = maxDuration;
+
+                        if (animationPaused) {
+                            pausedTime = targetTime;
+                        } else {
+                            DurationSec seekDuration(targetTime);
+                            animationStartTimeSteady = SteadyClock::now() - std::chrono::duration_cast<SteadyClock::duration>(seekDuration);
+                        }
+                        std::cout << "Remote: Seeked to " << targetTime << "s" << std::endl;
+                        return json::success();
+                    } catch (...) {
+                        return json::error("Invalid time value");
+                    }
+                }
+            }
+            return json::error("Missing time parameter");
+        });
+
+        // Fullscreen - toggle fullscreen mode
+        remoteServer->registerHandler(RemoteCommand::Fullscreen, [&isFullscreen, window, renderer](const std::string&) {
+            // Clear screen before mode switch
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderPresent(renderer);
+
+            isFullscreen = !isFullscreen;
+            if (isFullscreen) {
+                SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
+            } else {
+                SDL_SetWindowFullscreen(window, 0);
+            }
+
+            // Clear again after mode switch
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+            SDL_RenderClear(renderer);
+            SDL_RenderPresent(renderer);
+
+            std::cout << "Remote: Fullscreen " << (isFullscreen ? "ON" : "OFF") << std::endl;
+            return json::success();
+        });
+
+        // Maximize - toggle maximize/restore
+        remoteServer->registerHandler(RemoteCommand::Maximize, [window](const std::string&) {
+            bool newState = toggleWindowMaximize(window);
+            std::cout << "Remote: Window " << (newState ? "MAXIMIZED" : "RESTORED") << std::endl;
+            return json::success();
+        });
+
+        // SetPosition - set window position
+        remoteServer->registerHandler(RemoteCommand::SetPosition, [window](const std::string& params) {
+            // Parse x,y from JSON params
+            size_t xPos = params.find("\"x\"");
+            size_t yPos = params.find("\"y\"");
+            if (xPos != std::string::npos && yPos != std::string::npos) {
+                int x = 0, y = 0;
+                try {
+                    size_t colonPos = params.find(':', xPos);
+                    if (colonPos != std::string::npos) {
+                        x = std::stoi(params.substr(colonPos + 1));
+                    }
+                    colonPos = params.find(':', yPos);
+                    if (colonPos != std::string::npos) {
+                        y = std::stoi(params.substr(colonPos + 1));
+                    }
+                    SDL_SetWindowPosition(window, x, y);
+                    std::cout << "Remote: Window position set to " << x << "," << y << std::endl;
+                    return json::success();
+                } catch (...) {
+                    return json::error("Invalid position values");
+                }
+            }
+            return json::error("Missing x or y parameters");
+        });
+
+        // SetSize - set window size
+        remoteServer->registerHandler(RemoteCommand::SetSize, [window](const std::string& params) {
+            // Parse width,height from JSON params
+            size_t wPos = params.find("\"width\"");
+            size_t hPos = params.find("\"height\"");
+            if (wPos != std::string::npos && hPos != std::string::npos) {
+                int w = 0, h = 0;
+                try {
+                    size_t colonPos = params.find(':', wPos);
+                    if (colonPos != std::string::npos) {
+                        w = std::stoi(params.substr(colonPos + 1));
+                    }
+                    colonPos = params.find(':', hPos);
+                    if (colonPos != std::string::npos) {
+                        h = std::stoi(params.substr(colonPos + 1));
+                    }
+                    if (w > 0 && h > 0) {
+                        SDL_SetWindowSize(window, w, h);
+                        std::cout << "Remote: Window size set to " << w << "x" << h << std::endl;
+                        return json::success();
+                    }
+                    return json::error("Invalid size values (must be positive)");
+                } catch (...) {
+                    return json::error("Invalid size values");
+                }
+            }
+            return json::error("Missing width or height parameters");
+        });
+
+        // GetState - get current player state
+        remoteServer->registerHandler(RemoteCommand::GetState, [&animationPaused, &pausedTime, &animationStartTimeSteady,
+                                                                 &isFullscreen, window, &maxFrames, &maxDuration,
+                                                                 inputPath, &currentFrameIndex](const std::string&) {
+            PlayerState state;
+            state.playing = !animationPaused;
+            state.paused = animationPaused;
+
+            // Calculate current time
+            if (animationPaused) {
+                state.currentTime = pausedTime;
+            } else {
+                DurationSec elapsed = SteadyClock::now() - animationStartTimeSteady;
+                state.currentTime = elapsed.count();
+            }
+
+            // Check window state
+            Uint32 flags = SDL_GetWindowFlags(window);
+            state.fullscreen = (flags & SDL_WINDOW_FULLSCREEN) != 0;
+            state.maximized = (flags & SDL_WINDOW_MAXIMIZED) != 0;
+
+            // Get window position and size
+            SDL_GetWindowPosition(window, &state.windowX, &state.windowY);
+            SDL_GetWindowSize(window, &state.windowWidth, &state.windowHeight);
+
+            // Animation info
+            state.currentFrame = static_cast<int>(currentFrameIndex);
+            state.totalFrames = static_cast<int>(maxFrames);
+            state.totalDuration = maxDuration;
+            state.playbackSpeed = 1.0;  // TODO: Add playback speed support
+            state.loadedFile = inputPath ? inputPath : "";
+
+            return json::state(state);
+        });
+
+        // GetStats - get performance statistics
+        remoteServer->registerHandler(RemoteCommand::GetStats, [&frameTimes, &renderTimes, &framesDelivered,
+                                                                 &displayCycles, &renderWidth, &renderHeight](const std::string&) {
+            PlayerStats stats;
+            stats.fps = frameTimes.count() > 0 ? 1000.0 / frameTimes.average() : 0.0;
+            stats.avgFrameTime = frameTimes.average();
+            stats.avgRenderTime = renderTimes.average();
+            stats.droppedFrames = static_cast<int>(displayCycles - framesDelivered);
+            stats.memoryUsage = static_cast<size_t>(renderWidth) * renderHeight * 4;  // Approximate
+            stats.elementsRendered = 0;  // TODO: Track rendered elements
+            return json::stats(stats);
+        });
+
+        // Screenshot - capture screenshot to file
+        remoteServer->registerHandler(RemoteCommand::Screenshot, [threadedRendererPtr, &renderWidth, &renderHeight](const std::string& params) {
+            // Parse path from JSON params
+            std::string path;
+            size_t pathPos = params.find("\"path\"");
+            if (pathPos != std::string::npos) {
+                size_t colonPos = params.find(':', pathPos);
+                if (colonPos != std::string::npos) {
+                    size_t quoteStart = params.find('"', colonPos);
+                    if (quoteStart != std::string::npos) {
+                        size_t quoteEnd = params.find('"', quoteStart + 1);
+                        if (quoteEnd != std::string::npos) {
+                            path = params.substr(quoteStart + 1, quoteEnd - quoteStart - 1);
+                        }
+                    }
+                }
+            }
+
+            // Get current frame for screenshot
+            std::vector<uint32_t> screenshotPixels;
+            int screenshotWidth, screenshotHeight;
+            if (threadedRendererPtr && threadedRendererPtr->getFrameForScreenshot(screenshotPixels, screenshotWidth, screenshotHeight)) {
+                if (path.empty()) {
+                    // Generate default filename with dimensions
+                    path = generateScreenshotFilename(screenshotWidth, screenshotHeight);
+                }
+                if (saveScreenshotPPM(screenshotPixels, screenshotWidth, screenshotHeight, path)) {
+                    std::cout << "Remote: Screenshot saved to " << path << std::endl;
+                    return json::success("\"" + path + "\"");
+                }
+            }
+            return json::error("Failed to capture screenshot");
+        });
+
+        // Quit - quit the player
+        remoteServer->registerHandler(RemoteCommand::Quit, [&running](const std::string&) {
+            running = false;
+            std::cout << "Remote: Quit requested" << std::endl;
+            return json::success();
+        });
+
+        // Start the remote control server
+        if (remoteServer->start()) {
+            std::cout << "\nRemote Control: Listening on port " << remoteControlPort << std::endl;
+            std::cout << "  Use Python controller: python scripts/svg_player_controller.py --port " << remoteControlPort << std::endl;
+        } else {
+            std::cerr << "Warning: Failed to start remote control server on port " << remoteControlPort << std::endl;
+            remoteServer.reset();
+        }
+    }
+
+    // Benchmark mode: track start time for duration-based exit
+    auto benchmarkStartTime = SteadyClock::now();
 
     while (running && !g_shutdownRequested.load()) {
         auto frameStart = Clock::now();
         displayCycles++;  // Count every main loop iteration (display refresh attempt)
+
+        // Benchmark mode: exit after specified duration
+        if (benchmarkDuration > 0) {
+            auto elapsed = std::chrono::duration<double>(SteadyClock::now() - benchmarkStartTime).count();
+            if (elapsed >= benchmarkDuration) {
+                running = false;
+                break;
+            }
+        }
+
+        // Benchmark mode: exit after specified number of frames
+        if (benchmarkFrames > 0 && static_cast<int>(frameCount) >= benchmarkFrames) {
+            running = false;
+            break;
+        }
 
         // Calculate frame time from last frame
         // Just update lastFrameTime for timing reference (actual frame time tracked when presenting)
@@ -1985,6 +2531,7 @@ int main(int argc, char* argv[]) {
                         framesSkipped = 0;
                         framesRendered = 0;
                         lastRenderedAnimFrame = 0;
+                        sequentialFrameCounter = 0;  // Reset sequential counter on stats reset
                         skipStatsThisFrame = true;  // Don't pollute fresh stats with reset operation time
                         std::cout << "Statistics reset" << std::endl;
                     } else if (event.key.keysym.sym == SDLK_v) {
@@ -2030,8 +2577,8 @@ int main(int argc, char* argv[]) {
                         skipStatsThisFrame = true;
 
                         std::cout << "VSync: " << (vsyncEnabled ? "ON" : "OFF") << std::endl;
-                    } else if (event.key.keysym.sym == SDLK_l) {
-                        // Toggle frame limiter (L key)
+                    } else if (event.key.keysym.sym == SDLK_t) {
+                        // Toggle frame limiter (T key for Timing limiter)
                         frameLimiterEnabled = !frameLimiterEnabled;
                         // Reset ALL stats (critical for accurate FPS/hit rate)
                         eventTimes.reset();
@@ -2083,6 +2630,16 @@ int main(int argc, char* argv[]) {
                             SDL_SetWindowFullscreen(window, 0);
                         }
                         std::cout << "Fullscreen: " << (isFullscreen ? "ON (exclusive)" : "OFF") << std::endl;
+                    } else if (event.key.keysym.sym == SDLK_m) {
+                        // Toggle maximize/zoom (M for Maximize)
+                        // Only works in windowed mode, not in fullscreen
+                        if (!isFullscreen) {
+                            bool nowMaximized = toggleWindowMaximize(window);
+                            std::cout << "Window: " << (nowMaximized ? "MAXIMIZED" : "RESTORED") << std::endl;
+                            skipStatsThisFrame = true;
+                        } else {
+                            std::cout << "Exit fullscreen first (press F)" << std::endl;
+                        }
                     } else if (event.key.keysym.sym == SDLK_d) {
                         // Toggle debug overlay
                         showDebugOverlay = !showDebugOverlay;
@@ -2148,6 +2705,7 @@ int main(int argc, char* argv[]) {
                                 animationStartTimeSteady = SteadyClock::now();
                                 pausedTime = 0;
                                 lastRenderedAnimFrame = 0;
+                                sequentialFrameCounter = 0;  // Reset sequential counter on file load
                                 displayCycles = 0;
                                 framesDelivered = 0;
                                 framesSkipped = 0;
@@ -2222,6 +2780,50 @@ int main(int argc, char* argv[]) {
                             std::cout << "Browser closed" << std::endl;
                         }
                         skipStatsThisFrame = true;
+                    } else if (event.key.keysym.sym == SDLK_l) {
+                        // Toggle loop mode (L key)
+                        loopEnabled = !loopEnabled;
+                        std::cout << "Loop mode: " << (loopEnabled ? "ON" : "OFF") << std::endl;
+                    } else if (event.key.keysym.sym == SDLK_LEFT && !g_browserMode) {
+                        // Seek backward 1 second (only when not in browser mode)
+                        if (animationPaused) {
+                            pausedTime = std::max(0.0, pausedTime - 1.0);
+                            std::cout << "Seek backward to " << pausedTime << "s" << std::endl;
+                        } else {
+                            DurationSec seekDuration(1.0);
+                            animationStartTimeSteady += std::chrono::duration_cast<SteadyClock::duration>(seekDuration);
+                            std::cout << "Seek backward 1s" << std::endl;
+                        }
+                    } else if (event.key.keysym.sym == SDLK_RIGHT && !g_browserMode) {
+                        // Seek forward 1 second (only when not in browser mode)
+                        if (animationPaused) {
+                            pausedTime = std::min(maxDuration, pausedTime + 1.0);
+                            std::cout << "Seek forward to " << pausedTime << "s" << std::endl;
+                        } else {
+                            DurationSec seekDuration(1.0);
+                            animationStartTimeSteady -= std::chrono::duration_cast<SteadyClock::duration>(seekDuration);
+                            std::cout << "Seek forward 1s" << std::endl;
+                        }
+                    } else if (event.key.keysym.sym == SDLK_UP) {
+                        // Seek forward 1 second (alternative to Right arrow)
+                        if (animationPaused) {
+                            pausedTime = std::min(maxDuration, pausedTime + 1.0);
+                            std::cout << "Seek forward to " << pausedTime << "s" << std::endl;
+                        } else {
+                            DurationSec seekDuration(1.0);
+                            animationStartTimeSteady -= std::chrono::duration_cast<SteadyClock::duration>(seekDuration);
+                            std::cout << "Seek forward 1s" << std::endl;
+                        }
+                    } else if (event.key.keysym.sym == SDLK_DOWN) {
+                        // Seek backward 1 second (alternative to Left arrow)
+                        if (animationPaused) {
+                            pausedTime = std::max(0.0, pausedTime - 1.0);
+                            std::cout << "Seek backward to " << pausedTime << "s" << std::endl;
+                        } else {
+                            DurationSec seekDuration(1.0);
+                            animationStartTimeSteady += std::chrono::duration_cast<SteadyClock::duration>(seekDuration);
+                            std::cout << "Seek backward 1s" << std::endl;
+                        }
                     }
                     break;
 
@@ -2382,68 +2984,129 @@ int main(int argc, char* argv[]) {
                                 break;
 
                             case svgplayer::HitTestResult::LoadButton:
-                                // Load button loads selected SVG/FBF.SVG (if one is selected)
-                                // Note: FrameFolder not supported on Windows yet (no image sequence mode)
+                                // Load button loads selected SVG/FBF.SVG/FrameFolder (if one is selected)
                                 if (g_folderBrowser.canLoad()) {
                                     std::optional<svgplayer::BrowserEntry> selected = g_folderBrowser.getSelectedEntry();
-                                    if (selected.has_value() &&
-                                        (selected->type == svgplayer::BrowserEntryType::SVGFile ||
-                                         selected->type == svgplayer::BrowserEntryType::FBFSVGFile)) {
-                                        std::cout << "\n=== Loading from browser (Load button): " << selected->fullPath << " ===" << std::endl;
-                                        g_browserMode = false;
-                                        g_browserSvgDom = nullptr;
-                                        clearBrowserAnimations();
+                                    if (selected.has_value()) {
+                                        // Handle FrameFolder (image sequence) loading
+                                        if (selected->type == svgplayer::BrowserEntryType::FrameFolder) {
+                                            std::cout << "\n=== Loading frame sequence from browser (Load button): " << selected->fullPath << " ===" << std::endl;
+                                            g_browserMode = false;
+                                            g_browserSvgDom = nullptr;
+                                            clearBrowserAnimations();
+                                            svgDom = nullptr;
 
-                                        static std::string currentFilePathLoad;
-                                        std::string newPath = selected->fullPath;
-                                        if (!newPath.empty() && fileExists(newPath.c_str())) {
-                                            // Stop renderers before loading
-                                            threadedRenderer.stop();
-                                            parallelRenderer.stop();
+                                            // Enable image sequence mode
+                                            isImageSequence = true;
+                                            sequentialMode = true;
 
-                                            // Load SVG file using unified loading function
-                                            SVGLoadError error = loadSVGFile(newPath, inputPath, rawSvgContent, animations, svgDom,
-                                                                            svgWidth, svgHeight, aspectRatio,
-                                                                            preBufferTotalDuration, preBufferTotalFrames,
-                                                                            currentFilePathLoad);
+                                            // Scan folder for SVG frames
+                                            sequenceFiles = scanFolderForSVGSequence(selected->fullPath.c_str());
+                                            if (sequenceFiles.empty()) {
+                                                std::cerr << "Error: No SVG files found in folder: " << selected->fullPath << std::endl;
+                                                isImageSequence = false;
+                                            } else {
+                                                // Pre-load all SVG file contents for fast frame switching
+                                                sequenceSvgContents.clear();
+                                                sequenceSvgContents.reserve(sequenceFiles.size());
+                                                for (const auto& filePath : sequenceFiles) {
+                                                    std::ifstream file(filePath);
+                                                    if (file) {
+                                                        std::stringstream buffer;
+                                                        buffer << file.rdbuf();
+                                                        sequenceSvgContents.push_back(buffer.str());
+                                                    }
+                                                }
+                                                std::cout << "Pre-loaded " << sequenceSvgContents.size() << " SVG frames into memory" << std::endl;
 
-                                            if (error == SVGLoadError::Success) {
-                                                // Success - reset stats and configure renderers
-                                                g_animController.resetStats();
-
-                                                parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
-                                                                          animations, preBufferTotalDuration, preBufferTotalFrames);
-                                                parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
-
-                                                threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
-                                                threadedRenderer.setTotalAnimationFrames(preBufferTotalFrames);
-                                                threadedRenderer.start();
-
-                                                // Reset animation timing state
+                                                // Reset animation timing state for new sequence
                                                 animationStartTime = Clock::now();
                                                 animationStartTimeSteady = SteadyClock::now();
-                                                pausedTime = 0;
-                                                lastRenderedAnimFrame = 0;
-                                                displayCycles = 0;
+                                                sequentialFrameCounter = 0;
+                                                framesShown = 0;
                                                 framesDelivered = 0;
-                                                framesSkipped = 0;
                                                 framesRendered = 0;
+                                                framesSkipped = 0;
+                                                lastRenderedAnimFrame = 0;
+                                                pausedTime = 0;
                                                 animationPaused = false;
 
-                                                // Update window title
-                                                size_t lastSlash = newPath.find_last_of("/\\");
-                                                std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
-                                                std::string windowTitle = "SVG Player - " + filename;
+                                                // Update window title with folder name
+                                                size_t lastSlash = selected->fullPath.find_last_of("/\\");
+                                                std::string folderName = (lastSlash != std::string::npos) ?
+                                                    selected->fullPath.substr(lastSlash + 1) : selected->fullPath;
+                                                std::string windowTitle = "SVG Player - " + folderName + " (sequence)";
                                                 SDL_SetWindowTitle(window, windowTitle.c_str());
 
-                                                std::cout << "Loaded: " << newPath << std::endl;
-                                                std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
-                                                std::cout << "  Animations: " << animations.size() << std::endl;
-                                            } else {
-                                                // Loading failed - restart with old content if available
-                                                if (svgDom) {
+                                                std::cout << "Loaded frame sequence: " << selected->fullPath << std::endl;
+                                                std::cout << "  Total frames: " << sequenceSvgContents.size() << std::endl;
+                                            }
+                                        }
+                                        // Handle SVGFile and FBFSVGFile loading
+                                        else if (selected->type == svgplayer::BrowserEntryType::SVGFile ||
+                                                 selected->type == svgplayer::BrowserEntryType::FBFSVGFile) {
+                                            std::cout << "\n=== Loading from browser (Load button): " << selected->fullPath << " ===" << std::endl;
+                                            g_browserMode = false;
+                                            g_browserSvgDom = nullptr;
+                                            clearBrowserAnimations();
+
+                                            // Disable image sequence mode when loading a single file
+                                            isImageSequence = false;
+                                            sequenceFiles.clear();
+                                            sequenceSvgContents.clear();
+
+                                            static std::string currentFilePathLoad;
+                                            std::string newPath = selected->fullPath;
+                                            if (!newPath.empty() && fileExists(newPath.c_str())) {
+                                                // Stop renderers before loading
+                                                threadedRenderer.stop();
+                                                parallelRenderer.stop();
+
+                                                // Load SVG file using unified loading function
+                                                SVGLoadError error = loadSVGFile(newPath, inputPath, rawSvgContent, animations, svgDom,
+                                                                                svgWidth, svgHeight, aspectRatio,
+                                                                                preBufferTotalDuration, preBufferTotalFrames,
+                                                                                currentFilePathLoad);
+
+                                                if (error == SVGLoadError::Success) {
+                                                    // Success - reset stats and configure renderers
+                                                    g_animController.resetStats();
+
+                                                    parallelRenderer.configure(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight,
+                                                                              animations, preBufferTotalDuration, preBufferTotalFrames);
                                                     parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+
+                                                    threadedRenderer.configure(&parallelRenderer, rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight);
+                                                    threadedRenderer.setTotalAnimationFrames(preBufferTotalFrames);
                                                     threadedRenderer.start();
+
+                                                    // Reset animation timing state
+                                                    animationStartTime = Clock::now();
+                                                    animationStartTimeSteady = SteadyClock::now();
+                                                    pausedTime = 0;
+                                                    lastRenderedAnimFrame = 0;
+                                                    sequentialFrameCounter = 0;  // Reset sequential counter on file load
+                                                    displayCycles = 0;
+                                                    framesDelivered = 0;
+                                                    framesSkipped = 0;
+                                                    framesRendered = 0;
+                                                    animationPaused = false;
+
+                                                    // Update window title
+                                                    size_t lastSlash = newPath.find_last_of("/\\");
+                                                    std::string filename = (lastSlash != std::string::npos) ? newPath.substr(lastSlash + 1) : newPath;
+                                                    std::string windowTitle = "SVG Player - " + filename;
+                                                    SDL_SetWindowTitle(window, windowTitle.c_str());
+
+                                                    std::cout << "Loaded: " << newPath << std::endl;
+                                                    std::cout << "  Dimensions: " << svgWidth << "x" << svgHeight << std::endl;
+                                                    std::cout << "  Animations: " << animations.size() << std::endl;
+                                                } else {
+                                                    // Loading failed - restart with old content if available
+                                                    if (svgDom) {
+                                                        parallelRenderer.start(rawSvgContent, renderWidth, renderHeight, svgWidth, svgHeight, ParallelMode::PreBuffer);
+                                                        threadedRenderer.start();
+                                                    }
                                                 }
                                             }
                                         }
@@ -2567,6 +3230,7 @@ int main(int argc, char* argv[]) {
                                                         animationStartTimeSteady = SteadyClock::now();
                                                         pausedTime = 0;
                                                         lastRenderedAnimFrame = 0;
+                                                        sequentialFrameCounter = 0;  // Reset sequential counter on file load
                                                         displayCycles = 0;
                                                         framesDelivered = 0;
                                                         framesSkipped = 0;
@@ -2595,13 +3259,61 @@ int main(int argc, char* argv[]) {
 
                                         case svgplayer::BrowserEntryType::FrameFolder:
                                             // FrameFolder: folder containing numbered SVG frames
-                                            // Windows player doesn't support image sequence mode yet
+                                            // Double-click to load and play as image sequence
                                             if (isDoubleClick) {
-                                                // Double-click: show message that image sequence not supported
-                                                std::cout << "[Windows Player] Frame sequence folders not yet supported. Use macOS player." << std::endl;
-                                                // Just select the folder for now
-                                                g_folderBrowser.selectEntry(clickedEntry->gridIndex);
-                                                refreshBrowserSVG();
+                                                std::cout << "\n=== Loading frame sequence: " << clickedEntry->fullPath << " ===" << std::endl;
+
+                                                // Exit browser mode and clear previous content
+                                                g_browserMode = false;
+                                                g_browserSvgDom = nullptr;
+                                                clearBrowserAnimations();
+                                                svgDom = nullptr;
+
+                                                // Enable image sequence mode
+                                                isImageSequence = true;
+                                                sequentialMode = true;
+
+                                                // Scan folder for SVG frames
+                                                sequenceFiles = scanFolderForSVGSequence(clickedEntry->fullPath.c_str());
+                                                if (sequenceFiles.empty()) {
+                                                    std::cerr << "Error: No SVG files found in folder: " << clickedEntry->fullPath << std::endl;
+                                                    isImageSequence = false;
+                                                } else {
+                                                    // Pre-load all SVG file contents for fast frame switching
+                                                    sequenceSvgContents.clear();
+                                                    sequenceSvgContents.reserve(sequenceFiles.size());
+                                                    for (const auto& filePath : sequenceFiles) {
+                                                        std::ifstream file(filePath);
+                                                        if (file) {
+                                                            std::stringstream buffer;
+                                                            buffer << file.rdbuf();
+                                                            sequenceSvgContents.push_back(buffer.str());
+                                                        }
+                                                    }
+                                                    std::cout << "Pre-loaded " << sequenceSvgContents.size() << " SVG frames into memory" << std::endl;
+
+                                                    // Reset animation timing state for new sequence
+                                                    animationStartTime = Clock::now();
+                                                    animationStartTimeSteady = SteadyClock::now();
+                                                    sequentialFrameCounter = 0;
+                                                    framesShown = 0;
+                                                    framesDelivered = 0;
+                                                    framesRendered = 0;
+                                                    framesSkipped = 0;
+                                                    lastRenderedAnimFrame = 0;
+                                                    pausedTime = 0;
+                                                    animationPaused = false;
+
+                                                    // Update window title with folder name
+                                                    size_t lastSlash = clickedEntry->fullPath.find_last_of("/\\");
+                                                    std::string folderName = (lastSlash != std::string::npos) ?
+                                                        clickedEntry->fullPath.substr(lastSlash + 1) : clickedEntry->fullPath;
+                                                    std::string windowTitle = "SVG Player - " + folderName + " (sequence)";
+                                                    SDL_SetWindowTitle(window, windowTitle.c_str());
+
+                                                    std::cout << "Loaded frame sequence: " << clickedEntry->fullPath << std::endl;
+                                                    std::cout << "  Total frames: " << sequenceSvgContents.size() << std::endl;
+                                                }
                                             } else {
                                                 // Single click selects the folder
                                                 g_folderBrowser.selectEntry(clickedEntry->gridIndex);
@@ -2657,6 +3369,7 @@ int main(int argc, char* argv[]) {
                                                         animationStartTimeSteady = SteadyClock::now();
                                                         pausedTime = 0;
                                                         lastRenderedAnimFrame = 0;
+                                                        sequentialFrameCounter = 0;  // Reset sequential counter on file load
                                                         displayCycles = 0;
                                                         framesDelivered = 0;
                                                         framesSkipped = 0;
@@ -2688,13 +3401,59 @@ int main(int argc, char* argv[]) {
 
                             case svgplayer::HitTestResult::PlayArrowEntry:
                                 // Play arrow clicked on a FrameFolder - play it as image sequence
-                                // Note: Windows player doesn't support image sequence mode yet
                                 if (clickedEntry && clickedEntry->type == svgplayer::BrowserEntryType::FrameFolder) {
-                                    std::cout << "[Windows Player] Frame sequence playback not yet supported. Use macOS player." << std::endl;
-                                    std::cout << "  Folder: " << clickedEntry->fullPath << std::endl;
-                                    // Select the folder to provide visual feedback
-                                    g_folderBrowser.selectEntry(clickedEntry->gridIndex);
-                                    refreshBrowserSVG();
+                                    std::cout << "\n=== Playing frame sequence: " << clickedEntry->fullPath << " ===" << std::endl;
+
+                                    // Exit browser mode and clear previous content
+                                    g_browserMode = false;
+                                    g_browserSvgDom = nullptr;
+                                    clearBrowserAnimations();
+                                    svgDom = nullptr;
+
+                                    // Enable image sequence mode
+                                    isImageSequence = true;
+                                    sequentialMode = true;
+
+                                    // Scan folder for SVG frames
+                                    sequenceFiles = scanFolderForSVGSequence(clickedEntry->fullPath.c_str());
+                                    if (sequenceFiles.empty()) {
+                                        std::cerr << "Error: No SVG files found in folder: " << clickedEntry->fullPath << std::endl;
+                                        isImageSequence = false;
+                                    } else {
+                                        // Pre-load all SVG file contents for fast frame switching
+                                        sequenceSvgContents.clear();
+                                        sequenceSvgContents.reserve(sequenceFiles.size());
+                                        for (const auto& filePath : sequenceFiles) {
+                                            std::ifstream file(filePath);
+                                            if (file) {
+                                                std::stringstream buffer;
+                                                buffer << file.rdbuf();
+                                                sequenceSvgContents.push_back(buffer.str());
+                                            }
+                                        }
+                                        std::cout << "Pre-loaded " << sequenceSvgContents.size() << " SVG frames into memory" << std::endl;
+
+                                        // Reset animation timing state for new sequence
+                                        animationStartTime = Clock::now();
+                                        animationStartTimeSteady = SteadyClock::now();
+                                        sequentialFrameCounter = 0;
+                                        framesShown = 0;
+                                        framesDelivered = 0;
+                                        framesRendered = 0;
+                                        framesSkipped = 0;
+                                        lastRenderedAnimFrame = 0;
+                                        pausedTime = 0;
+                                        animationPaused = false;
+
+                                        // Update window title with folder name
+                                        size_t lastSlash = clickedEntry->fullPath.find_last_of("/\\");
+                                        std::string folderName = (lastSlash != std::string::npos) ?
+                                            clickedEntry->fullPath.substr(lastSlash + 1) : clickedEntry->fullPath;
+                                        std::string windowTitle = "SVG Player - " + folderName + " (sequence)";
+                                        SDL_SetWindowTitle(window, windowTitle.c_str());
+
+                                        std::cout << "Started playback: " << sequenceSvgContents.size() << " frames" << std::endl;
+                                    }
                                 }
                                 break;
 
@@ -2761,13 +3520,47 @@ int main(int argc, char* argv[]) {
 
         if (!running) break;
 
-        // === UPDATE ANIMATIONS (SMIL-compliant time-based) ===
-        // The animation frame is determined SOLELY by the current time
-        // This guarantees perfect sync even if rendering is slow
+        // === UPDATE ANIMATIONS (SMIL-compliant time-based or sequential) ===
+        // Normal mode: frame determined by current time (guarantees perfect sync)
+        // Sequential mode: frames rendered 0,1,2,3... as fast as possible (for benchmarking)
         auto animStart = Clock::now();
+
+        // IMAGE SEQUENCE MODE: Calculate frame index before animations loop
+        // Image sequences don't have SMIL animations, so we handle them separately
+        if (isImageSequence && !sequenceSvgContents.empty()) {
+            // Image sequence mode: use sequential counter-based frame index
+            size_t totalFrames = sequenceSvgContents.size();
+            currentFrameIndex = sequentialFrameCounter % totalFrames;
+            sequentialFrameCounter++;
+            // Update frame tracking for stats
+            if (currentFrameIndex != lastRenderedAnimFrame) {
+                lastRenderedAnimFrame = currentFrameIndex;
+                framesRendered++;
+            }
+        }
+
         for (const auto& anim : animations) {
             std::string newValue = anim.getCurrentValue(animTime);
-            currentFrameIndex = anim.getCurrentFrameIndex(animTime);
+
+            // SEQUENTIAL MODE: When enabled, ignore wall-clock timing entirely.
+            // Instead, advance frames 0,1,2,3... as fast as possible for benchmarking.
+            // Skip if image sequence mode (already handled above)
+            if (isImageSequence) {
+                // Skip SMIL animation processing for image sequences
+                continue;
+            }
+
+            if (sequentialMode) {
+                // Sequential mode: use counter-based frame index (ignores SMIL timing)
+                // This renders frames in order as fast as the renderer can go
+                size_t totalFrames = preBufferTotalFrames > 0 ? preBufferTotalFrames : anim.values.size();
+                currentFrameIndex = sequentialFrameCounter % totalFrames;
+                // Increment counter for next cycle (wraps around automatically via modulo)
+                sequentialFrameCounter++;
+            } else {
+                // Normal mode: time-based frame index (guarantees perfect sync)
+                currentFrameIndex = anim.getCurrentFrameIndex(animTime);
+            }
             lastFrameValue = newValue;
 
             // Track frame skips (for sync verification)
@@ -2994,22 +3787,64 @@ int main(int argc, char* argv[]) {
                     framesDelivered++;
                 }
             } else {
-                // === CPU RASTER PATH (with threaded rendering) ===
-                // Request new frame (render thread will process asynchronously)
-                // Main thread NEVER touches parallelRenderer directly - all through ThreadedRenderer
-                threadedRenderer.requestFrame(currentFrameIndex);
+                // === CPU RASTER PATH ===
+                // For image sequence mode: use direct rendering (parse + render each frame)
+                // For FBF.SVG mode: use ThreadedRenderer for async pre-buffered rendering
+                if (isImageSequence && !sequenceSvgContents.empty()) {
+                    // IMAGE SEQUENCE MODE (CPU): Direct rendering of separate SVG files
+                    // We need a surface to render to - reuse the existing surface from SDL texture
+                    size_t frameIdx = currentFrameIndex % sequenceSvgContents.size();
+                    const std::string& svgContent = sequenceSvgContents[frameIdx];
 
-                // Try to get rendered frame from ThreadedRenderer (non-blocking!)
-                // Copy directly under lock to prevent use-after-free race condition
-                SkPixmap pixmap;
-                if (surface->peekPixels(&pixmap)) {
-                    size_t bufferSize = renderWidth * renderHeight * sizeof(uint32_t);
-                    if (threadedRenderer.copyFrontBufferIfReady(const_cast<void*>(pixmap.addr()), bufferSize)) {
-                        gotNewFrame = true;
-                        framesDelivered++;  // Count frames actually received from render thread
+                    // Parse this frame's SVG
+                    sk_sp<SkData> frameData = SkData::MakeWithCopy(svgContent.data(), svgContent.size());
+                    auto frameStream = SkMemoryStream::Make(frameData);
+                    if (frameStream) {
+                        sk_sp<SkSVGDOM> frameDom = makeSVGDOMWithFontSupport(*frameStream);
+                        if (frameDom) {
+                            SkCanvas* surfaceCanvas = surface->getCanvas();
+                            if (surfaceCanvas) {
+                                surfaceCanvas->clear(SK_ColorBLACK);
+
+                                // Calculate scaling to fit window while preserving aspect ratio
+                                float scaleX = static_cast<float>(renderWidth) / svgWidth;
+                                float scaleY = static_cast<float>(renderHeight) / svgHeight;
+                                float scale = std::min(scaleX, scaleY);
+                                float offsetX = (renderWidth - svgWidth * scale) / 2.0f;
+                                float offsetY = (renderHeight - svgHeight * scale) / 2.0f;
+
+                                surfaceCanvas->save();
+                                surfaceCanvas->translate(offsetX, offsetY);
+                                surfaceCanvas->scale(scale, scale);
+                                SkSize containerSize = SkSize::Make(static_cast<SkScalar>(svgWidth),
+                                                                    static_cast<SkScalar>(svgHeight));
+                                frameDom->setContainerSize(containerSize);
+                                frameDom->render(surfaceCanvas);
+                                surfaceCanvas->restore();
+
+                                gotNewFrame = true;
+                                framesDelivered++;
+                            }
+                        }
                     }
+                } else {
+                    // Standard FBF.SVG mode: use threaded rendering
+                    // Request new frame (render thread will process asynchronously)
+                    // Main thread NEVER touches parallelRenderer directly - all through ThreadedRenderer
+                    threadedRenderer.requestFrame(currentFrameIndex);
+
+                    // Try to get rendered frame from ThreadedRenderer (non-blocking!)
+                    // Copy directly under lock to prevent use-after-free race condition
+                    SkPixmap pixmap;
+                    if (surface->peekPixels(&pixmap)) {
+                        size_t bufferSize = renderWidth * renderHeight * sizeof(uint32_t);
+                        if (threadedRenderer.copyFrontBufferIfReady(const_cast<void*>(pixmap.addr()), bufferSize)) {
+                            gotNewFrame = true;
+                            framesDelivered++;  // Count frames actually received from render thread
+                        }
+                    }
+                    // If no new frame ready, surface keeps last frame (no blocking!)
                 }
-                // If no new frame ready, surface keeps last frame (no blocking!)
             }
         }
 
@@ -3234,7 +4069,7 @@ int main(int argc, char* argv[]) {
 
             // Controls
             addKey("[V]", "VSync:", vsyncEnabled ? "ON" : "OFF");
-            addKey("[F]",
+            addKey("[T]",
                    "Limiter:", frameLimiterEnabled ? ("ON (" + std::to_string(displayRefreshRate) + " FPS)") : "OFF");
 
             // Parallel mode status - use cached mode from ThreadedRenderer to avoid blocking
@@ -3341,6 +4176,23 @@ int main(int argc, char* argv[]) {
 
         if (gotNewFrame) {
             frameCount++;
+
+            // Auto-screenshot for benchmark mode (save first frame only, CPU raster path)
+            if (!screenshotPath.empty() && !screenshotSaved && frameCount == 1 && surface) {
+                SkPixmap pixmap;
+                if (surface->peekPixels(&pixmap)) {
+                    std::vector<uint32_t> screenshotPixels(renderWidth * renderHeight);
+                    memcpy(screenshotPixels.data(), pixmap.addr(),
+                           renderWidth * renderHeight * sizeof(uint32_t));
+                    if (saveScreenshotPPM(screenshotPixels, renderWidth, renderHeight, screenshotPath)) {
+                        if (!g_jsonOutput) {
+                            std::cerr << "Screenshot saved: " << screenshotPath
+                                      << " (" << renderWidth << "x" << renderHeight << ")" << std::endl;
+                        }
+                    }
+                    screenshotSaved = true;
+                }
+            }
 
             if (useGraphiteBackend && graphiteContext && graphiteContext->isInitialized()) {
                 // === GRAPHITE GPU PRESENTATION PATH ===
@@ -3506,57 +4358,89 @@ int main(int argc, char* argv[]) {
     double totalAvg = frameTimes.average();
     auto pctFinal = [totalAvg](double v) -> double { return totalAvg > 0 ? (v / totalAvg * 100.0) : 0.0; };
 
-    std::cout << "\n=== Final Statistics ===" << std::endl;
-    std::cout << "Display cycles: " << displayCycles << std::endl;
-    std::cout << "Frames delivered: " << framesDelivered << std::endl;
     double finalHitRate = displayCycles > 0 ? (100.0 * framesDelivered / displayCycles) : 0.0;
-    std::cout << "Frame hit rate: " << std::fixed << std::setprecision(1) << finalHitRate << "%" << std::endl;
-    std::cout << "Total time: " << std::setprecision(2) << totalElapsed << "s" << std::endl;
-    std::cout << "Display FPS: " << std::setprecision(2) << (displayCycles / totalElapsed) << " (main loop rate)"
-              << std::endl;
-    std::cout << "Skia FPS: " << std::setprecision(2) << (framesDelivered / totalElapsed)
-              << " (frames from Skia worker)" << std::endl;
-    std::cout << "Average frame time: " << std::setprecision(2) << frameTimes.average() << "ms" << std::endl;
 
-    std::cout << "\n--- Pipeline Timing (average) ---" << std::endl;
-    std::cout << "Event:      " << std::setprecision(2) << eventTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(eventTimes.average()) << "%)" << std::endl;
-    std::cout << "Anim:       " << std::setprecision(2) << animTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(animTimes.average()) << "%)" << std::endl;
-    std::cout << "Fetch:      " << std::setprecision(2) << fetchTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(fetchTimes.average()) << "%)" << std::endl;
-    std::cout << "Wait Skia:  " << std::setprecision(2) << idleTimes.average() << "ms (" << std::setprecision(1)
-              << (100.0 - finalHitRate) << "% idle)" << std::endl;
-    std::cout << "Overlay:    " << std::setprecision(2) << overlayTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(overlayTimes.average()) << "%)" << std::endl;
-    std::cout << "Copy:       " << std::setprecision(2) << copyTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(copyTimes.average()) << "%)" << std::endl;
-    std::cout << "Present:    " << std::setprecision(2) << presentTimes.average() << "ms (" << std::setprecision(1)
-              << pctFinal(presentTimes.average()) << "%)" << std::endl;
-    std::cout << "Skia work:  " << std::setprecision(2) << renderTimes.average()
-              << "ms (worker, min=" << renderTimes.min() << ", max=" << renderTimes.max() << ")" << std::endl;
-    double sumPhases = eventTimes.average() + animTimes.average() + fetchTimes.average() + overlayTimes.average() +
-                       copyTimes.average() + presentTimes.average();
-    std::cout << "Active:     " << std::setprecision(2) << sumPhases << "ms (" << std::setprecision(1)
-              << pctFinal(sumPhases) << "%)" << std::endl;
+    if (g_jsonOutput) {
+        // JSON output for benchmark scripts
+        double avgFps = totalElapsed > 0 ? (framesDelivered / totalElapsed) : 0;
+        double minFps = frameTimes.max() > 0 ? (1000.0 / frameTimes.max()) : 0;
+        double maxFps = frameTimes.min() > 0 ? (1000.0 / frameTimes.min()) : 0;
+
+        std::cout << "{";
+        std::cout << "\"player\":\"fbfsvg-player\",";
+        std::cout << "\"file\":\"" << inputPath << "\",";
+        std::cout << "\"duration_seconds\":" << std::fixed << std::setprecision(2) << totalElapsed << ",";
+        std::cout << "\"total_frames\":" << framesDelivered << ",";
+        std::cout << "\"avg_fps\":" << std::setprecision(2) << avgFps << ",";
+        std::cout << "\"avg_frame_time_ms\":" << std::setprecision(3) << frameTimes.average() << ",";
+        std::cout << "\"min_fps\":" << std::setprecision(2) << minFps << ",";
+        std::cout << "\"max_fps\":" << std::setprecision(2) << maxFps;
+        std::cout << "}" << std::endl;
+    } else {
+        // Normal text output
+        std::cout << "\n=== Final Statistics ===" << std::endl;
+        std::cout << "Display cycles: " << displayCycles << std::endl;
+        std::cout << "Frames delivered: " << framesDelivered << std::endl;
+        std::cout << "Frame hit rate: " << std::fixed << std::setprecision(1) << finalHitRate << "%" << std::endl;
+        std::cout << "Total time: " << std::setprecision(2) << totalElapsed << "s" << std::endl;
+        std::cout << "Display FPS: " << std::setprecision(2) << (displayCycles / totalElapsed) << " (main loop rate)"
+                  << std::endl;
+        std::cout << "Skia FPS: " << std::setprecision(2) << (framesDelivered / totalElapsed)
+                  << " (frames from Skia worker)" << std::endl;
+        std::cout << "Average frame time: " << std::setprecision(2) << frameTimes.average() << "ms" << std::endl;
+
+        std::cout << "\n--- Pipeline Timing (average) ---" << std::endl;
+        std::cout << "Event:      " << std::setprecision(2) << eventTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(eventTimes.average()) << "%)" << std::endl;
+        std::cout << "Anim:       " << std::setprecision(2) << animTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(animTimes.average()) << "%)" << std::endl;
+        std::cout << "Fetch:      " << std::setprecision(2) << fetchTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(fetchTimes.average()) << "%)" << std::endl;
+        std::cout << "Wait Skia:  " << std::setprecision(2) << idleTimes.average() << "ms (" << std::setprecision(1)
+                  << (100.0 - finalHitRate) << "% idle)" << std::endl;
+        std::cout << "Overlay:    " << std::setprecision(2) << overlayTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(overlayTimes.average()) << "%)" << std::endl;
+        std::cout << "Copy:       " << std::setprecision(2) << copyTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(copyTimes.average()) << "%)" << std::endl;
+        std::cout << "Present:    " << std::setprecision(2) << presentTimes.average() << "ms (" << std::setprecision(1)
+                  << pctFinal(presentTimes.average()) << "%)" << std::endl;
+        std::cout << "Skia work:  " << std::setprecision(2) << renderTimes.average()
+                  << "ms (worker, min=" << renderTimes.min() << ", max=" << renderTimes.max() << ")" << std::endl;
+        double sumPhases = eventTimes.average() + animTimes.average() + fetchTimes.average() + overlayTimes.average() +
+                           copyTimes.average() + presentTimes.average();
+        std::cout << "Active:     " << std::setprecision(2) << sumPhases << "ms (" << std::setprecision(1)
+                  << pctFinal(sumPhases) << "%)" << std::endl;
+    }
 
     // Stop threaded renderer first (must stop before parallel renderer)
-    std::cout << "\nStopping render thread..." << std::endl;
+    if (!g_jsonOutput) {
+        std::cout << "\nStopping render thread..." << std::endl;
+    }
     threadedRenderer.stop();
-    std::cout << "Render thread stopped." << std::endl;
+    if (!g_jsonOutput) {
+        std::cout << "Render thread stopped." << std::endl;
+    }
 
     // Stop parallel renderer if running
     if (parallelRenderer.isEnabled()) {
-        std::cout << "Stopping parallel render threads..." << std::endl;
+        if (!g_jsonOutput) {
+            std::cout << "Stopping parallel render threads..." << std::endl;
+        }
         parallelRenderer.stop();
-        std::cout << "Parallel renderer stopped." << std::endl;
+        if (!g_jsonOutput) {
+            std::cout << "Parallel renderer stopped." << std::endl;
+        }
     }
 
     // Destroy Graphite context before SDL cleanup (holds Vulkan resources)
     if (graphiteContext) {
-        std::cout << "Destroying Graphite context..." << std::endl;
+        if (!g_jsonOutput) {
+            std::cout << "Destroying Graphite context..." << std::endl;
+        }
         graphiteContext.reset();
-        std::cout << "Graphite context destroyed." << std::endl;
+        if (!g_jsonOutput) {
+            std::cout << "Graphite context destroyed." << std::endl;
+        }
     }
 
     SDL_DestroyTexture(texture);
