@@ -574,6 +574,21 @@ typedef NS_ENUM(NSInteger, FBFSVGPlayerLayerBlendMode) {
 /// Reset frame statistics (dropped count, timing averages)
 - (void)resetFrameStats;
 
+#pragma mark - Pre-buffering
+
+/// Whether frame pre-buffering is enabled
+/// When enabled, the player pre-renders upcoming frames for smoother playback
+/// Default: NO
+@property (nonatomic, assign, getter=isPreBufferEnabled) BOOL preBufferEnabled;
+
+/// Number of frames to pre-buffer (1-60)
+/// Default: 3
+@property (nonatomic, assign) NSInteger preBufferFrameCount;
+
+/// Clear the pre-buffer cache
+/// Call this when memory pressure is high or when unloading content
+- (void)clearPreBuffer;
+
 #pragma mark - Multi-SVG Compositing
 
 /// Create a new layer by loading an SVG file

@@ -143,6 +143,14 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 @property (nonatomic, strong) NSMutableSet<NSString *> *subscribedObjectIDsStorage;
 @property (nonatomic, assign) BOOL internalElementTouchTrackingEnabled;
 @property (nonatomic, assign) NSTimeInterval internalLongPressDuration;
+
+// Touch tracking state for element touch events
+@property (nonatomic, copy, nullable) NSString *activeElementID;
+@property (nonatomic, assign) CGPoint touchStartLocation;
+@property (nonatomic, assign) NSTimeInterval touchStartTime;
+@property (nonatomic, assign) BOOL isDragging;
+@property (nonatomic, strong, nullable) NSTimer *longPressTimer;
+@property (nonatomic, copy, nullable) NSString *previousHoverElementID;
 @end
 
 @implementation FBFSVGPlayerView
@@ -269,6 +277,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
 - (void)dealloc {
     [_displayLink invalidate];
+    [_longPressTimer invalidate];
     [_renderer cleanup];
 }
 
@@ -1799,19 +1808,257 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
 #pragma mark - Element Touch Handling (Internal)
 
-// TODO: Override touchesBegan:withEvent:, touchesMoved:withEvent:,
-// touchesEnded:withEvent:, touchesCancelled:withEvent: to detect touches
-// on subscribed elements and dispatch to delegate.
-//
-// Implementation outline:
-// 1. Get touch location in view coordinates
-// 2. Call hitTestSubscribedElementAtPoint: to find hit element
-// 3. If element is hit, create FBFSVGElementTouchInfo and call delegate
-// 4. Track enter/exit for drag events across element boundaries
-// 5. Track long press timer for long press events
-//
-// This will require coordination with the cross-platform C++ hit testing
-// system that actually knows the element geometry.
+// Drag threshold in points - movement beyond this triggers drag instead of tap
+static const CGFloat kDragThreshold = 10.0;
+
+/// Cancel the long press timer if running
+- (void)cancelLongPressTimer {
+    if (self.longPressTimer) {
+        [self.longPressTimer invalidate];
+        self.longPressTimer = nil;
+    }
+}
+
+/// Long press timer fired - dispatch long press event
+- (void)longPressTimerFired:(NSTimer *)timer {
+    // Extract element ID from timer userInfo
+    NSString *elementID = timer.userInfo[@"elementID"];
+    CGPoint touchLocation = [timer.userInfo[@"location"] CGPointValue];
+
+    if (elementID && self.activeElementID && [elementID isEqualToString:self.activeElementID]) {
+        // Dispatch long press event
+        [self dispatchLongPressEventForObjectID:elementID atViewPoint:touchLocation];
+    }
+
+    // Clear timer reference
+    self.longPressTimer = nil;
+}
+
+#pragma mark - UIResponder Touch Methods
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    // Check if element touch tracking is enabled
+    if (!self.internalElementTouchTrackingEnabled) {
+        [super touchesBegan:touches withEvent:event];
+        return;
+    }
+
+    // Get first touch
+    UITouch *touch = [touches anyObject];
+    if (!touch) {
+        [super touchesBegan:touches withEvent:event];
+        return;
+    }
+
+    CGPoint touchLocation = [touch locationInView:self];
+
+    // Hit test to find subscribed element at touch location
+    NSString *hitElementID = [self hitTestSubscribedElementAtPoint:touchLocation];
+
+    if (!hitElementID) {
+        // No subscribed element hit - pass to super for default handling
+        [super touchesBegan:touches withEvent:event];
+        return;
+    }
+
+    // Store touch start info
+    self.activeElementID = hitElementID;
+    self.touchStartLocation = touchLocation;
+    self.touchStartTime = touch.timestamp;
+    self.isDragging = NO;
+    self.previousHoverElementID = hitElementID;
+
+    // Start long press timer
+    [self cancelLongPressTimer];
+    NSDictionary *timerInfo = @{
+        @"elementID": hitElementID,
+        @"location": [NSValue valueWithCGPoint:touchLocation]
+    };
+    self.longPressTimer = [NSTimer scheduledTimerWithTimeInterval:self.internalLongPressDuration
+                                                           target:self
+                                                         selector:@selector(longPressTimerFired:)
+                                                         userInfo:timerInfo
+                                                          repeats:NO];
+
+    // Dispatch detailed touch event with began phase
+    CGPoint svgLocation = [self convertPointToSVGCoordinates:touchLocation];
+    FBFSVGElementTouchInfo touchInfo = FBFSVGElementTouchInfoMake(
+        FBFSVGElementTouchPhaseBegan,
+        touchLocation,
+        svgLocation,
+        touch.tapCount
+    );
+    touchInfo.timestamp = touch.timestamp;
+    touchInfo.force = touch.force;
+    touchInfo.maximumPossibleForce = touch.maximumPossibleForce;
+
+    [self dispatchDetailedTouchEventForObjectID:hitElementID touchInfo:touchInfo];
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    // Check if we have an active element being tracked
+    if (!self.activeElementID) {
+        [super touchesMoved:touches withEvent:event];
+        return;
+    }
+
+    // Get first touch
+    UITouch *touch = [touches anyObject];
+    if (!touch) {
+        [super touchesMoved:touches withEvent:event];
+        return;
+    }
+
+    CGPoint currentLocation = [touch locationInView:self];
+    CGPoint previousLocation = [touch previousLocationInView:self];
+
+    // Calculate distance moved from start
+    CGFloat dx = currentLocation.x - self.touchStartLocation.x;
+    CGFloat dy = currentLocation.y - self.touchStartLocation.y;
+    CGFloat distanceFromStart = sqrt(dx * dx + dy * dy);
+
+    // Check if drag threshold exceeded
+    if (!self.isDragging && distanceFromStart > kDragThreshold) {
+        // Cancel long press timer since we're now dragging
+        [self cancelLongPressTimer];
+        self.isDragging = YES;
+    }
+
+    if (self.isDragging) {
+        // Dispatch drag event
+        [self dispatchDragEventForObjectID:self.activeElementID
+                          currentViewPoint:currentLocation
+                            startViewPoint:self.touchStartLocation];
+
+        // Check for element enter/exit during drag
+        NSString *currentHitElement = [self hitTestSubscribedElementAtPoint:currentLocation];
+
+        // If we moved out of the previous element, dispatch exit
+        if (self.previousHoverElementID &&
+            (!currentHitElement || ![currentHitElement isEqualToString:self.previousHoverElementID])) {
+            [self dispatchExitEventForObjectID:self.previousHoverElementID];
+        }
+
+        // If we entered a new element, dispatch enter
+        if (currentHitElement &&
+            (!self.previousHoverElementID || ![currentHitElement isEqualToString:self.previousHoverElementID])) {
+            [self dispatchEnterEventForObjectID:currentHitElement];
+        }
+
+        self.previousHoverElementID = currentHitElement;
+    }
+
+    // Dispatch detailed touch event with moved phase
+    CGPoint svgLocation = [self convertPointToSVGCoordinates:currentLocation];
+    CGPoint svgPreviousLocation = [self convertPointToSVGCoordinates:previousLocation];
+    FBFSVGElementTouchInfo touchInfo;
+    touchInfo.phase = FBFSVGElementTouchPhaseMoved;
+    touchInfo.locationInView = currentLocation;
+    touchInfo.locationInSVG = svgLocation;
+    touchInfo.previousLocationInView = previousLocation;
+    touchInfo.previousLocationInSVG = svgPreviousLocation;
+    touchInfo.tapCount = touch.tapCount;
+    touchInfo.timestamp = touch.timestamp;
+    touchInfo.force = touch.force;
+    touchInfo.maximumPossibleForce = touch.maximumPossibleForce;
+
+    [self dispatchDetailedTouchEventForObjectID:self.activeElementID touchInfo:touchInfo];
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    // Cancel long press timer
+    [self cancelLongPressTimer];
+
+    // Check if we have an active element being tracked
+    if (!self.activeElementID) {
+        [super touchesEnded:touches withEvent:event];
+        return;
+    }
+
+    // Get first touch
+    UITouch *touch = [touches anyObject];
+    if (!touch) {
+        // Clean up state
+        self.activeElementID = nil;
+        self.previousHoverElementID = nil;
+        [super touchesEnded:touches withEvent:event];
+        return;
+    }
+
+    CGPoint endLocation = [touch locationInView:self];
+
+    if (self.isDragging) {
+        // Was dragging - dispatch drop event
+        [self dispatchDropEventForObjectID:self.activeElementID
+                             dropViewPoint:endLocation
+                            startViewPoint:self.touchStartLocation];
+    } else {
+        // Was not dragging - this is a tap
+        // Check tap count for single vs double tap
+        if (touch.tapCount >= 2) {
+            // Double tap
+            [self dispatchDoubleTapEventForObjectID:self.activeElementID atViewPoint:endLocation];
+        } else {
+            // Single tap
+            [self dispatchTapEventForObjectID:self.activeElementID atViewPoint:endLocation];
+        }
+    }
+
+    // Dispatch detailed touch event with ended phase
+    CGPoint svgLocation = [self convertPointToSVGCoordinates:endLocation];
+    FBFSVGElementTouchInfo touchInfo = FBFSVGElementTouchInfoMake(
+        FBFSVGElementTouchPhaseEnded,
+        endLocation,
+        svgLocation,
+        touch.tapCount
+    );
+    touchInfo.timestamp = touch.timestamp;
+    touchInfo.force = touch.force;
+    touchInfo.maximumPossibleForce = touch.maximumPossibleForce;
+
+    [self dispatchDetailedTouchEventForObjectID:self.activeElementID touchInfo:touchInfo];
+
+    // Clear tracking state
+    self.activeElementID = nil;
+    self.isDragging = NO;
+    self.previousHoverElementID = nil;
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    // Cancel long press timer
+    [self cancelLongPressTimer];
+
+    // Check if we have an active element being tracked
+    if (!self.activeElementID) {
+        [super touchesCancelled:touches withEvent:event];
+        return;
+    }
+
+    // Get first touch for location info
+    UITouch *touch = [touches anyObject];
+    CGPoint cancelLocation = touch ? [touch locationInView:self] : self.touchStartLocation;
+
+    // Dispatch detailed touch event with cancelled phase
+    CGPoint svgLocation = [self convertPointToSVGCoordinates:cancelLocation];
+    FBFSVGElementTouchInfo touchInfo = FBFSVGElementTouchInfoMake(
+        FBFSVGElementTouchPhaseCancelled,
+        cancelLocation,
+        svgLocation,
+        touch ? touch.tapCount : 0
+    );
+    if (touch) {
+        touchInfo.timestamp = touch.timestamp;
+        touchInfo.force = touch.force;
+        touchInfo.maximumPossibleForce = touch.maximumPossibleForce;
+    }
+
+    [self dispatchDetailedTouchEventForObjectID:self.activeElementID touchInfo:touchInfo];
+
+    // Clear tracking state
+    self.activeElementID = nil;
+    self.isDragging = NO;
+    self.previousHoverElementID = nil;
+}
 
 #pragma mark - Element Touch Event Dispatch (Internal Stubs)
 
@@ -1828,7 +2075,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 /// @param objectID The objectID of the tapped element
 /// @param viewPoint The tap location in view coordinates
 - (void)dispatchTapEventForObjectID:(NSString *)objectID atViewPoint:(CGPoint)viewPoint {
-    // TODO: This will be called by the touch handling system when a tap is detected
+    // Called by the touch handling system when a tap is detected
     // (touch down + touch up without significant movement, and no second tap follows)
     // MUTUALLY EXCLUSIVE: Will not fire if double-tap or drag is detected
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didTapElementWithID:atLocation:)]) {
@@ -1841,9 +2088,8 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 /// @param objectID The objectID of the double-tapped element
 /// @param viewPoint The double-tap location in view coordinates
 - (void)dispatchDoubleTapEventForObjectID:(NSString *)objectID atViewPoint:(CGPoint)viewPoint {
-    // TODO: This will be called when two taps occur in quick succession
+    // Called when two taps occur in quick succession (tapCount >= 2)
     // MUTUALLY EXCLUSIVE: If this fires, single tap will NOT fire
-    // iOS handles this via UITapGestureRecognizer with numberOfTapsRequired = 2
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didDoubleTapElementWithID:atLocation:)]) {
         FBFSVGDualPoint location = [self dualPointFromViewPoint:viewPoint];
         [self.delegate svgPlayerView:self didDoubleTapElementWithID:objectID atLocation:location];
@@ -1854,7 +2100,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 /// @param objectID The objectID of the long-pressed element
 /// @param viewPoint The long press location in view coordinates
 - (void)dispatchLongPressEventForObjectID:(NSString *)objectID atViewPoint:(CGPoint)viewPoint {
-    // TODO: This will be called by a timer when touch is held for longPressDuration
+    // Called by the long press timer when touch is held for longPressDuration
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didLongPressElementWithID:atLocation:)]) {
         FBFSVGDualPoint location = [self dualPointFromViewPoint:viewPoint];
         [self.delegate svgPlayerView:self didLongPressElementWithID:objectID atLocation:location];
@@ -1868,7 +2114,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 - (void)dispatchDragEventForObjectID:(NSString *)objectID
                     currentViewPoint:(CGPoint)currentViewPoint
                       startViewPoint:(CGPoint)startViewPoint {
-    // TODO: This will be called on touchesMoved when drag threshold is exceeded
+    // Called on touchesMoved when drag threshold is exceeded
     // MUTUALLY EXCLUSIVE: Once drag fires, tap will NOT fire for this touch sequence
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didDragElementWithID:currentLocation:translation:)]) {
         FBFSVGDualPoint currentLocation = [self dualPointFromViewPoint:currentViewPoint];
@@ -1895,7 +2141,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 - (void)dispatchDropEventForObjectID:(NSString *)objectID
                        dropViewPoint:(CGPoint)dropViewPoint
                       startViewPoint:(CGPoint)startViewPoint {
-    // TODO: This will be called on touchesEnded after a drag sequence
+    // Called on touchesEnded after a drag sequence
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didDropElementWithID:atLocation:totalTranslation:)]) {
         FBFSVGDualPoint dropLocation = [self dualPointFromViewPoint:dropViewPoint];
 
@@ -1918,7 +2164,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 /// @param objectID The objectID of the touched element
 /// @param touchInfo The full touch info structure
 - (void)dispatchDetailedTouchEventForObjectID:(NSString *)objectID touchInfo:(FBFSVGElementTouchInfo)touchInfo {
-    // TODO: This provides full touch details for advanced use cases
+    // Provides full touch details for advanced use cases
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didTouchElement:touchInfo:)]) {
         [self.delegate svgPlayerView:self didTouchElement:objectID touchInfo:touchInfo];
     }

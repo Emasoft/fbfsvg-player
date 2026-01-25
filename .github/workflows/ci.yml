@@ -139,6 +139,88 @@ jobs:
           EOF
           gcc /tmp/test.c -ldl -o /tmp/test && /tmp/test
 
+      - name: Runtime Test - SVG Loading
+        run: |
+          echo "Creating test SVG file..."
+          cat > /tmp/test.svg << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <rect id="frame" width="100" height="100">
+              <animate attributeName="fill" dur="1s" repeatCount="indefinite"
+                       values="red;blue;green;red"/>
+            </rect>
+          </svg>
+          EOF
+
+          echo "Creating runtime test program..."
+          cat > /tmp/runtime_test.c << 'EOF'
+          #include <stdio.h>
+          #include <dlfcn.h>
+
+          typedef void* FBFSVGPlayerRef;
+          typedef FBFSVGPlayerRef (*CreateFunc)(void);
+          typedef void (*DestroyFunc)(FBFSVGPlayerRef);
+          typedef int (*LoadSVGFunc)(FBFSVGPlayerRef, const char*);
+          typedef int (*GetTotalFramesFunc)(FBFSVGPlayerRef);
+          typedef int (*GetWidthFunc)(FBFSVGPlayerRef);
+          typedef int (*GetHeightFunc)(FBFSVGPlayerRef);
+
+          int main() {
+              printf("Loading library...\n");
+              void* lib = dlopen("./build/linux/libfbfsvgplayer.so", RTLD_NOW);
+              if (!lib) { printf("FAIL: %s\n", dlerror()); return 1; }
+
+              CreateFunc create = (CreateFunc)dlsym(lib, "FBFSVGPlayer_Create");
+              DestroyFunc destroy = (DestroyFunc)dlsym(lib, "FBFSVGPlayer_Destroy");
+              LoadSVGFunc load = (LoadSVGFunc)dlsym(lib, "FBFSVGPlayer_LoadSVG");
+              GetTotalFramesFunc frames = (GetTotalFramesFunc)dlsym(lib, "FBFSVGPlayer_GetTotalFrames");
+              GetWidthFunc getWidth = (GetWidthFunc)dlsym(lib, "FBFSVGPlayer_GetWidth");
+              GetHeightFunc getHeight = (GetHeightFunc)dlsym(lib, "FBFSVGPlayer_GetHeight");
+
+              if (!create || !destroy || !load || !frames) {
+                  printf("FAIL: Missing core symbols\n");
+                  if (!create) printf("  - FBFSVGPlayer_Create not found\n");
+                  if (!destroy) printf("  - FBFSVGPlayer_Destroy not found\n");
+                  if (!load) printf("  - FBFSVGPlayer_LoadSVG not found\n");
+                  if (!frames) printf("  - FBFSVGPlayer_GetTotalFrames not found\n");
+                  return 1;
+              }
+
+              printf("Creating player instance...\n");
+              FBFSVGPlayerRef player = create();
+              if (!player) { printf("FAIL: Create returned null\n"); return 1; }
+
+              printf("Loading SVG file...\n");
+              if (!load(player, "/tmp/test.svg")) {
+                  printf("FAIL: LoadSVG returned false\n");
+                  destroy(player);
+                  return 1;
+              }
+
+              int totalFrames = frames(player);
+              printf("Total frames: %d\n", totalFrames);
+
+              if (getWidth && getHeight) {
+                  int w = getWidth(player);
+                  int h = getHeight(player);
+                  printf("SVG dimensions: %dx%d\n", w, h);
+              }
+
+              printf("Destroying player...\n");
+              destroy(player);
+              dlclose(lib);
+
+              printf("SUCCESS: Runtime test passed!\n");
+              return 0;
+          }
+          EOF
+
+          echo "Compiling runtime test..."
+          gcc /tmp/runtime_test.c -ldl -o /tmp/runtime_test
+
+          echo "Running runtime test..."
+          /tmp/runtime_test
+
       - name: Upload Linux Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -215,6 +297,35 @@ jobs:
           echo "Testing --version flag..."
           ./build/fbfsvg-player --version 2>&1 || true
 
+      - name: Runtime Test - SVG Playback
+        run: |
+          echo "Creating test SVG file..."
+          cat > /tmp/test.svg << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <rect id="frame" width="100" height="100">
+              <animate attributeName="fill" dur="1s" repeatCount="indefinite"
+                       values="red;blue;green;red"/>
+            </rect>
+          </svg>
+          EOF
+
+          echo "Running player with benchmark mode..."
+          # Run with benchmark flag for 5 frames and exit
+          # The player should load the SVG, render frames, and exit cleanly
+          timeout 30 ./build/fbfsvg-player --benchmark=5 /tmp/test.svg || EXIT_CODE=$?
+
+          # Check if player exited normally (0) or via timeout (124)
+          if [ "${EXIT_CODE:-0}" -eq 0 ]; then
+            echo "SUCCESS: Player completed benchmark mode"
+          elif [ "${EXIT_CODE:-0}" -eq 124 ]; then
+            echo "WARNING: Player timed out (may indicate hang)"
+            exit 1
+          else
+            echo "FAIL: Player exited with code ${EXIT_CODE}"
+            exit 1
+          fi
+
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -285,6 +396,35 @@ jobs:
         run: |
           echo "Testing --version flag..."
           ./build/fbfsvg-player --version 2>&1 || true
+
+      - name: Runtime Test - SVG Playback
+        run: |
+          echo "Creating test SVG file..."
+          cat > /tmp/test.svg << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <rect id="frame" width="100" height="100">
+              <animate attributeName="fill" dur="1s" repeatCount="indefinite"
+                       values="red;blue;green;red"/>
+            </rect>
+          </svg>
+          EOF
+
+          echo "Running player with benchmark mode..."
+          # Run with benchmark flag for 5 frames and exit
+          # The player should load the SVG, render frames, and exit cleanly
+          timeout 30 ./build/fbfsvg-player --benchmark=5 /tmp/test.svg || EXIT_CODE=$?
+
+          # Check if player exited normally (0) or via timeout (124)
+          if [ "${EXIT_CODE:-0}" -eq 0 ]; then
+            echo "SUCCESS: Player completed benchmark mode"
+          elif [ "${EXIT_CODE:-0}" -eq 124 ]; then
+            echo "WARNING: Player timed out (may indicate hang)"
+            exit 1
+          else
+            echo "FAIL: Player exited with code ${EXIT_CODE}"
+            exit 1
+          fi
 
       - name: Upload macOS x64 Artifacts
         uses: actions/upload-artifact@v4
@@ -524,6 +664,55 @@ jobs:
             }
           } else {
             Write-Host "ERROR: Executable not found"
+            exit 1
+          }
+
+      - name: Runtime Test - SVG Loading
+        shell: pwsh
+        run: |
+          Write-Host "Creating test SVG file..."
+          $testSvg = @"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+            <rect id="frame" width="100" height="100">
+              <animate attributeName="fill" dur="1s" repeatCount="indefinite"
+                       values="red;blue;green;red"/>
+            </rect>
+          </svg>
+          "@
+          $testSvg | Out-File -FilePath "$env:TEMP\test.svg" -Encoding utf8
+
+          Write-Host "Testing --help flag..."
+          $helpOutput = & "build\windows\fbfsvg-player.exe" --help 2>&1
+          Write-Host $helpOutput
+
+          Write-Host ""
+          Write-Host "Testing --version flag..."
+          $versionOutput = & "build\windows\fbfsvg-player.exe" --version 2>&1
+          Write-Host $versionOutput
+
+          Write-Host ""
+          Write-Host "Running player with benchmark mode..."
+          # Run with benchmark flag for 5 frames and exit
+          # Use Start-Process with timeout to prevent hangs
+          $process = Start-Process -FilePath "build\windows\fbfsvg-player.exe" `
+            -ArgumentList "--benchmark=5", "$env:TEMP\test.svg" `
+            -PassThru -NoNewWindow
+
+          # Wait up to 30 seconds for process to complete
+          $completed = $process.WaitForExit(30000)
+
+          if (-not $completed) {
+            Write-Host "WARNING: Player timed out, killing process..."
+            $process.Kill()
+            exit 1
+          }
+
+          $exitCode = $process.ExitCode
+          if ($exitCode -eq 0) {
+            Write-Host "SUCCESS: Player completed benchmark mode"
+          } else {
+            Write-Host "FAIL: Player exited with code $exitCode"
             exit 1
           }
 

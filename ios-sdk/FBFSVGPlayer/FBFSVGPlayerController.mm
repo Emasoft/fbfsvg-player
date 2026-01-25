@@ -141,7 +141,10 @@ static void ElementTouchCallbackBridge(void* userData, const char* elementID, SV
 
 // =============================================================================
 
-@interface FBFSVGPlayerController ()
+@interface FBFSVGPlayerController () {
+    // Pre-buffer frame count (C API doesn't have a getter, so track locally)
+    NSInteger _preBufferFrameCount;
+}
 // The underlying unified C API handle
 @property (nonatomic, assign) FBFSVGPlayerRef handle;
 // Current playback state
@@ -347,6 +350,7 @@ static void ElementTouchCallbackBridge(void* userData, const char* elementID, SV
         _internalCurrentRepeatIteration = 0;
         _internalPlayingForward = YES;
         _internalScrubbing = NO;
+        _preBufferFrameCount = 3;  // Default pre-buffer frame count
 
         if (_handle) {
             FBFSVGPlayer_SetLooping(_handle, YES);
@@ -1225,6 +1229,34 @@ static void ElementTouchCallbackBridge(void* userData, const char* elementID, SV
 - (void)resetFrameStats {
     if (!self.handle) return;
     FBFSVGPlayer_ResetFrameStats(self.handle);
+}
+
+#pragma mark - Pre-buffering
+
+- (BOOL)isPreBufferEnabled {
+    if (!_handle) return NO;
+    return FBFSVGPlayer_IsPreBufferEnabled(_handle);
+}
+
+- (void)setPreBufferEnabled:(BOOL)preBufferEnabled {
+    if (!_handle) return;
+    FBFSVGPlayer_EnablePreBuffer(_handle, preBufferEnabled);
+}
+
+- (NSInteger)preBufferFrameCount {
+    // The C API doesn't have a getter, so return the locally tracked value
+    return _preBufferFrameCount ?: 3;
+}
+
+- (void)setPreBufferFrameCount:(NSInteger)preBufferFrameCount {
+    _preBufferFrameCount = preBufferFrameCount;
+    if (!_handle) return;
+    FBFSVGPlayer_SetPreBufferFrames(_handle, (int)preBufferFrameCount);
+}
+
+- (void)clearPreBuffer {
+    if (!_handle) return;
+    FBFSVGPlayer_ClearPreBuffer(_handle);
 }
 
 #pragma mark - Error Handling
