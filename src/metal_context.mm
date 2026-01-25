@@ -9,8 +9,8 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 #import <AppKit/AppKit.h>
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_metal.h>
+#include <SDL.h>
+#include <SDL_metal.h>
 
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/mtl/GrMtlBackendContext.h"

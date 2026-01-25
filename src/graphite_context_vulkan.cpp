@@ -9,8 +9,8 @@
  * - GPU with Vulkan 1.1+ support
  */
 
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_vulkan.h>
+#include <SDL.h>
+#include <SDL_vulkan.h>
 #include <vulkan/vulkan.h>
 #include <cstdio>
 #include <cstdlib>

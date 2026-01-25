@@ -536,6 +536,7 @@ void printHelp(const char* programName) {
     std::cerr << "                      benchmarking raw rendering throughput.\n";
     std::cerr << "    --remote-control[=PORT]  Enable remote control server (default port: 9999)\n";
     std::cerr << "    --duration=SECS   Benchmark mode: run for N seconds then exit\n";
+    std::cerr << "    --benchmark[=N]   Benchmark mode: run for N frames then exit (default: 300)\n";
     std::cerr << "    --json            Output benchmark stats as JSON (for scripting)\n";
 #ifdef __APPLE__
     std::cerr << "    --metal           Enable Metal GPU backend (Ganesh)\n";
@@ -1904,6 +1905,7 @@ int main(int argc, char* argv[]) {
     bool useGraphiteBackend = true;  // Use Graphite GPU backend (next-gen, default)
 #endif
     int benchmarkDuration = 0;  // Benchmark mode: run for N seconds then exit (0 = disabled)
+    int benchmarkFrames = 0;  // Benchmark mode: run for N frames then exit (0 = disabled)
     std::string screenshotPath;  // Auto-save screenshot after first frame (for benchmarks)
     // Note: jsonOutput is now global g_jsonOutput for thread access
     bool sequentialMode = false;  // Sequential frame mode: render 0,1,2,3... ignoring SMIL timing
@@ -1985,6 +1987,16 @@ int main(int argc, char* argv[]) {
         } else if (strcmp(argv[i], "--json") == 0) {
             // JSON output for benchmark results
             g_jsonOutput = true;
+        } else if (strcmp(argv[i], "--benchmark") == 0) {
+            // Benchmark mode: render N frames then exit (default 300 if no value given)
+            benchmarkFrames = 300;
+        } else if (strncmp(argv[i], "--benchmark=", 12) == 0) {
+            // Benchmark mode with explicit frame count (e.g., --benchmark=5)
+            benchmarkFrames = atoi(argv[i] + 12);
+            if (benchmarkFrames <= 0) {
+                std::cerr << "Invalid benchmark frame count: must be positive" << std::endl;
+                return 1;
+            }
 #ifdef __APPLE__
         } else if (strcmp(argv[i], "--metal") == 0) {
             // Enable Metal GPU backend (Ganesh)
@@ -3017,6 +3029,12 @@ int main(int argc, char* argv[]) {
                 running = false;
                 break;
             }
+        }
+
+        // Benchmark mode: exit after specified number of frames
+        if (benchmarkFrames > 0 && static_cast<int>(displayCycles) >= benchmarkFrames) {
+            running = false;
+            break;
         }
         auto frameStart = Clock::now();
         displayCycles++;  // Count every main loop iteration (display refresh attempt)

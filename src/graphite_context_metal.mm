@@ -18,8 +18,8 @@
 #endif
 #endif
 
-#include <SDL2/SDL.h>
-#include <SDL2/SDL_metal.h>
+#include <SDL.h>
+#include <SDL_metal.h>
 #include <mutex>
 
 // Skia Graphite headers
