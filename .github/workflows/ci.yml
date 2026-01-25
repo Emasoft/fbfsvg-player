@@ -92,7 +92,7 @@ jobs:
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
             skia-build/src/skia/modules/skcms
-          key: skia-linux-${{ runner.arch }}-v6-${{ hashFiles('skia-build/build-linux.sh') }}
+          key: skia-linux-${{ runner.arch }}-v7-${{ hashFiles('skia-build/build-linux.sh') }}
 
       - name: Verify Skia Cache
         id: verify-skia
@@ -277,7 +277,7 @@ jobs:
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
             skia-build/src/skia/modules/skcms
-          key: skia-macos-arm64-v6-${{ hashFiles('skia-build/build-macos.sh') }}
+          key: skia-macos-arm64-v7-${{ hashFiles('skia-build/build-macos.sh', 'skia-build/build-macos-arch.sh') }}
 
       - name: Verify Skia Cache
         id: verify-skia
@@ -393,7 +393,7 @@ jobs:
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
             skia-build/src/skia/modules/skcms
-          key: skia-macos-x64-v6-${{ hashFiles('skia-build/build-macos.sh') }}
+          key: skia-macos-x64-v7-${{ hashFiles('skia-build/build-macos.sh', 'skia-build/build-macos-arch.sh') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
@@ -492,7 +492,7 @@ jobs:
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
             skia-build/src/skia/modules/skcms
-          key: skia-ios-v6-${{ hashFiles('skia-build/build-ios.sh', 'skia-build/build-ios-arch.sh') }}
+          key: skia-ios-v7-${{ hashFiles('skia-build/build-ios.sh', 'skia-build/build-ios-arch.sh') }}
 
       - name: Build Skia iOS Device (if not cached)
         if: steps.cache-skia-ios.outputs.cache-hit != 'true'
@@ -594,7 +594,7 @@ jobs:
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
             skia-build/src/skia/modules/skcms
-          key: skia-windows-x64-v6-${{ hashFiles('skia-build/build-windows.bat', 'scripts/build-windows.bat') }}
+          key: skia-windows-x64-v7-${{ hashFiles('skia-build/build-windows.bat', 'scripts/build-windows.bat') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
