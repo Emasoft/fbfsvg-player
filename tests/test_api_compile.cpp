@@ -8,13 +8,13 @@
 //
 // This test is used in CI to quickly verify API header syntax.
 
-#include "../shared/svg_player_api.h"
+#include "../shared/fbfsvg_player_api.h"
 #include <cstdio>
 
 // Verify all public types are defined and accessible
 static void verify_types() {
     // Opaque handle type
-    SVGPlayerRef player = nullptr;
+    FBFSVGPlayerRef player = nullptr;
     (void)player;
 
     // Playback state enum
@@ -57,47 +57,47 @@ static void verify_types() {
 // (We don't call them, just verify they're declared)
 static void verify_function_declarations() {
     // Get function pointers to verify declarations exist
-    auto create = &SVGPlayer_Create;
-    auto destroy = &SVGPlayer_Destroy;
-    auto loadSVG = &SVGPlayer_LoadSVG;
-    auto loadSVGData = &SVGPlayer_LoadSVGData;
-    auto unload = &SVGPlayer_Unload;
-    auto isLoaded = &SVGPlayer_IsLoaded;
-    auto getSize = &SVGPlayer_GetSize;
-    auto play = &SVGPlayer_Play;
-    auto pause = &SVGPlayer_Pause;
-    auto stop = &SVGPlayer_Stop;
-    auto togglePlayback = &SVGPlayer_TogglePlayback;
-    auto getPlaybackState = &SVGPlayer_GetPlaybackState;
-    auto setPlaybackState = &SVGPlayer_SetPlaybackState;
-    auto getRepeatMode = &SVGPlayer_GetRepeatMode;
-    auto setRepeatMode = &SVGPlayer_SetRepeatMode;
-    auto setRepeatCount = &SVGPlayer_SetRepeatCount;
-    auto getPlaybackRate = &SVGPlayer_GetPlaybackRate;
-    auto setPlaybackRate = &SVGPlayer_SetPlaybackRate;
-    auto update = &SVGPlayer_Update;
-    auto getCurrentTime = &SVGPlayer_GetCurrentTime;
-    auto getDuration = &SVGPlayer_GetDuration;
-    auto getProgress = &SVGPlayer_GetProgress;
-    auto getCurrentFrame = &SVGPlayer_GetCurrentFrame;
-    auto getTotalFrames = &SVGPlayer_GetTotalFrames;
-    auto getFrameRate = &SVGPlayer_GetFrameRate;
-    auto seekTo = &SVGPlayer_SeekTo;
-    auto seekToFrame = &SVGPlayer_SeekToFrame;
-    auto seekToProgress = &SVGPlayer_SeekToProgress;
-    auto stepForward = &SVGPlayer_StepForward;
-    auto stepBackward = &SVGPlayer_StepBackward;
-    auto stepByFrames = &SVGPlayer_StepByFrames;
-    auto beginScrubbing = &SVGPlayer_BeginScrubbing;
-    auto scrubToProgress = &SVGPlayer_ScrubToProgress;
-    auto endScrubbing = &SVGPlayer_EndScrubbing;
-    auto isScrubbing = &SVGPlayer_IsScrubbing;
-    auto render = &SVGPlayer_Render;
-    auto getStats = &SVGPlayer_GetStats;
-    auto resetStats = &SVGPlayer_ResetStats;
-    auto getLastError = &SVGPlayer_GetLastError;
-    auto formatTime = &SVGPlayer_FormatTime;
-    auto getVersion = &SVGPlayer_GetVersion;
+    auto create = &FBFSVGPlayer_Create;
+    auto destroy = &FBFSVGPlayer_Destroy;
+    auto loadSVG = &FBFSVGPlayer_LoadSVG;
+    auto loadSVGData = &FBFSVGPlayer_LoadSVGData;
+    auto unload = &FBFSVGPlayer_Unload;
+    auto isLoaded = &FBFSVGPlayer_IsLoaded;
+    auto getSize = &FBFSVGPlayer_GetSize;
+    auto play = &FBFSVGPlayer_Play;
+    auto pause = &FBFSVGPlayer_Pause;
+    auto stop = &FBFSVGPlayer_Stop;
+    auto togglePlayback = &FBFSVGPlayer_TogglePlayback;
+    auto getPlaybackState = &FBFSVGPlayer_GetPlaybackState;
+    auto setPlaybackState = &FBFSVGPlayer_SetPlaybackState;
+    auto getRepeatMode = &FBFSVGPlayer_GetRepeatMode;
+    auto setRepeatMode = &FBFSVGPlayer_SetRepeatMode;
+    auto setRepeatCount = &FBFSVGPlayer_SetRepeatCount;
+    auto getPlaybackRate = &FBFSVGPlayer_GetPlaybackRate;
+    auto setPlaybackRate = &FBFSVGPlayer_SetPlaybackRate;
+    auto update = &FBFSVGPlayer_Update;
+    auto getCurrentTime = &FBFSVGPlayer_GetCurrentTime;
+    auto getDuration = &FBFSVGPlayer_GetDuration;
+    auto getProgress = &FBFSVGPlayer_GetProgress;
+    auto getCurrentFrame = &FBFSVGPlayer_GetCurrentFrame;
+    auto getTotalFrames = &FBFSVGPlayer_GetTotalFrames;
+    auto getFrameRate = &FBFSVGPlayer_GetFrameRate;
+    auto seekTo = &FBFSVGPlayer_SeekTo;
+    auto seekToFrame = &FBFSVGPlayer_SeekToFrame;
+    auto seekToProgress = &FBFSVGPlayer_SeekToProgress;
+    auto stepForward = &FBFSVGPlayer_StepForward;
+    auto stepBackward = &FBFSVGPlayer_StepBackward;
+    auto stepByFrames = &FBFSVGPlayer_StepByFrames;
+    auto beginScrubbing = &FBFSVGPlayer_BeginScrubbing;
+    auto scrubToProgress = &FBFSVGPlayer_ScrubToProgress;
+    auto endScrubbing = &FBFSVGPlayer_EndScrubbing;
+    auto isScrubbing = &FBFSVGPlayer_IsScrubbing;
+    auto render = &FBFSVGPlayer_Render;
+    auto getStats = &FBFSVGPlayer_GetStats;
+    auto resetStats = &FBFSVGPlayer_ResetStats;
+    auto getLastError = &FBFSVGPlayer_GetLastError;
+    auto formatTime = &FBFSVGPlayer_FormatTime;
+    auto getVersion = &FBFSVGPlayer_GetVersion;
 
     // Suppress unused variable warnings
     (void)create; (void)destroy; (void)loadSVG; (void)loadSVGData;
@@ -118,9 +118,9 @@ static void verify_function_declarations() {
 
 // Verify API version macros
 static void verify_version_macros() {
-    static_assert(SVG_PLAYER_API_VERSION_MAJOR >= 0, "Major version must be >= 0");
-    static_assert(SVG_PLAYER_API_VERSION_MINOR >= 0, "Minor version must be >= 0");
-    static_assert(SVG_PLAYER_API_VERSION_PATCH >= 0, "Patch version must be >= 0");
+    static_assert(FBFSVG_PLAYER_API_VERSION_MAJOR >= 0, "Major version must be >= 0");
+    static_assert(FBFSVG_PLAYER_API_VERSION_MINOR >= 0, "Minor version must be >= 0");
+    static_assert(FBFSVG_PLAYER_API_VERSION_PATCH >= 0, "Patch version must be >= 0");
 }
 
 int main() {

@@ -1,4 +1,4 @@
-// SVGPlayerController.h - Low-level SVG animation controller for macOS
+// FBFSVGPlayerController.h - Low-level SVG animation controller for macOS
 //
 // This class provides direct access to the SVG rendering engine.
 // Most users should use SVGPlayerView instead for AppKit integration.
@@ -15,23 +15,23 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark - Error Domain
 
-/// Error domain for SVGPlayerController errors
-extern NSString * const SVGPlayerControllerErrorDomain;
+/// Error domain for FBFSVGPlayerController errors
+extern NSString * const FBFSVGPlayerControllerErrorDomain;
 
-/// Error codes for SVGPlayerController
-typedef NS_ENUM(NSInteger, SVGPlayerControllerErrorCode) {
+/// Error codes for FBFSVGPlayerController
+typedef NS_ENUM(NSInteger, FBFSVGPlayerControllerErrorCode) {
     /// File not found
-    SVGPlayerControllerErrorFileNotFound = 100,
+    FBFSVGPlayerControllerErrorFileNotFound = 100,
     /// Invalid SVG data
-    SVGPlayerControllerErrorInvalidData = 101,
+    FBFSVGPlayerControllerErrorInvalidData = 101,
     /// Parsing failed
-    SVGPlayerControllerErrorParseFailed = 102,
+    FBFSVGPlayerControllerErrorParseFailed = 102,
     /// Rendering failed
-    SVGPlayerControllerErrorRenderFailed = 103,
+    FBFSVGPlayerControllerErrorRenderFailed = 103,
     /// Player not initialized
-    SVGPlayerControllerErrorNotInitialized = 104,
+    FBFSVGPlayerControllerErrorNotInitialized = 104,
     /// No SVG loaded
-    SVGPlayerControllerErrorNoSVGLoaded = 105
+    FBFSVGPlayerControllerErrorNoSVGLoaded = 105
 };
 
 #pragma mark - Data Structures
@@ -79,25 +79,25 @@ typedef NS_ENUM(NSInteger, SVGControllerRepeatMode) {
 };
 
 /// Layer blend mode for compositing
-typedef NS_ENUM(NSInteger, SVGPlayerLayerBlendMode) {
+typedef NS_ENUM(NSInteger, FBFSVGPlayerLayerBlendMode) {
     /// Normal alpha blending (default)
-    SVGPlayerLayerBlendModeNormal = 0,
+    FBFSVGPlayerLayerBlendModeNormal = 0,
     /// Multiply blend mode
-    SVGPlayerLayerBlendModeMultiply,
+    FBFSVGPlayerLayerBlendModeMultiply,
     /// Screen blend mode
-    SVGPlayerLayerBlendModeScreen,
+    FBFSVGPlayerLayerBlendModeScreen,
     /// Overlay blend mode
-    SVGPlayerLayerBlendModeOverlay,
+    FBFSVGPlayerLayerBlendModeOverlay,
     /// Darken blend mode
-    SVGPlayerLayerBlendModeDarken,
+    FBFSVGPlayerLayerBlendModeDarken,
     /// Lighten blend mode
-    SVGPlayerLayerBlendModeLighten
+    FBFSVGPlayerLayerBlendModeLighten
 };
 
 // Forward declaration
-@class SVGPlayerLayer;
+@class FBFSVGPlayerLayer;
 
-#pragma mark - SVGPlayerController
+#pragma mark - FBFSVGPlayerController
 
 /// Low-level controller for SVG rendering on macOS
 ///
@@ -105,7 +105,7 @@ typedef NS_ENUM(NSInteger, SVGPlayerLayerBlendMode) {
 /// for direct SVG manipulation and rendering to pixel buffers.
 ///
 /// For AppKit integration, use SVGPlayerView instead.
-@interface SVGPlayerController : NSObject
+@interface FBFSVGPlayerController : NSObject
 
 #pragma mark - Initialization
 
@@ -544,17 +544,17 @@ typedef NS_ENUM(NSInteger, SVGPlayerLayerBlendMode) {
 /// @param filepath Path to the SVG file
 /// @param error Output error if loading fails (optional)
 /// @return New layer instance, or nil on failure
-- (nullable SVGPlayerLayer *)createLayerFromPath:(NSString *)filepath error:(NSError * _Nullable * _Nullable)error;
+- (nullable FBFSVGPlayerLayer *)createLayerFromPath:(NSString *)filepath error:(NSError * _Nullable * _Nullable)error;
 
 /// Create a new layer from SVG data
 /// @param data The SVG file data
 /// @param error Output error if loading fails (optional)
 /// @return New layer instance, or nil on failure
-- (nullable SVGPlayerLayer *)createLayerFromData:(NSData *)data error:(NSError * _Nullable * _Nullable)error;
+- (nullable FBFSVGPlayerLayer *)createLayerFromData:(NSData *)data error:(NSError * _Nullable * _Nullable)error;
 
 /// Destroy a layer and free its resources
 /// @param layer The layer to destroy
-- (void)destroyLayer:(SVGPlayerLayer *)layer;
+- (void)destroyLayer:(FBFSVGPlayerLayer *)layer;
 
 /// Number of layers (including primary SVG as layer 0)
 @property (nonatomic, readonly) NSInteger layerCount;
@@ -562,7 +562,7 @@ typedef NS_ENUM(NSInteger, SVGPlayerLayerBlendMode) {
 /// Get a layer by index (0 = primary SVG)
 /// @param index Layer index (0-based)
 /// @return Layer at index, or nil if out of range
-- (nullable SVGPlayerLayer *)layerAtIndex:(NSInteger)index;
+- (nullable FBFSVGPlayerLayer *)layerAtIndex:(NSInteger)index;
 
 /// Render all visible layers composited together
 /// @param buffer Pointer to RGBA pixel buffer
@@ -604,10 +604,10 @@ typedef NS_ENUM(NSInteger, SVGPlayerLayerBlendMode) {
 
 @end
 
-#pragma mark - SVGPlayerLayer
+#pragma mark - FBFSVGPlayerLayer
 
 /// Represents a single SVG layer in a composite scene
-@interface SVGPlayerLayer : NSObject
+@interface FBFSVGPlayerLayer : NSObject
 
 /// Layer position offset from origin
 @property (nonatomic, assign) NSPoint position;
@@ -628,7 +628,7 @@ typedef NS_ENUM(NSInteger, SVGPlayerLayerBlendMode) {
 @property (nonatomic, assign) CGFloat rotation;
 
 /// Layer blend mode for compositing
-@property (nonatomic, assign) SVGPlayerLayerBlendMode blendMode;
+@property (nonatomic, assign) FBFSVGPlayerLayerBlendMode blendMode;
 
 /// Intrinsic size of the layer's SVG (read-only)
 @property (nonatomic, readonly) NSSize size;

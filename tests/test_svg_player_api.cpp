@@ -3,7 +3,7 @@
 // Simple test framework without external dependencies.
 // Compile with: clang++ -std=c++17 -I../shared test_svg_player_api.cpp -o test_api
 //
-// These tests verify the public C API contract defined in svg_player_api.h
+// These tests verify the public C API contract defined in fbfsvg_player_api.h
 
 #include <cstdio>
 #include <cstdlib>
@@ -14,7 +14,7 @@
 #include <functional>
 
 // Include the API header (tests the header compiles correctly)
-#include "../shared/svg_player_api.h"
+#include "../shared/fbfsvg_player_api.h"
 
 // =============================================================================
 // Simple Test Framework
@@ -121,7 +121,7 @@ static const char* INVALID_SVG = "This is not valid SVG content at all!";
 TEST(api_header_compiles) {
     // This test passes if the header compiles without errors
     // Verify key types are defined
-    SVGPlayerRef player = nullptr;
+    FBFSVGPlayerRef player = nullptr;
     SVGPlaybackState state = SVGPlaybackState_Stopped;
     SVGRepeatMode mode = SVGRepeatMode_None;
     SVGRenderStats stats = {};
@@ -135,9 +135,9 @@ TEST(api_header_compiles) {
 }
 
 TEST(api_version_defined) {
-    ASSERT_TRUE(SVG_PLAYER_API_VERSION_MAJOR >= 1);
-    ASSERT_TRUE(SVG_PLAYER_API_VERSION_MINOR >= 0);
-    ASSERT_TRUE(SVG_PLAYER_API_VERSION_PATCH >= 0);
+    ASSERT_TRUE(FBFSVG_PLAYER_API_VERSION_MAJOR >= 1);
+    ASSERT_TRUE(FBFSVG_PLAYER_API_VERSION_MINOR >= 0);
+    ASSERT_TRUE(FBFSVG_PLAYER_API_VERSION_PATCH >= 0);
 }
 
 // =============================================================================
@@ -145,22 +145,22 @@ TEST(api_version_defined) {
 // =============================================================================
 
 TEST(create_returns_valid_handle) {
-    SVGPlayerRef player = SVGPlayer_Create();
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
     ASSERT_NOT_NULL(player);
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(destroy_null_is_safe) {
     // Destroying NULL should not crash
-    SVGPlayer_Destroy(nullptr);
+    FBFSVGPlayer_Destroy(nullptr);
     ASSERT_TRUE(true);
 }
 
 TEST(multiple_create_destroy_cycles) {
     for (int i = 0; i < 10; i++) {
-        SVGPlayerRef player = SVGPlayer_Create();
+        FBFSVGPlayerRef player = FBFSVGPlayer_Create();
         ASSERT_NOT_NULL(player);
-        SVGPlayer_Destroy(player);
+        FBFSVGPlayer_Destroy(player);
     }
 }
 
@@ -169,51 +169,51 @@ TEST(multiple_create_destroy_cycles) {
 // =============================================================================
 
 TEST(load_svg_data_valid) {
-    SVGPlayerRef player = SVGPlayer_Create();
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
     ASSERT_NOT_NULL(player);
 
-    bool result = SVGPlayer_LoadSVGData(player, MINIMAL_SVG, strlen(MINIMAL_SVG));
+    bool result = FBFSVGPlayer_LoadSVGData(player, MINIMAL_SVG, strlen(MINIMAL_SVG));
     ASSERT_TRUE(result);
-    ASSERT_TRUE(SVGPlayer_IsLoaded(player));
+    ASSERT_TRUE(FBFSVGPlayer_IsLoaded(player));
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(load_svg_data_invalid) {
-    SVGPlayerRef player = SVGPlayer_Create();
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
     ASSERT_NOT_NULL(player);
 
-    bool result = SVGPlayer_LoadSVGData(player, INVALID_SVG, strlen(INVALID_SVG));
+    bool result = FBFSVGPlayer_LoadSVGData(player, INVALID_SVG, strlen(INVALID_SVG));
     ASSERT_FALSE(result);
-    ASSERT_FALSE(SVGPlayer_IsLoaded(player));
+    ASSERT_FALSE(FBFSVGPlayer_IsLoaded(player));
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(load_svg_data_null_player) {
-    bool result = SVGPlayer_LoadSVGData(nullptr, MINIMAL_SVG, strlen(MINIMAL_SVG));
+    bool result = FBFSVGPlayer_LoadSVGData(nullptr, MINIMAL_SVG, strlen(MINIMAL_SVG));
     ASSERT_FALSE(result);
 }
 
 TEST(load_svg_data_null_data) {
-    SVGPlayerRef player = SVGPlayer_Create();
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
     ASSERT_NOT_NULL(player);
 
-    bool result = SVGPlayer_LoadSVGData(player, nullptr, 0);
+    bool result = FBFSVGPlayer_LoadSVGData(player, nullptr, 0);
     ASSERT_FALSE(result);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(unload_clears_state) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, MINIMAL_SVG, strlen(MINIMAL_SVG));
-    ASSERT_TRUE(SVGPlayer_IsLoaded(player));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, MINIMAL_SVG, strlen(MINIMAL_SVG));
+    ASSERT_TRUE(FBFSVGPlayer_IsLoaded(player));
 
-    SVGPlayer_Unload(player);
-    ASSERT_FALSE(SVGPlayer_IsLoaded(player));
+    FBFSVGPlayer_Unload(player);
+    ASSERT_FALSE(FBFSVGPlayer_IsLoaded(player));
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 // =============================================================================
@@ -221,28 +221,28 @@ TEST(unload_clears_state) {
 // =============================================================================
 
 TEST(get_intrinsic_size_valid) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, MINIMAL_SVG, strlen(MINIMAL_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, MINIMAL_SVG, strlen(MINIMAL_SVG));
 
     float width = 0, height = 0;
-    bool result = SVGPlayer_GetIntrinsicSize(player, &width, &height);
+    bool result = FBFSVGPlayer_GetIntrinsicSize(player, &width, &height);
 
     ASSERT_TRUE(result);
     ASSERT_FLOAT_EQ(width, 100.0f, 0.1f);
     ASSERT_FLOAT_EQ(height, 100.0f, 0.1f);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(get_intrinsic_size_no_svg_loaded) {
-    SVGPlayerRef player = SVGPlayer_Create();
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
 
     float width = 999, height = 999;
-    bool result = SVGPlayer_GetIntrinsicSize(player, &width, &height);
+    bool result = FBFSVGPlayer_GetIntrinsicSize(player, &width, &height);
 
     ASSERT_FALSE(result);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 // =============================================================================
@@ -250,67 +250,67 @@ TEST(get_intrinsic_size_no_svg_loaded) {
 // =============================================================================
 
 TEST(initial_state_is_stopped) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlaybackState state = SVGPlayer_GetPlaybackState(player);
+    SVGPlaybackState state = FBFSVGPlayer_GetPlaybackState(player);
     ASSERT_EQ(state, SVGPlaybackState_Stopped);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(play_changes_state) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_Play(player);
-    SVGPlaybackState state = SVGPlayer_GetPlaybackState(player);
+    FBFSVGPlayer_Play(player);
+    SVGPlaybackState state = FBFSVGPlayer_GetPlaybackState(player);
     ASSERT_EQ(state, SVGPlaybackState_Playing);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(pause_changes_state) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_Play(player);
-    SVGPlayer_Pause(player);
-    SVGPlaybackState state = SVGPlayer_GetPlaybackState(player);
+    FBFSVGPlayer_Play(player);
+    FBFSVGPlayer_Pause(player);
+    SVGPlaybackState state = FBFSVGPlayer_GetPlaybackState(player);
     ASSERT_EQ(state, SVGPlaybackState_Paused);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(stop_resets_to_stopped) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_Play(player);
-    SVGPlayer_Stop(player);
-    SVGPlaybackState state = SVGPlayer_GetPlaybackState(player);
+    FBFSVGPlayer_Play(player);
+    FBFSVGPlayer_Stop(player);
+    SVGPlaybackState state = FBFSVGPlayer_GetPlaybackState(player);
     ASSERT_EQ(state, SVGPlaybackState_Stopped);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(toggle_playback_works) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
     // Stopped -> Playing
-    SVGPlayer_TogglePlayback(player);
-    ASSERT_EQ(SVGPlayer_GetPlaybackState(player), SVGPlaybackState_Playing);
+    FBFSVGPlayer_TogglePlayback(player);
+    ASSERT_EQ(FBFSVGPlayer_GetPlaybackState(player), SVGPlaybackState_Playing);
 
     // Playing -> Paused
-    SVGPlayer_TogglePlayback(player);
-    ASSERT_EQ(SVGPlayer_GetPlaybackState(player), SVGPlaybackState_Paused);
+    FBFSVGPlayer_TogglePlayback(player);
+    ASSERT_EQ(FBFSVGPlayer_GetPlaybackState(player), SVGPlaybackState_Paused);
 
     // Paused -> Playing
-    SVGPlayer_TogglePlayback(player);
-    ASSERT_EQ(SVGPlayer_GetPlaybackState(player), SVGPlaybackState_Playing);
+    FBFSVGPlayer_TogglePlayback(player);
+    ASSERT_EQ(FBFSVGPlayer_GetPlaybackState(player), SVGPlaybackState_Playing);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 // =============================================================================
@@ -318,49 +318,49 @@ TEST(toggle_playback_works) {
 // =============================================================================
 
 TEST(get_duration_animated_svg) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    double duration = SVGPlayer_GetDuration(player);
+    double duration = FBFSVGPlayer_GetDuration(player);
     // Animated SVG has 2s animation
     ASSERT_TRUE(duration > 0.0);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(get_current_time_initial_zero) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    double currentTime = SVGPlayer_GetCurrentTime(player);
+    double currentTime = FBFSVGPlayer_GetCurrentTime(player);
     ASSERT_FLOAT_EQ(currentTime, 0.0, 0.001);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(update_advances_time) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
-    SVGPlayer_Play(player);
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayer_Play(player);
 
-    SVGPlayer_Update(player, 0.5); // Advance 0.5 seconds
-    double currentTime = SVGPlayer_GetCurrentTime(player);
+    FBFSVGPlayer_Update(player, 0.5); // Advance 0.5 seconds
+    double currentTime = FBFSVGPlayer_GetCurrentTime(player);
     ASSERT_TRUE(currentTime > 0.0);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(get_progress_in_range) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
-    SVGPlayer_Play(player);
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayer_Play(player);
 
-    SVGPlayer_Update(player, 0.5);
-    float progress = SVGPlayer_GetProgress(player);
+    FBFSVGPlayer_Update(player, 0.5);
+    float progress = FBFSVGPlayer_GetProgress(player);
     ASSERT_TRUE(progress >= 0.0f);
     ASSERT_TRUE(progress <= 1.0f);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 // =============================================================================
@@ -368,39 +368,39 @@ TEST(get_progress_in_range) {
 // =============================================================================
 
 TEST(seek_to_time) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_SeekToTime(player, 1.0);
-    double currentTime = SVGPlayer_GetCurrentTime(player);
+    FBFSVGPlayer_SeekToTime(player, 1.0);
+    double currentTime = FBFSVGPlayer_GetCurrentTime(player);
     ASSERT_FLOAT_EQ(currentTime, 1.0, 0.01);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(seek_to_progress) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_SeekToProgress(player, 0.5f);
-    float progress = SVGPlayer_GetProgress(player);
+    FBFSVGPlayer_SeekToProgress(player, 0.5f);
+    float progress = FBFSVGPlayer_GetProgress(player);
     ASSERT_FLOAT_EQ(progress, 0.5f, 0.01f);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(seek_to_frame) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    int totalFrames = SVGPlayer_GetTotalFrames(player);
+    int totalFrames = FBFSVGPlayer_GetTotalFrames(player);
     if (totalFrames > 1) {
-        SVGPlayer_SeekToFrame(player, totalFrames / 2);
-        int currentFrame = SVGPlayer_GetCurrentFrame(player);
+        FBFSVGPlayer_SeekToFrame(player, totalFrames / 2);
+        int currentFrame = FBFSVGPlayer_GetCurrentFrame(player);
         ASSERT_EQ(currentFrame, totalFrames / 2);
     }
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 // =============================================================================
@@ -408,35 +408,35 @@ TEST(seek_to_frame) {
 // =============================================================================
 
 TEST(default_repeat_mode_is_none) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGRepeatMode mode = SVGPlayer_GetRepeatMode(player);
+    SVGRepeatMode mode = FBFSVGPlayer_GetRepeatMode(player);
     ASSERT_EQ(mode, SVGRepeatMode_None);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(set_repeat_mode_loop) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_SetRepeatMode(player, SVGRepeatMode_Loop);
-    SVGRepeatMode mode = SVGPlayer_GetRepeatMode(player);
+    FBFSVGPlayer_SetRepeatMode(player, SVGRepeatMode_Loop);
+    SVGRepeatMode mode = FBFSVGPlayer_GetRepeatMode(player);
     ASSERT_EQ(mode, SVGRepeatMode_Loop);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(set_repeat_mode_reverse) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_SetRepeatMode(player, SVGRepeatMode_Reverse);
-    SVGRepeatMode mode = SVGPlayer_GetRepeatMode(player);
+    FBFSVGPlayer_SetRepeatMode(player, SVGRepeatMode_Reverse);
+    SVGRepeatMode mode = FBFSVGPlayer_GetRepeatMode(player);
     ASSERT_EQ(mode, SVGRepeatMode_Reverse);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 // =============================================================================
@@ -444,46 +444,46 @@ TEST(set_repeat_mode_reverse) {
 // =============================================================================
 
 TEST(default_playback_rate_is_one) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    float rate = SVGPlayer_GetPlaybackRate(player);
+    float rate = FBFSVGPlayer_GetPlaybackRate(player);
     ASSERT_FLOAT_EQ(rate, 1.0f, 0.001f);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(set_playback_rate) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_SetPlaybackRate(player, 2.0f);
-    float rate = SVGPlayer_GetPlaybackRate(player);
+    FBFSVGPlayer_SetPlaybackRate(player, 2.0f);
+    float rate = FBFSVGPlayer_GetPlaybackRate(player);
     ASSERT_FLOAT_EQ(rate, 2.0f, 0.001f);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(playback_rate_clamped_min) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_SetPlaybackRate(player, 0.01f); // Below minimum
-    float rate = SVGPlayer_GetPlaybackRate(player);
+    FBFSVGPlayer_SetPlaybackRate(player, 0.01f); // Below minimum
+    float rate = FBFSVGPlayer_GetPlaybackRate(player);
     ASSERT_TRUE(rate >= 0.1f); // Should be clamped to minimum
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(playback_rate_clamped_max) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_SetPlaybackRate(player, 100.0f); // Above maximum
-    float rate = SVGPlayer_GetPlaybackRate(player);
+    FBFSVGPlayer_SetPlaybackRate(player, 100.0f); // Above maximum
+    float rate = FBFSVGPlayer_GetPlaybackRate(player);
     ASSERT_TRUE(rate <= 10.0f); // Should be clamped to maximum
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 // =============================================================================
@@ -491,38 +491,38 @@ TEST(playback_rate_clamped_max) {
 // =============================================================================
 
 TEST(step_forward) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    int initialFrame = SVGPlayer_GetCurrentFrame(player);
-    SVGPlayer_StepForward(player);
-    int newFrame = SVGPlayer_GetCurrentFrame(player);
+    int initialFrame = FBFSVGPlayer_GetCurrentFrame(player);
+    FBFSVGPlayer_StepForward(player);
+    int newFrame = FBFSVGPlayer_GetCurrentFrame(player);
 
     ASSERT_EQ(newFrame, initialFrame + 1);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(step_backward_at_start_stays_at_zero) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_StepBackward(player);
-    int frame = SVGPlayer_GetCurrentFrame(player);
+    FBFSVGPlayer_StepBackward(player);
+    int frame = FBFSVGPlayer_GetCurrentFrame(player);
     ASSERT_EQ(frame, 0);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(step_by_frames) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
-    SVGPlayer_StepByFrames(player, 5);
-    int frame = SVGPlayer_GetCurrentFrame(player);
+    FBFSVGPlayer_StepByFrames(player, 5);
+    int frame = FBFSVGPlayer_GetCurrentFrame(player);
     ASSERT_EQ(frame, 5);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 // =============================================================================
@@ -530,14 +530,14 @@ TEST(step_by_frames) {
 // =============================================================================
 
 TEST(render_to_buffer) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, MINIMAL_SVG, strlen(MINIMAL_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, MINIMAL_SVG, strlen(MINIMAL_SVG));
 
     const int width = 100;
     const int height = 100;
     std::vector<uint8_t> buffer(width * height * 4, 0);
 
-    bool result = SVGPlayer_Render(player, buffer.data(), width, height, 1.0f);
+    bool result = FBFSVGPlayer_Render(player, buffer.data(), width, height, 1.0f);
     ASSERT_TRUE(result);
 
     // Verify some pixels are non-zero (the red rect should be rendered)
@@ -550,27 +550,27 @@ TEST(render_to_buffer) {
     }
     ASSERT_TRUE(hasContent);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(render_null_buffer_fails) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, MINIMAL_SVG, strlen(MINIMAL_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, MINIMAL_SVG, strlen(MINIMAL_SVG));
 
-    bool result = SVGPlayer_Render(player, nullptr, 100, 100, 1.0f);
+    bool result = FBFSVGPlayer_Render(player, nullptr, 100, 100, 1.0f);
     ASSERT_FALSE(result);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(render_no_svg_loaded_fails) {
-    SVGPlayerRef player = SVGPlayer_Create();
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
 
     std::vector<uint8_t> buffer(100 * 100 * 4, 0);
-    bool result = SVGPlayer_Render(player, buffer.data(), 100, 100, 1.0f);
+    bool result = FBFSVGPlayer_Render(player, buffer.data(), 100, 100, 1.0f);
     ASSERT_FALSE(result);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 // =============================================================================
@@ -578,31 +578,31 @@ TEST(render_no_svg_loaded_fails) {
 // =============================================================================
 
 TEST(get_stats_returns_valid_data) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
     // Render a frame to populate stats
     std::vector<uint8_t> buffer(200 * 200 * 4, 0);
-    SVGPlayer_Render(player, buffer.data(), 200, 200, 1.0f);
+    FBFSVGPlayer_Render(player, buffer.data(), 200, 200, 1.0f);
 
-    SVGRenderStats stats = SVGPlayer_GetStats(player);
+    SVGRenderStats stats = FBFSVGPlayer_GetStats(player);
     ASSERT_TRUE(stats.totalFrames > 0);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 TEST(reset_stats) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    SVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    FBFSVGPlayer_LoadSVGData(player, ANIMATED_SVG, strlen(ANIMATED_SVG));
 
     std::vector<uint8_t> buffer(200 * 200 * 4, 0);
-    SVGPlayer_Render(player, buffer.data(), 200, 200, 1.0f);
+    FBFSVGPlayer_Render(player, buffer.data(), 200, 200, 1.0f);
 
-    SVGPlayer_ResetStats(player);
-    SVGRenderStats stats = SVGPlayer_GetStats(player);
+    FBFSVGPlayer_ResetStats(player);
+    SVGRenderStats stats = FBFSVGPlayer_GetStats(player);
     ASSERT_FLOAT_EQ(stats.renderTimeMs, 0.0, 0.001);
 
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 // =============================================================================
@@ -610,16 +610,16 @@ TEST(reset_stats) {
 // =============================================================================
 
 TEST(get_last_error_null_player) {
-    const char* error = SVGPlayer_GetLastError(nullptr);
+    const char* error = FBFSVGPlayer_GetLastError(nullptr);
     ASSERT_NULL(error);
 }
 
 TEST(get_last_error_no_error) {
-    SVGPlayerRef player = SVGPlayer_Create();
-    const char* error = SVGPlayer_GetLastError(player);
+    FBFSVGPlayerRef player = FBFSVGPlayer_Create();
+    const char* error = FBFSVGPlayer_GetLastError(player);
     // May return null or empty string when no error
     ASSERT_TRUE(error == nullptr || strlen(error) == 0);
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 }
 
 // =============================================================================
@@ -628,13 +628,13 @@ TEST(get_last_error_no_error) {
 
 TEST(format_time_works) {
     char buffer[64];
-    SVGPlayer_FormatTime(65.5, buffer, sizeof(buffer));
+    FBFSVGPlayer_FormatTime(65.5, buffer, sizeof(buffer));
     // Should be something like "01:05" or "1:05.500"
     ASSERT_TRUE(strlen(buffer) > 0);
 }
 
 TEST(get_version_string) {
-    const char* version = SVGPlayer_GetVersionString();
+    const char* version = FBFSVGPlayer_GetVersionString();
     ASSERT_NOT_NULL(version);
     ASSERT_TRUE(strlen(version) > 0);
 }

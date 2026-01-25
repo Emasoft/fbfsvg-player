@@ -1,0 +1,81 @@
+# libfbfsvgplayer.map - Symbol version script for libfbfsvgplayer.so
+# This controls which symbols are exported from the shared library
+
+FBFSVGPLAYER_1.0 {
+    global:
+        # Lifecycle Functions
+        FBFSVGPlayer_Create;
+        FBFSVGPlayer_Destroy;
+        FBFSVGPlayer_GetVersion;
+
+        # Loading Functions
+        FBFSVGPlayer_LoadSVG;
+        FBFSVGPlayer_LoadSVGData;
+        FBFSVGPlayer_Unload;
+        FBFSVGPlayer_IsLoaded;
+
+        # Size and Dimension Functions
+        FBFSVGPlayer_GetSize;
+        FBFSVGPlayer_GetSizeInfo;
+
+        # Playback Control Functions
+        FBFSVGPlayer_Play;
+        FBFSVGPlayer_Pause;
+        FBFSVGPlayer_Stop;
+        FBFSVGPlayer_TogglePlayback;
+        FBFSVGPlayer_SetPlaybackState;
+        FBFSVGPlayer_GetPlaybackState;
+
+        # Repeat Mode Functions
+        FBFSVGPlayer_SetRepeatMode;
+        FBFSVGPlayer_GetRepeatMode;
+        FBFSVGPlayer_SetRepeatCount;
+        FBFSVGPlayer_GetRepeatCount;
+        FBFSVGPlayer_GetCompletedLoops;
+        FBFSVGPlayer_IsLooping;
+        FBFSVGPlayer_SetLooping;
+
+        # Playback Rate Functions
+        FBFSVGPlayer_SetPlaybackRate;
+        FBFSVGPlayer_GetPlaybackRate;
+
+        # Timeline Functions
+        FBFSVGPlayer_Update;
+        FBFSVGPlayer_SeekTo;
+        FBFSVGPlayer_SeekToFrame;
+        FBFSVGPlayer_SeekToProgress;
+        FBFSVGPlayer_GetDuration;
+        FBFSVGPlayer_GetCurrentTime;
+        FBFSVGPlayer_GetProgress;
+        FBFSVGPlayer_GetCurrentFrame;
+        FBFSVGPlayer_GetTotalFrames;
+        FBFSVGPlayer_GetFrameRate;
+
+        # Frame Stepping Functions
+        FBFSVGPlayer_StepForward;
+        FBFSVGPlayer_StepBackward;
+        FBFSVGPlayer_StepByFrames;
+
+        # Rendering Functions
+        FBFSVGPlayer_Render;
+        FBFSVGPlayer_RenderAtTime;
+
+        # Statistics and Diagnostics
+        FBFSVGPlayer_GetStats;
+        FBFSVGPlayer_GetLastError;
+        FBFSVGPlayer_ClearError;
+
+        # Coordinate Conversion Functions
+        FBFSVGPlayer_ViewToSVG;
+        FBFSVGPlayer_SVGToView;
+
+        # Element Touch/Hit Testing Functions
+        FBFSVGPlayer_SubscribeToElement;
+        FBFSVGPlayer_UnsubscribeFromElement;
+        FBFSVGPlayer_UnsubscribeFromAllElements;
+        FBFSVGPlayer_HitTest;
+        FBFSVGPlayer_GetElementBounds;
+
+    local:
+        *;
+};

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# build-ios-framework.sh - Build SVGPlayer.xcframework for iOS
+# build-ios-framework.sh - Build FBFSVGPlayer.xcframework for iOS
 #
 # This script builds a complete iOS framework with:
 # - Static library combining C++ core and Objective-C wrapper
@@ -11,7 +11,7 @@
 # Usage:
 #   ./scripts/build-ios-framework.sh [--clean]
 #
-# Output: build/SVGPlayer.xcframework
+# Output: build/FBFSVGPlayer.xcframework
 
 set -e
 
@@ -32,12 +32,12 @@ log_warn() { echo -e "${YELLOW}[WARN]${NC} $1" >&2; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 
 # Configuration
-SDK_NAME="SVGPlayer"
+SDK_NAME="FBFSVGPlayer"
 SDK_VERSION="1.0.0"
 MIN_IOS_VERSION="13.0"
 BUILD_DIR="$PROJECT_ROOT/build"
 FRAMEWORK_BUILD_DIR="$BUILD_DIR/framework-build"
-IOS_SDK_DIR="$PROJECT_ROOT/ios-sdk/SVGPlayer"
+IOS_SDK_DIR="$PROJECT_ROOT/ios-sdk/FBFSVGPlayer"
 SKIA_DIR="$PROJECT_ROOT/skia-build/src/skia"
 
 # Source files (includes shared animation controller, grid compositor, and instrumentation)
@@ -49,16 +49,16 @@ CPP_SOURCES=(
 )
 
 OBJC_SOURCES=(
-    "$IOS_SDK_DIR/SVGPlayerController.mm"
-    "$IOS_SDK_DIR/SVGPlayerMetalRenderer.mm"
-    "$IOS_SDK_DIR/SVGPlayerView.mm"
+    "$IOS_SDK_DIR/FBFSVGPlayerController.mm"
+    "$IOS_SDK_DIR/FBFSVGPlayerMetalRenderer.mm"
+    "$IOS_SDK_DIR/FBFSVGPlayerView.mm"
 )
 
 PUBLIC_HEADERS=(
-    "$IOS_SDK_DIR/SVGPlayer.h"
-    "$IOS_SDK_DIR/SVGPlayerView.h"
-    "$IOS_SDK_DIR/SVGPlayerController.h"
-    "$IOS_SDK_DIR/SVGPlayerMetalRenderer.h"
+    "$IOS_SDK_DIR/FBFSVGPlayer.h"
+    "$IOS_SDK_DIR/FBFSVGPlayerView.h"
+    "$IOS_SDK_DIR/FBFSVGPlayerController.h"
+    "$IOS_SDK_DIR/FBFSVGPlayerMetalRenderer.h"
     "$PROJECT_ROOT/src/svg_player_ios.h"
 )
 
@@ -337,11 +337,11 @@ main() {
     echo "  3. Set 'Embed' to 'Do Not Embed' (it's a static framework)"
     echo ""
     log_info "Usage in Swift:"
-    echo "  import SVGPlayer"
+    echo "  import FBFSVGPlayer"
     echo "  let player = SVGPlayerView(frame: view.bounds, svgFileName: \"animation\")"
     echo ""
     log_info "Usage in Objective-C:"
-    echo "  #import <SVGPlayer/SVGPlayer.h>"
+    echo "  #import <FBFSVGPlayer/FBFSVGPlayer.h>"
     echo "  SVGPlayerView *player = [[SVGPlayerView alloc] initWithFrame:self.view.bounds"
     echo "                                                   svgFileName:@\"animation\"];"
     echo ""

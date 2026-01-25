@@ -1,5 +1,5 @@
-#ifndef SVG_PLAYER_TEST_ENVIRONMENT_H
-#define SVG_PLAYER_TEST_ENVIRONMENT_H
+#ifndef FBFSVG_PLAYER_TEST_ENVIRONMENT_H
+#define FBFSVG_PLAYER_TEST_ENVIRONMENT_H
 
 #include <filesystem>
 #include <fstream>
@@ -232,4 +232,4 @@ private:
 } // namespace testing
 } // namespace svgplayer
 
-#endif // SVG_PLAYER_TEST_ENVIRONMENT_H
+#endif // FBFSVG_PLAYER_TEST_ENVIRONMENT_H

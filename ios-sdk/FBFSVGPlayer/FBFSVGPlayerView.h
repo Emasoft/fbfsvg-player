@@ -1,7 +1,7 @@
 // SVGPlayerView.h - @IBDesignable UIView for SVG animation playback
 //
 // This view can be used in Interface Builder with live preview support.
-// Simply drag a UIView onto your storyboard/XIB and set its class to SVGPlayerView.
+// Simply drag a UIView onto your storyboard/XIB and set its class to FBFSVGPlayerView.
 //
 // Features:
 // - Metal GPU-accelerated rendering at native Retina resolution
@@ -17,55 +17,55 @@ NS_ASSUME_NONNULL_BEGIN
 
 #pragma mark - Error Domain
 
-/// Error domain for SVGPlayerView errors
-extern NSString * const SVGPlayerViewErrorDomain;
+/// Error domain for FBFSVGPlayerView errors
+extern NSString * const FBFSVGPlayerViewErrorDomain;
 
 #pragma mark - Enumerations
 
 /// Content mode options for how SVG fits within the view bounds
-typedef NS_ENUM(NSInteger, SVGContentMode) {
+typedef NS_ENUM(NSInteger, FBFSVGContentMode) {
     /// Preserve aspect ratio, fit within bounds (default)
-    SVGContentModeScaleAspectFit = 0,
+    FBFSVGContentModeScaleAspectFit = 0,
     /// Preserve aspect ratio, fill bounds (may clip)
-    SVGContentModeScaleAspectFill,
+    FBFSVGContentModeScaleAspectFill,
     /// Stretch to fill bounds exactly
-    SVGContentModeScaleToFill,
+    FBFSVGContentModeScaleToFill,
     /// Center at original size (may clip or have margins)
-    SVGContentModeCenter
+    FBFSVGContentModeCenter
 };
 
 /// Playback state for the SVG animation
-typedef NS_ENUM(NSInteger, SVGViewPlaybackState) {
+typedef NS_ENUM(NSInteger, FBFSVGViewPlaybackState) {
     /// Animation is stopped and reset to beginning
-    SVGViewPlaybackStateStopped = 0,
+    FBFSVGViewPlaybackStateStopped = 0,
     /// Animation is actively playing
-    SVGViewPlaybackStatePlaying,
+    FBFSVGViewPlaybackStatePlaying,
     /// Animation is paused at current position
-    SVGViewPlaybackStatePaused,
+    FBFSVGViewPlaybackStatePaused,
     /// Animation is buffering/loading (future use)
-    SVGViewPlaybackStateBuffering,
+    FBFSVGViewPlaybackStateBuffering,
     /// Animation playback ended (non-looping mode)
-    SVGViewPlaybackStateEnded
+    FBFSVGViewPlaybackStateEnded
 };
 
 /// Repeat mode for animation playback
-typedef NS_ENUM(NSInteger, SVGRepeatMode) {
+typedef NS_ENUM(NSInteger, FBFSVGRepeatMode) {
     /// Play once and stop at end
-    SVGRepeatModeNone = 0,
+    FBFSVGRepeatModeNone = 0,
     /// Loop continuously from start
-    SVGRepeatModeLoop,
+    FBFSVGRepeatModeLoop,
     /// Play forward, then backward, then forward (ping-pong)
-    SVGRepeatModeReverse,
+    FBFSVGRepeatModeReverse,
     /// Loop a specific number of times (set via repeatCount)
-    SVGRepeatModeCount
+    FBFSVGRepeatModeCount
 };
 
 /// Seek direction for relative seeking
-typedef NS_ENUM(NSInteger, SVGSeekDirection) {
+typedef NS_ENUM(NSInteger, FBFSVGSeekDirection) {
     /// Seek forward in time
-    SVGSeekDirectionForward = 0,
+    FBFSVGSeekDirectionForward = 0,
     /// Seek backward in time
-    SVGSeekDirectionBackward
+    FBFSVGSeekDirectionBackward
 };
 
 #pragma mark - Timeline Info Structure
@@ -90,7 +90,7 @@ typedef struct {
     CGFloat fps;
     /// Whether playback direction is forward
     BOOL isPlayingForward;
-} SVGTimelineInfo;
+} FBFSVGTimelineInfo;
 
 #pragma mark - Viewport Structure
 
@@ -105,52 +105,52 @@ typedef struct {
     CGFloat width;
     /// Height of the viewport (in SVG coordinate space)
     CGFloat height;
-} SVGViewport;
+} FBFSVGViewport;
 
-/// Create an SVGViewport from values
-NS_INLINE SVGViewport SVGViewportMake(CGFloat x, CGFloat y, CGFloat width, CGFloat height) {
-    SVGViewport v; v.x = x; v.y = y; v.width = width; v.height = height; return v;
+/// Create an FBFSVGViewport from values
+NS_INLINE FBFSVGViewport FBFSVGViewportMake(CGFloat x, CGFloat y, CGFloat width, CGFloat height) {
+    FBFSVGViewport v; v.x = x; v.y = y; v.width = width; v.height = height; return v;
 }
 
-/// Create an SVGViewport from a CGRect
-NS_INLINE SVGViewport SVGViewportFromRect(CGRect rect) {
-    return SVGViewportMake(rect.origin.x, rect.origin.y, rect.size.width, rect.size.height);
+/// Create an FBFSVGViewport from a CGRect
+NS_INLINE FBFSVGViewport FBFSVGViewportFromRect(CGRect rect) {
+    return FBFSVGViewportMake(rect.origin.x, rect.origin.y, rect.size.width, rect.size.height);
 }
 
-/// Convert an SVGViewport to a CGRect
-NS_INLINE CGRect SVGViewportToRect(SVGViewport viewport) {
+/// Convert an FBFSVGViewport to a CGRect
+NS_INLINE CGRect FBFSVGViewportToRect(FBFSVGViewport viewport) {
     return CGRectMake(viewport.x, viewport.y, viewport.width, viewport.height);
 }
 
 /// Check if two viewports are equal
-NS_INLINE BOOL SVGViewportEqualToViewport(SVGViewport v1, SVGViewport v2) {
+NS_INLINE BOOL FBFSVGViewportEqualToViewport(FBFSVGViewport v1, FBFSVGViewport v2) {
     return v1.x == v2.x && v1.y == v2.y && v1.width == v2.width && v1.height == v2.height;
 }
 
 /// Zero viewport (invalid/unset)
-extern const SVGViewport SVGViewportZero;
+extern const FBFSVGViewport FBFSVGViewportZero;
 
 #pragma mark - Zoom Info Structure
 
 /// Structure containing zoom/viewport change information
 typedef struct {
     /// Previous viewport before the change
-    SVGViewport previousViewport;
+    FBFSVGViewport previousViewport;
     /// New viewport after the change
-    SVGViewport newViewport;
+    FBFSVGViewport newViewport;
     /// Current zoom scale (1.0 = no zoom, 2.0 = 2x zoom, etc.)
     CGFloat zoomScale;
     /// Whether this was a user gesture (pinch) vs programmatic change
     BOOL isUserGesture;
     /// Center point of the zoom in view coordinates
     CGPoint zoomCenter;
-} SVGZoomInfo;
+} FBFSVGZoomInfo;
 
 #pragma mark - Preset View
 
 /// A named preset view for quick viewport switching
 /// Use presets to define points of interest in the SVG that users can jump to
-@interface SVGPresetView : NSObject <NSCopying>
+@interface FBFSVGPresetView : NSObject <NSCopying>
 
 /// Unique identifier for this preset
 @property (nonatomic, copy, readonly) NSString *identifier;
@@ -159,17 +159,17 @@ typedef struct {
 @property (nonatomic, copy, nullable) NSString *displayName;
 
 /// The viewport this preset represents
-@property (nonatomic, assign, readonly) SVGViewport viewport;
+@property (nonatomic, assign, readonly) FBFSVGViewport viewport;
 
 /// Animation duration when transitioning to this preset (0 = instant)
 @property (nonatomic, assign) NSTimeInterval transitionDuration;
 
 /// Create a preset with identifier and viewport
-+ (instancetype)presetWithIdentifier:(NSString *)identifier viewport:(SVGViewport)viewport;
++ (instancetype)presetWithIdentifier:(NSString *)identifier viewport:(FBFSVGViewport)viewport;
 
 /// Create a preset with identifier, viewport and display name
 + (instancetype)presetWithIdentifier:(NSString *)identifier
-                            viewport:(SVGViewport)viewport
+                            viewport:(FBFSVGViewport)viewport
                          displayName:(nullable NSString *)displayName;
 
 /// Create a preset from a rect (convenience)
@@ -180,25 +180,25 @@ typedef struct {
 #pragma mark - Element Touch Types
 
 /// Touch phase for element touch events
-typedef NS_ENUM(NSInteger, SVGElementTouchPhase) {
+typedef NS_ENUM(NSInteger, FBFSVGElementTouchPhase) {
     /// Touch began on the element
-    SVGElementTouchPhaseBegan = 0,
+    FBFSVGElementTouchPhaseBegan = 0,
     /// Touch moved while on the element
-    SVGElementTouchPhaseMoved,
+    FBFSVGElementTouchPhaseMoved,
     /// Touch ended on the element
-    SVGElementTouchPhaseEnded,
+    FBFSVGElementTouchPhaseEnded,
     /// Touch was cancelled
-    SVGElementTouchPhaseCancelled,
+    FBFSVGElementTouchPhaseCancelled,
     /// Touch entered the element bounds (while dragging)
-    SVGElementTouchPhaseEntered,
+    FBFSVGElementTouchPhaseEntered,
     /// Touch exited the element bounds (while dragging)
-    SVGElementTouchPhaseExited
+    FBFSVGElementTouchPhaseExited
 };
 
 /// Structure containing touch event information for SVG elements
 typedef struct {
     /// The touch phase (began, moved, ended, cancelled, entered, exited)
-    SVGElementTouchPhase phase;
+    FBFSVGElementTouchPhase phase;
     /// Touch location in view coordinates
     CGPoint locationInView;
     /// Touch location in SVG coordinate space
@@ -215,14 +215,14 @@ typedef struct {
     CGFloat force;
     /// Maximum possible force for this device
     CGFloat maximumPossibleForce;
-} SVGElementTouchInfo;
+} FBFSVGElementTouchInfo;
 
-/// Create an SVGElementTouchInfo with basic values
-NS_INLINE SVGElementTouchInfo SVGElementTouchInfoMake(SVGElementTouchPhase phase,
+/// Create an FBFSVGElementTouchInfo with basic values
+NS_INLINE FBFSVGElementTouchInfo FBFSVGElementTouchInfoMake(FBFSVGElementTouchPhase phase,
                                                        CGPoint locationInView,
                                                        CGPoint locationInSVG,
                                                        NSInteger tapCount) {
-    SVGElementTouchInfo info;
+    FBFSVGElementTouchInfo info;
     info.phase = phase;
     info.locationInView = locationInView;
     info.locationInSVG = locationInSVG;
@@ -247,48 +247,48 @@ typedef struct {
     CGPoint viewPoint;
     /// Location in SVG viewbox coordinate space
     CGPoint svgPoint;
-} SVGDualPoint;
+} FBFSVGDualPoint;
 
-/// Create an SVGDualPoint from view and SVG coordinates
-NS_INLINE SVGDualPoint SVGDualPointMake(CGPoint viewPoint, CGPoint svgPoint) {
-    SVGDualPoint p; p.viewPoint = viewPoint; p.svgPoint = svgPoint; return p;
+/// Create an FBFSVGDualPoint from view and SVG coordinates
+NS_INLINE FBFSVGDualPoint FBFSVGDualPointMake(CGPoint viewPoint, CGPoint svgPoint) {
+    FBFSVGDualPoint p; p.viewPoint = viewPoint; p.svgPoint = svgPoint; return p;
 }
 
 /// Zero dual point
-NS_INLINE SVGDualPoint SVGDualPointZero(void) {
-    return SVGDualPointMake(CGPointZero, CGPointZero);
+NS_INLINE FBFSVGDualPoint FBFSVGDualPointZero(void) {
+    return FBFSVGDualPointMake(CGPointZero, CGPointZero);
 }
 
 #pragma mark - Delegate Protocol
 
-@class SVGPlayerView;
+@class FBFSVGPlayerView;
 
-/// Delegate protocol for SVGPlayerView events
+/// Delegate protocol for FBFSVGPlayerView events
 ///
 /// Implement these methods to respond to player events and update your custom UI.
 /// All delegate methods are called on the main thread.
-@protocol SVGPlayerViewDelegate <NSObject>
+@protocol FBFSVGPlayerViewDelegate <NSObject>
 @optional
 
 #pragma mark Playback State Events
 
 /// Called when animation playback completes (non-looping mode only)
 /// @param playerView The player view that finished playing
-- (void)svgPlayerViewDidFinishPlaying:(SVGPlayerView *)playerView;
+- (void)svgPlayerViewDidFinishPlaying:(FBFSVGPlayerView *)playerView;
 
 /// Called when playback state changes
 /// @param playerView The player view
 /// @param state The new playback state
-- (void)svgPlayerView:(SVGPlayerView *)playerView didChangePlaybackState:(SVGViewPlaybackState)state;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didChangePlaybackState:(FBFSVGViewPlaybackState)state;
 
 /// Called when the player is ready to play (SVG loaded successfully)
 /// @param playerView The player view that is ready
-- (void)svgPlayerViewDidBecomeReadyToPlay:(SVGPlayerView *)playerView;
+- (void)svgPlayerViewDidBecomeReadyToPlay:(FBFSVGPlayerView *)playerView;
 
 /// Called when a loop iteration completes (in loop mode)
 /// @param playerView The player view
 /// @param loopCount The number of loops completed so far
-- (void)svgPlayerView:(SVGPlayerView *)playerView didCompleteLoopIteration:(NSInteger)loopCount;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didCompleteLoopIteration:(NSInteger)loopCount;
 
 #pragma mark Timeline Events
 
@@ -297,54 +297,54 @@ NS_INLINE SVGDualPoint SVGDualPointZero(void) {
 /// @param playerView The player view
 /// @param timelineInfo Current timeline information
 /// @note This is called on every frame. Keep your implementation lightweight.
-- (void)svgPlayerView:(SVGPlayerView *)playerView didUpdateTimeline:(SVGTimelineInfo)timelineInfo;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didUpdateTimeline:(FBFSVGTimelineInfo)timelineInfo;
 
 /// Called when seeking begins (scrubbing started)
 /// @param playerView The player view
-- (void)svgPlayerViewDidBeginSeeking:(SVGPlayerView *)playerView;
+- (void)svgPlayerViewDidBeginSeeking:(FBFSVGPlayerView *)playerView;
 
 /// Called when seeking ends (scrubbing finished)
 /// @param playerView The player view
 /// @param time The final seek position in seconds
-- (void)svgPlayerView:(SVGPlayerView *)playerView didEndSeekingAtTime:(NSTimeInterval)time;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didEndSeekingAtTime:(NSTimeInterval)time;
 
 #pragma mark Frame Events
 
 /// Called on each frame render (use sparingly, performance sensitive)
 /// @param playerView The player view that rendered a frame
 /// @param time The current animation time in seconds
-- (void)svgPlayerView:(SVGPlayerView *)playerView didRenderFrameAtTime:(NSTimeInterval)time;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didRenderFrameAtTime:(NSTimeInterval)time;
 
 #pragma mark Error Events
 
 /// Called when an SVG file fails to load
 /// @param playerView The player view that encountered an error
 /// @param error The error that occurred
-- (void)svgPlayerView:(SVGPlayerView *)playerView didFailWithError:(NSError *)error;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didFailWithError:(NSError *)error;
 
 #pragma mark Display Events
 
 /// Called when fullscreen mode changes
 /// @param playerView The player view
 /// @param isFullscreen Whether the player is now in fullscreen mode
-- (void)svgPlayerView:(SVGPlayerView *)playerView didChangeFullscreenMode:(BOOL)isFullscreen;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didChangeFullscreenMode:(BOOL)isFullscreen;
 
 /// Called when orientation lock state changes
 /// @param playerView The player view
 /// @param isLocked Whether orientation is now locked
-- (void)svgPlayerView:(SVGPlayerView *)playerView didChangeOrientationLock:(BOOL)isLocked;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didChangeOrientationLock:(BOOL)isLocked;
 
 #pragma mark Reset Events
 
 /// Called when playback is reset to the start frame
 /// @param playerView The player view that was reset
 /// @note This is called when stop() is invoked or when looping back to start
-- (void)svgPlayerViewDidResetToStart:(SVGPlayerView *)playerView;
+- (void)svgPlayerViewDidResetToStart:(FBFSVGPlayerView *)playerView;
 
 /// Called when the player is paused
 /// @param playerView The player view that was paused
 /// @note For more context, use didChangePlaybackState: instead
-- (void)svgPlayerViewDidPause:(SVGPlayerView *)playerView;
+- (void)svgPlayerViewDidPause:(FBFSVGPlayerView *)playerView;
 
 #pragma mark Processing Events
 
@@ -352,43 +352,43 @@ NS_INLINE SVGDualPoint SVGDualPointZero(void) {
 /// @param playerView The player view
 /// @note SVG parsing can be time-consuming. This event indicates when scrubbing is safe.
 ///       This is distinct from didBecomeReadyToPlay which fires earlier.
-- (void)svgPlayerViewDidBecomeReadyForScrubbing:(SVGPlayerView *)playerView;
+- (void)svgPlayerViewDidBecomeReadyForScrubbing:(FBFSVGPlayerView *)playerView;
 
 /// Called periodically during SVG loading/processing with progress
 /// @param playerView The player view
 /// @param progress Loading progress from 0.0 to 1.0
-- (void)svgPlayerView:(SVGPlayerView *)playerView loadingProgress:(CGFloat)progress;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView loadingProgress:(CGFloat)progress;
 
 #pragma mark Viewport/Zoom Events
 
 /// Called when the viewport changes (programmatic or user gesture)
 /// @param playerView The player view
 /// @param zoomInfo Information about the viewport change
-- (void)svgPlayerView:(SVGPlayerView *)playerView didChangeViewport:(SVGZoomInfo)zoomInfo;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didChangeViewport:(FBFSVGZoomInfo)zoomInfo;
 
 /// Called when user performs a pinch-to-zoom gesture
 /// @param playerView The player view
 /// @param zoomInfo Information about the zoom gesture
-- (void)svgPlayerView:(SVGPlayerView *)playerView didZoom:(SVGZoomInfo)zoomInfo;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didZoom:(FBFSVGZoomInfo)zoomInfo;
 
 /// Called when user performs a pan gesture while zoomed
 /// @param playerView The player view
 /// @param translation The translation in view coordinates
-- (void)svgPlayerView:(SVGPlayerView *)playerView didPan:(CGPoint)translation;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didPan:(CGPoint)translation;
 
 /// Called when zoom is reset to default (1.0x, full SVG visible)
 /// @param playerView The player view
-- (void)svgPlayerViewDidResetZoom:(SVGPlayerView *)playerView;
+- (void)svgPlayerViewDidResetZoom:(FBFSVGPlayerView *)playerView;
 
 /// Called when a preset view transition begins
 /// @param playerView The player view
 /// @param preset The preset being transitioned to
-- (void)svgPlayerView:(SVGPlayerView *)playerView willTransitionToPreset:(SVGPresetView *)preset;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView willTransitionToPreset:(FBFSVGPresetView *)preset;
 
 /// Called when a preset view transition completes
 /// @param playerView The player view
 /// @param preset The preset that was transitioned to
-- (void)svgPlayerView:(SVGPlayerView *)playerView didTransitionToPreset:(SVGPresetView *)preset;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didTransitionToPreset:(FBFSVGPresetView *)preset;
 
 #pragma mark Element Touch Events
 
@@ -401,9 +401,9 @@ NS_INLINE SVGDualPoint SVGDualPointZero(void) {
 /// @param playerView The player view
 /// @param objectID The objectID of the tapped element
 /// @param location The tap location in both view and SVG coordinates
-- (void)svgPlayerView:(SVGPlayerView *)playerView
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView
   didTapElementWithID:(NSString *)objectID
-           atLocation:(SVGDualPoint)location;
+           atLocation:(FBFSVGDualPoint)location;
 
 /// Called when a subscribed SVG element is double-tapped
 ///
@@ -413,9 +413,9 @@ NS_INLINE SVGDualPoint SVGDualPointZero(void) {
 /// @param playerView The player view
 /// @param objectID The objectID of the double-tapped element
 /// @param location The double-tap location in both view and SVG coordinates
-- (void)svgPlayerView:(SVGPlayerView *)playerView
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView
   didDoubleTapElementWithID:(NSString *)objectID
-                 atLocation:(SVGDualPoint)location;
+                 atLocation:(FBFSVGDualPoint)location;
 
 /// Called when a subscribed SVG element receives a long press
 ///
@@ -424,9 +424,9 @@ NS_INLINE SVGDualPoint SVGDualPointZero(void) {
 /// @param playerView The player view
 /// @param objectID The objectID of the long-pressed element
 /// @param location The long press location in both view and SVG coordinates
-- (void)svgPlayerView:(SVGPlayerView *)playerView
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView
   didLongPressElementWithID:(NSString *)objectID
-                 atLocation:(SVGDualPoint)location;
+                 atLocation:(FBFSVGDualPoint)location;
 
 /// Called when a subscribed SVG element is being dragged
 ///
@@ -438,10 +438,10 @@ NS_INLINE SVGDualPoint SVGDualPointZero(void) {
 /// @param objectID The objectID of the dragged element
 /// @param currentLocation The current drag location in both view and SVG coordinates
 /// @param translation The total translation from the drag start point in both coordinate systems
-- (void)svgPlayerView:(SVGPlayerView *)playerView
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView
   didDragElementWithID:(NSString *)objectID
-       currentLocation:(SVGDualPoint)currentLocation
-           translation:(SVGDualPoint)translation;
+       currentLocation:(FBFSVGDualPoint)currentLocation
+           translation:(FBFSVGDualPoint)translation;
 
 /// Called when a drag ends (finger lifted after dragging)
 ///
@@ -452,10 +452,10 @@ NS_INLINE SVGDualPoint SVGDualPointZero(void) {
 /// @param objectID The objectID of the element that was dragged
 /// @param location The final location where the finger lifted in both view and SVG coordinates
 /// @param totalTranslation The total translation from drag start to drop in both coordinate systems
-- (void)svgPlayerView:(SVGPlayerView *)playerView
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView
   didDropElementWithID:(NSString *)objectID
-            atLocation:(SVGDualPoint)location
-      totalTranslation:(SVGDualPoint)totalTranslation;
+            atLocation:(FBFSVGDualPoint)location
+      totalTranslation:(FBFSVGDualPoint)totalTranslation;
 
 #pragma mark Element Touch Events (Detailed - Optional)
 
@@ -463,23 +463,23 @@ NS_INLINE SVGDualPoint SVGDualPointZero(void) {
 /// @param playerView The player view
 /// @param objectID The objectID of the touched element
 /// @param touchInfo Structure containing touch details (phase, location, tap count, etc.)
-- (void)svgPlayerView:(SVGPlayerView *)playerView
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView
       didTouchElement:(NSString *)objectID
-            touchInfo:(SVGElementTouchInfo)touchInfo;
+            touchInfo:(FBFSVGElementTouchInfo)touchInfo;
 
 /// Called when touch enters element bounds during drag (optional)
 /// @param playerView The player view
 /// @param objectID The objectID of the element entered
-- (void)svgPlayerView:(SVGPlayerView *)playerView didEnterElementWithID:(NSString *)objectID;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didEnterElementWithID:(NSString *)objectID;
 
 /// Called when touch exits element bounds during drag (optional)
 /// @param playerView The player view
 /// @param objectID The objectID of the element exited
-- (void)svgPlayerView:(SVGPlayerView *)playerView didExitElementWithID:(NSString *)objectID;
+- (void)svgPlayerView:(FBFSVGPlayerView *)playerView didExitElementWithID:(NSString *)objectID;
 
 @end
 
-#pragma mark - SVGPlayerView
+#pragma mark - FBFSVGPlayerView
 
 /// A UIView subclass that renders animated SVG files using Skia with Metal acceleration.
 ///
@@ -496,21 +496,21 @@ NS_INLINE SVGDualPoint SVGDualPointZero(void) {
 ///
 /// Usage in Interface Builder:
 /// 1. Drag a UIView onto your storyboard
-/// 2. Set the Custom Class to "SVGPlayerView"
+/// 2. Set the Custom Class to "FBFSVGPlayerView"
 /// 3. Configure properties in the Attributes Inspector
 /// 4. Connect your UI controls to the playback methods
 ///
 /// Usage in Code (Swift):
 /// ```swift
-/// let player = SVGPlayerView(frame: bounds, svgFileName: "animation")
+/// let player = FBFSVGPlayerView(frame: bounds, svgFileName: "animation")
 /// player.delegate = self
 /// view.addSubview(player)
 ///
 /// // Connect to your custom UI
-/// playButton.addTarget(player, action: #selector(SVGPlayerView.togglePlayback), for: .touchUpInside)
+/// playButton.addTarget(player, action: #selector(FBFSVGPlayerView.togglePlayback), for: .touchUpInside)
 /// ```
 IB_DESIGNABLE
-@interface SVGPlayerView : UIView
+@interface FBFSVGPlayerView : UIView
 
 #pragma mark - IBInspectable Properties
 
@@ -539,10 +539,10 @@ IB_DESIGNABLE
 #pragma mark - Playback Mode Properties
 
 /// Repeat mode for animation playback
-/// Default: SVGRepeatModeLoop (when loop=YES) or SVGRepeatModeNone (when loop=NO)
-@property (nonatomic, assign) SVGRepeatMode repeatMode;
+/// Default: FBFSVGRepeatModeLoop (when loop=YES) or FBFSVGRepeatModeNone (when loop=NO)
+@property (nonatomic, assign) FBFSVGRepeatMode repeatMode;
 
-/// Number of times to repeat when repeatMode is SVGRepeatModeCount
+/// Number of times to repeat when repeatMode is FBFSVGRepeatModeCount
 /// Default: 1
 @property (nonatomic, assign) NSInteger repeatCount;
 
@@ -563,10 +563,10 @@ IB_DESIGNABLE
 #pragma mark - Runtime Properties (Readonly State)
 
 /// Content mode for SVG rendering (how the SVG fits within bounds)
-@property (nonatomic, assign) SVGContentMode svgContentMode;
+@property (nonatomic, assign) FBFSVGContentMode svgContentMode;
 
 /// Current playback state (readonly)
-@property (nonatomic, readonly) SVGViewPlaybackState playbackState;
+@property (nonatomic, readonly) FBFSVGViewPlaybackState playbackState;
 
 /// The intrinsic size of the loaded SVG (CGSizeZero if no SVG loaded)
 @property (nonatomic, readonly) CGSize intrinsicSVGSize;
@@ -598,10 +598,10 @@ IB_DESIGNABLE
 @property (nonatomic, readonly) CGFloat currentFPS;
 
 /// Get full timeline info in a single call (more efficient for UI updates)
-@property (nonatomic, readonly) SVGTimelineInfo timelineInfo;
+@property (nonatomic, readonly) FBFSVGTimelineInfo timelineInfo;
 
 /// Delegate for receiving playback events
-@property (nonatomic, weak, nullable) IBOutlet id<SVGPlayerViewDelegate> delegate;
+@property (nonatomic, weak, nullable) IBOutlet id<FBFSVGPlayerViewDelegate> delegate;
 
 /// Check if an SVG is currently loaded
 @property (nonatomic, readonly, getter=isLoaded) BOOL loaded;
@@ -819,11 +819,11 @@ IB_DESIGNABLE
 
 /// Current viewport in SVG coordinate space
 /// This represents the visible portion of the SVG
-@property (nonatomic, readonly) SVGViewport currentViewport;
+@property (nonatomic, readonly) FBFSVGViewport currentViewport;
 
 /// The full/default viewport showing the entire SVG
 /// Use this to reset zoom or as reference for preset calculations
-@property (nonatomic, readonly) SVGViewport defaultViewport;
+@property (nonatomic, readonly) FBFSVGViewport defaultViewport;
 
 /// Whether the view is currently zoomed (zoomScale > 1.0)
 @property (nonatomic, readonly, getter=isZoomed) BOOL zoomed;
@@ -831,7 +831,7 @@ IB_DESIGNABLE
 /// Set the viewport to display a specific region of the SVG
 /// @param viewport The viewport in SVG coordinate space
 /// @param animated Whether to animate the transition
-- (void)setViewport:(SVGViewport)viewport animated:(BOOL)animated;
+- (void)setViewport:(FBFSVGViewport)viewport animated:(BOOL)animated;
 
 /// Set the viewport using a CGRect (convenience method)
 /// @param rect The rect in SVG coordinate space
@@ -889,15 +889,15 @@ IB_DESIGNABLE
 #pragma mark - Preset Views
 
 /// All registered preset views
-@property (nonatomic, readonly) NSArray<SVGPresetView *> *presetViews;
+@property (nonatomic, readonly) NSArray<FBFSVGPresetView *> *presetViews;
 
 /// Register a preset view for quick navigation
 /// @param preset The preset to register
-- (void)registerPresetView:(SVGPresetView *)preset;
+- (void)registerPresetView:(FBFSVGPresetView *)preset;
 
 /// Register multiple preset views
 /// @param presets Array of presets to register
-- (void)registerPresetViews:(NSArray<SVGPresetView *> *)presets;
+- (void)registerPresetViews:(NSArray<FBFSVGPresetView *> *)presets;
 
 /// Unregister a preset view
 /// @param identifier The identifier of the preset to remove
@@ -909,12 +909,12 @@ IB_DESIGNABLE
 /// Get a preset view by identifier
 /// @param identifier The identifier of the preset
 /// @return The preset view, or nil if not found
-- (nullable SVGPresetView *)presetViewWithIdentifier:(NSString *)identifier;
+- (nullable FBFSVGPresetView *)presetViewWithIdentifier:(NSString *)identifier;
 
 /// Transition to a preset view
 /// @param preset The preset to transition to
 /// @param animated Whether to animate the transition (uses preset's transitionDuration)
-- (void)transitionToPreset:(SVGPresetView *)preset animated:(BOOL)animated;
+- (void)transitionToPreset:(FBFSVGPresetView *)preset animated:(BOOL)animated;
 
 /// Transition to a preset view by identifier
 /// @param identifier The identifier of the preset

@@ -1,19 +1,19 @@
-// SVGPlayerMetalRenderer.mm - Metal-based GPU renderer for SVGPlayerView
+// SVGPlayerMetalRenderer.mm - Metal-based GPU renderer for FBFSVGPlayerView
 //
 // This implementation uses MTKView for efficient GPU rendering of SVG content.
 // The Skia rendering engine outputs to a pixel buffer, which is then uploaded
 // to a Metal texture for display.
 
-#import "SVGPlayerMetalRenderer.h"
-#import "SVGPlayerController.h"
+#import "FBFSVGPlayerMetalRenderer.h"
+#import "FBFSVGPlayerController.h"
 #import <Metal/Metal.h>
 #import <MetalKit/MetalKit.h>
 
-@interface SVGPlayerMetalRenderer () <MTKViewDelegate>
+@interface FBFSVGPlayerMetalRenderer () <MTKViewDelegate>
 // Parent view reference (weak to avoid retain cycle)
 @property (nonatomic, weak) UIView *parentView;
 // SVG controller providing content
-@property (nonatomic, strong) SVGPlayerController *controller;
+@property (nonatomic, strong) FBFSVGPlayerController *controller;
 // Metal device
 @property (nonatomic, strong) id<MTLDevice> device;
 // Metal command queue for rendering commands
@@ -42,7 +42,7 @@ typedef struct {
     vector_float2 texCoord;
 } QuadVertex;
 
-@implementation SVGPlayerMetalRenderer
+@implementation FBFSVGPlayerMetalRenderer
 
 #pragma mark - Class Methods
 
@@ -52,7 +52,7 @@ typedef struct {
 
 #pragma mark - Initialization
 
-- (instancetype)initWithView:(UIView *)view controller:(SVGPlayerController *)controller {
+- (instancetype)initWithView:(UIView *)view controller:(FBFSVGPlayerController *)controller {
     if (self = [super init]) {
         _parentView = view;
         _controller = controller;
@@ -65,13 +65,13 @@ typedef struct {
         // Initialize Metal
         _device = MTLCreateSystemDefaultDevice();
         if (!_device) {
-            NSLog(@"SVGPlayerMetalRenderer: Metal is not available on this device");
+            NSLog(@"FBFSVGPlayerMetalRenderer: Metal is not available on this device");
             return nil;
         }
 
         _commandQueue = [_device newCommandQueue];
         if (!_commandQueue) {
-            NSLog(@"SVGPlayerMetalRenderer: Failed to create command queue");
+            NSLog(@"FBFSVGPlayerMetalRenderer: Failed to create command queue");
             return nil;
         }
 
@@ -144,7 +144,7 @@ typedef struct {
     NSError *error = nil;
     id<MTLLibrary> library = [self.device newLibraryWithSource:shaderSource options:nil error:&error];
     if (!library) {
-        NSLog(@"SVGPlayerMetalRenderer: Failed to create shader library: %@", error);
+        NSLog(@"FBFSVGPlayerMetalRenderer: Failed to create shader library: %@", error);
         return;
     }
 
@@ -169,7 +169,7 @@ typedef struct {
 
     _pipelineState = [self.device newRenderPipelineStateWithDescriptor:pipelineDescriptor error:&error];
     if (!_pipelineState) {
-        NSLog(@"SVGPlayerMetalRenderer: Failed to create pipeline state: %@", error);
+        NSLog(@"FBFSVGPlayerMetalRenderer: Failed to create pipeline state: %@", error);
     }
 }
 
@@ -191,7 +191,7 @@ typedef struct {
                                              options:MTLResourceStorageModeShared];
 }
 
-#pragma mark - SVGPlayerRenderer Protocol
+#pragma mark - FBFSVGPlayerRenderer Protocol
 
 - (void)updateForSize:(CGSize)size scale:(CGFloat)scale {
     self.displayScale = scale;

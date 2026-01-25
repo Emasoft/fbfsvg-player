@@ -5,7 +5,7 @@
 //
 // Copyright (c) 2024. MIT License.
 
-#include "svg_player_api.h"
+#include "fbfsvg_player_api.h"
 
 #include "SVGAnimationController.h"
 
@@ -51,20 +51,20 @@
 // Internal Types
 // =============================================================================
 
-/// Skia blend mode mapping from SVGLayerBlendMode
-static SkBlendMode toSkBlendMode(SVGLayerBlendMode mode) {
+/// Skia blend mode mapping from FBFSVGLayerBlendMode
+static SkBlendMode toSkBlendMode(FBFSVGLayerBlendMode mode) {
     switch (mode) {
-        case SVGLayerBlend_Multiply: return SkBlendMode::kMultiply;
-        case SVGLayerBlend_Screen: return SkBlendMode::kScreen;
-        case SVGLayerBlend_Overlay: return SkBlendMode::kOverlay;
-        case SVGLayerBlend_Darken: return SkBlendMode::kDarken;
-        case SVGLayerBlend_Lighten: return SkBlendMode::kLighten;
+        case FBFSVGLayerBlend_Multiply: return SkBlendMode::kMultiply;
+        case FBFSVGLayerBlend_Screen: return SkBlendMode::kScreen;
+        case FBFSVGLayerBlend_Overlay: return SkBlendMode::kOverlay;
+        case FBFSVGLayerBlend_Darken: return SkBlendMode::kDarken;
+        case FBFSVGLayerBlend_Lighten: return SkBlendMode::kLighten;
         default: return SkBlendMode::kSrcOver;
     }
 }
 
 /// Internal layer structure for multi-SVG compositing (opaque to C API)
-struct SVGLayer {
+struct FBFSVGLayer {
     // Layer's own animation controller
     std::unique_ptr<svgplayer::SVGAnimationController> controller;
 
@@ -88,18 +88,18 @@ struct SVGLayer {
     float opacity = 1.0f;        // Opacity (0.0 to 1.0)
     int zOrder = 0;              // Render order (higher = on top)
     bool visible = true;         // Visibility flag
-    SVGLayerBlendMode blendMode = SVGLayerBlend_Normal;
+    FBFSVGLayerBlendMode blendMode = FBFSVGLayerBlend_Normal;
 
     // Owner player (for accessing shared resources)
-    struct SVGPlayer* owner = nullptr;
+    struct FBFSVGPlayer* owner = nullptr;
 
-    SVGLayer() {
+    FBFSVGLayer() {
         controller = std::make_unique<svgplayer::SVGAnimationController>();
     }
 };
 
 /// Internal player structure (opaque to C API)
-struct SVGPlayer {
+struct FBFSVGPlayer {
     // Core animation controller (shared logic)
     std::unique_ptr<svgplayer::SVGAnimationController> controller;
 
@@ -189,7 +189,7 @@ struct SVGPlayer {
     // Multi-SVG compositing layers
     // Layer 0 is the "primary" SVG loaded via LoadSVG
     // Additional layers are created via CreateLayer
-    std::vector<std::unique_ptr<SVGLayer>> layers;
+    std::vector<std::unique_ptr<FBFSVGLayer>> layers;
 
     // Frame rate and timing control
     float targetFrameRate = 60.0f;                    // Target FPS for frame pacing
@@ -205,7 +205,7 @@ struct SVGPlayer {
     // Thread safety mutex
     std::mutex mutex;
 
-    SVGPlayer() {
+    FBFSVGPlayer() {
         // Initialize font manager based on platform
         fontMgr = CREATE_FONT_MANAGER();
 
@@ -227,7 +227,7 @@ struct SVGPlayer {
 namespace {
 
 /// Set error message and optionally invoke callback
-void setError(SVGPlayer* player, int code, const std::string& message) {
+void setError(FBFSVGPlayer* player, int code, const std::string& message) {
     if (!player) return;
 
     // Copy callback data under lock, invoke outside lock to prevent deadlock
@@ -246,7 +246,7 @@ void setError(SVGPlayer* player, int code, const std::string& message) {
 }
 
 /// Parse SVG from data and create DOM
-bool parseSVG(SVGPlayer* player, const char* data, size_t length) {
+bool parseSVG(FBFSVGPlayer* player, const char* data, size_t length) {
     if (!player || !data || length == 0) {
         return false;
     }
@@ -345,7 +345,7 @@ bool parseSVG(SVGPlayer* player, const char* data, size_t length) {
 }
 
 /// Re-parse SVG with updated animation state
-void updateSVGForCurrentTime(SVGPlayer* player) {
+void updateSVGForCurrentTime(FBFSVGPlayer* player) {
     if (!player || !player->controller) return;
 
     // Get current animated SVG content
@@ -440,15 +440,15 @@ T clamp(T value, T min, T max) {
 // Section 1: Lifecycle Functions
 // =============================================================================
 
-SVGPlayerRef SVGPlayer_Create(void) {
+FBFSVGPlayerRef FBFSVGPlayer_Create(void) {
     try {
-        return new SVGPlayer();
+        return new FBFSVGPlayer();
     } catch (...) {
         return nullptr;
     }
 }
 
-void SVGPlayer_Destroy(SVGPlayerRef player) {
+void FBFSVGPlayer_Destroy(FBFSVGPlayerRef player) {
     if (player) {
         // Clear all controller callbacks to prevent use-after-free
         if (player->controller) {
@@ -460,22 +460,22 @@ void SVGPlayer_Destroy(SVGPlayerRef player) {
     }
 }
 
-const char* SVGPlayer_GetVersion(void) {
+const char* FBFSVGPlayer_GetVersion(void) {
     // Return the full version string from version.h (includes prerelease tag)
-    return SVG_PLAYER_VERSION_STRING;
+    return FBFSVG_PLAYER_VERSION_STRING;
 }
 
-void SVGPlayer_GetVersionNumbers(int* major, int* minor, int* patch) {
-    if (major) *major = SVG_PLAYER_API_VERSION_MAJOR;
-    if (minor) *minor = SVG_PLAYER_API_VERSION_MINOR;
-    if (patch) *patch = SVG_PLAYER_API_VERSION_PATCH;
+void FBFSVGPlayer_GetVersionNumbers(int* major, int* minor, int* patch) {
+    if (major) *major = FBFSVG_PLAYER_API_VERSION_MAJOR;
+    if (minor) *minor = FBFSVG_PLAYER_API_VERSION_MINOR;
+    if (patch) *patch = FBFSVG_PLAYER_API_VERSION_PATCH;
 }
 
 // =============================================================================
 // Section 2: Loading Functions
 // =============================================================================
 
-bool SVGPlayer_LoadSVG(SVGPlayerRef player, const char* filepath) {
+bool FBFSVGPlayer_LoadSVG(FBFSVGPlayerRef player, const char* filepath) {
     if (!player || !filepath) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -491,14 +491,14 @@ bool SVGPlayer_LoadSVG(SVGPlayerRef player, const char* filepath) {
     return parseSVG(player, static_cast<const char*>(data->data()), data->size());
 }
 
-bool SVGPlayer_LoadSVGData(SVGPlayerRef player, const void* data, size_t length) {
+bool FBFSVGPlayer_LoadSVGData(FBFSVGPlayerRef player, const void* data, size_t length) {
     if (!player || !data || length == 0) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return parseSVG(player, static_cast<const char*>(data), length);
 }
 
-void SVGPlayer_Unload(SVGPlayerRef player) {
+void FBFSVGPlayer_Unload(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -520,13 +520,13 @@ void SVGPlayer_Unload(SVGPlayerRef player) {
     player->stats = {};
 }
 
-bool SVGPlayer_IsLoaded(SVGPlayerRef player) {
+bool FBFSVGPlayer_IsLoaded(FBFSVGPlayerRef player) {
     if (!player) return false;
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->svgDom != nullptr;
 }
 
-bool SVGPlayer_HasAnimations(SVGPlayerRef player) {
+bool FBFSVGPlayer_HasAnimations(FBFSVGPlayerRef player) {
     if (!player) return false;
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->controller && player->controller->hasAnimations();
@@ -536,7 +536,7 @@ bool SVGPlayer_HasAnimations(SVGPlayerRef player) {
 // Section 3: Size and Dimension Functions
 // =============================================================================
 
-bool SVGPlayer_GetSize(SVGPlayerRef player, int* width, int* height) {
+bool FBFSVGPlayer_GetSize(FBFSVGPlayerRef player, int* width, int* height) {
     if (!player) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -548,7 +548,7 @@ bool SVGPlayer_GetSize(SVGPlayerRef player, int* width, int* height) {
     return true;
 }
 
-bool SVGPlayer_GetSizeInfo(SVGPlayerRef player, SVGSizeInfo* info) {
+bool FBFSVGPlayer_GetSizeInfo(FBFSVGPlayerRef player, SVGSizeInfo* info) {
     if (!player || !info) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -565,7 +565,7 @@ bool SVGPlayer_GetSizeInfo(SVGPlayerRef player, SVGSizeInfo* info) {
     return true;
 }
 
-void SVGPlayer_SetViewport(SVGPlayerRef player, int width, int height) {
+void FBFSVGPlayer_SetViewport(FBFSVGPlayerRef player, int width, int height) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -582,7 +582,7 @@ void SVGPlayer_SetViewport(SVGPlayerRef player, int width, int height) {
 // Section 4: Playback Control Functions
 // =============================================================================
 
-void SVGPlayer_Play(SVGPlayerRef player) {
+void FBFSVGPlayer_Play(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return;
 
     SVGPlaybackState oldState;
@@ -603,7 +603,7 @@ void SVGPlayer_Play(SVGPlayerRef player) {
     }
 }
 
-void SVGPlayer_Pause(SVGPlayerRef player) {
+void FBFSVGPlayer_Pause(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return;
 
     SVGPlaybackState oldState;
@@ -623,7 +623,7 @@ void SVGPlayer_Pause(SVGPlayerRef player) {
     }
 }
 
-void SVGPlayer_Stop(SVGPlayerRef player) {
+void FBFSVGPlayer_Stop(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return;
 
     SVGPlaybackState oldState;
@@ -645,100 +645,100 @@ void SVGPlayer_Stop(SVGPlayerRef player) {
     }
 }
 
-void SVGPlayer_TogglePlayback(SVGPlayerRef player) {
+void FBFSVGPlayer_TogglePlayback(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     player->controller->togglePlayback();
 }
 
-void SVGPlayer_SetPlaybackState(SVGPlayerRef player, SVGPlaybackState state) {
+void FBFSVGPlayer_SetPlaybackState(FBFSVGPlayerRef player, SVGPlaybackState state) {
     switch (state) {
         case SVGPlaybackState_Playing:
-            SVGPlayer_Play(player);
+            FBFSVGPlayer_Play(player);
             break;
         case SVGPlaybackState_Paused:
-            SVGPlayer_Pause(player);
+            FBFSVGPlayer_Pause(player);
             break;
         case SVGPlaybackState_Stopped:
-            SVGPlayer_Stop(player);
+            FBFSVGPlayer_Stop(player);
             break;
     }
 }
 
-SVGPlaybackState SVGPlayer_GetPlaybackState(SVGPlayerRef player) {
+SVGPlaybackState FBFSVGPlayer_GetPlaybackState(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return SVGPlaybackState_Stopped;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return fromControllerState(player->controller->getPlaybackState());
 }
 
-bool SVGPlayer_IsPlaying(SVGPlayerRef player) { return SVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Playing; }
+bool FBFSVGPlayer_IsPlaying(FBFSVGPlayerRef player) { return FBFSVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Playing; }
 
-bool SVGPlayer_IsPaused(SVGPlayerRef player) { return SVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Paused; }
+bool FBFSVGPlayer_IsPaused(FBFSVGPlayerRef player) { return FBFSVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Paused; }
 
-bool SVGPlayer_IsStopped(SVGPlayerRef player) { return SVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Stopped; }
+bool FBFSVGPlayer_IsStopped(FBFSVGPlayerRef player) { return FBFSVGPlayer_GetPlaybackState(player) == SVGPlaybackState_Stopped; }
 
 // =============================================================================
 // Section 5: Repeat Mode Functions
 // =============================================================================
 
-void SVGPlayer_SetRepeatMode(SVGPlayerRef player, SVGRepeatMode mode) {
+void FBFSVGPlayer_SetRepeatMode(FBFSVGPlayerRef player, SVGRepeatMode mode) {
     if (!player || !player->controller) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     player->controller->setRepeatMode(toControllerRepeatMode(mode));
 }
 
-SVGRepeatMode SVGPlayer_GetRepeatMode(SVGPlayerRef player) {
+SVGRepeatMode FBFSVGPlayer_GetRepeatMode(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return SVGRepeatMode_None;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return fromControllerRepeatMode(player->controller->getRepeatMode());
 }
 
-void SVGPlayer_SetRepeatCount(SVGPlayerRef player, int count) {
+void FBFSVGPlayer_SetRepeatCount(FBFSVGPlayerRef player, int count) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     player->repeatCount = std::max(1, count);
 }
 
-int SVGPlayer_GetRepeatCount(SVGPlayerRef player) {
+int FBFSVGPlayer_GetRepeatCount(FBFSVGPlayerRef player) {
     if (!player) return 1;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->repeatCount;
 }
 
-int SVGPlayer_GetCompletedLoops(SVGPlayerRef player) {
+int FBFSVGPlayer_GetCompletedLoops(FBFSVGPlayerRef player) {
     if (!player) return 0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->completedLoops;
 }
 
-bool SVGPlayer_IsPlayingForward(SVGPlayerRef player) {
+bool FBFSVGPlayer_IsPlayingForward(FBFSVGPlayerRef player) {
     if (!player) return true;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->playingForward;
 }
 
-bool SVGPlayer_IsLooping(SVGPlayerRef player) {
-    SVGRepeatMode mode = SVGPlayer_GetRepeatMode(player);
+bool FBFSVGPlayer_IsLooping(FBFSVGPlayerRef player) {
+    SVGRepeatMode mode = FBFSVGPlayer_GetRepeatMode(player);
     return mode == SVGRepeatMode_Loop || mode == SVGRepeatMode_Reverse;
 }
 
-void SVGPlayer_SetLooping(SVGPlayerRef player, bool looping) {
-    SVGPlayer_SetRepeatMode(player, looping ? SVGRepeatMode_Loop : SVGRepeatMode_None);
+void FBFSVGPlayer_SetLooping(FBFSVGPlayerRef player, bool looping) {
+    FBFSVGPlayer_SetRepeatMode(player, looping ? SVGRepeatMode_Loop : SVGRepeatMode_None);
 }
 
 // =============================================================================
 // Section 6: Playback Rate Functions
 // =============================================================================
 
-void SVGPlayer_SetPlaybackRate(SVGPlayerRef player, float rate) {
+void FBFSVGPlayer_SetPlaybackRate(FBFSVGPlayerRef player, float rate) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -750,7 +750,7 @@ void SVGPlayer_SetPlaybackRate(SVGPlayerRef player, float rate) {
     }
 }
 
-float SVGPlayer_GetPlaybackRate(SVGPlayerRef player) {
+float FBFSVGPlayer_GetPlaybackRate(FBFSVGPlayerRef player) {
     if (!player) return 1.0f;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -761,7 +761,7 @@ float SVGPlayer_GetPlaybackRate(SVGPlayerRef player) {
 // Section 7: Timeline Functions
 // =============================================================================
 
-bool SVGPlayer_Update(SVGPlayerRef player, double deltaTime) {
+bool FBFSVGPlayer_Update(FBFSVGPlayerRef player, double deltaTime) {
     if (!player || !player->controller) return false;
 
     auto updateStart = std::chrono::high_resolution_clock::now();
@@ -831,42 +831,42 @@ bool SVGPlayer_Update(SVGPlayerRef player, double deltaTime) {
     return stateChanged;
 }
 
-double SVGPlayer_GetDuration(SVGPlayerRef player) {
+double FBFSVGPlayer_GetDuration(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return 0.0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->controller->getDuration();
 }
 
-double SVGPlayer_GetCurrentTime(SVGPlayerRef player) {
+double FBFSVGPlayer_GetCurrentTime(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return 0.0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->controller->getCurrentTime();
 }
 
-float SVGPlayer_GetProgress(SVGPlayerRef player) {
+float FBFSVGPlayer_GetProgress(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return 0.0f;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return static_cast<float>(player->controller->getProgress());
 }
 
-int SVGPlayer_GetCurrentFrame(SVGPlayerRef player) {
+int FBFSVGPlayer_GetCurrentFrame(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return 0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->controller->getCurrentFrame();
 }
 
-int SVGPlayer_GetTotalFrames(SVGPlayerRef player) {
+int FBFSVGPlayer_GetTotalFrames(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return 0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->controller->getTotalFrames();
 }
 
-float SVGPlayer_GetFrameRate(SVGPlayerRef player) {
+float FBFSVGPlayer_GetFrameRate(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return 30.0f;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -883,7 +883,7 @@ float SVGPlayer_GetFrameRate(SVGPlayerRef player) {
 // Section 8: Seeking Functions
 // =============================================================================
 
-void SVGPlayer_SeekTo(SVGPlayerRef player, double timeSeconds) {
+void FBFSVGPlayer_SeekTo(FBFSVGPlayerRef player, double timeSeconds) {
     if (!player || !player->controller) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -895,7 +895,7 @@ void SVGPlayer_SeekTo(SVGPlayerRef player, double timeSeconds) {
     player->bufferedFrameStart = -1;
 }
 
-void SVGPlayer_SeekToFrame(SVGPlayerRef player, int frame) {
+void FBFSVGPlayer_SeekToFrame(FBFSVGPlayerRef player, int frame) {
     if (!player || !player->controller) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -906,32 +906,32 @@ void SVGPlayer_SeekToFrame(SVGPlayerRef player, int frame) {
     player->bufferedFrameStart = -1;
 }
 
-void SVGPlayer_SeekToProgress(SVGPlayerRef player, float progress) {
+void FBFSVGPlayer_SeekToProgress(FBFSVGPlayerRef player, float progress) {
     if (!player || !player->controller) return;
 
-    double duration = SVGPlayer_GetDuration(player);
-    SVGPlayer_SeekTo(player, duration * clamp(progress, 0.0f, 1.0f));
+    double duration = FBFSVGPlayer_GetDuration(player);
+    FBFSVGPlayer_SeekTo(player, duration * clamp(progress, 0.0f, 1.0f));
 }
 
-void SVGPlayer_SeekToStart(SVGPlayerRef player) { SVGPlayer_SeekTo(player, 0.0); }
+void FBFSVGPlayer_SeekToStart(FBFSVGPlayerRef player) { FBFSVGPlayer_SeekTo(player, 0.0); }
 
-void SVGPlayer_SeekToEnd(SVGPlayerRef player) { SVGPlayer_SeekTo(player, SVGPlayer_GetDuration(player)); }
+void FBFSVGPlayer_SeekToEnd(FBFSVGPlayerRef player) { FBFSVGPlayer_SeekTo(player, FBFSVGPlayer_GetDuration(player)); }
 
-void SVGPlayer_SeekForwardByTime(SVGPlayerRef player, double seconds) {
-    double current = SVGPlayer_GetCurrentTime(player);
-    SVGPlayer_SeekTo(player, current + seconds);
+void FBFSVGPlayer_SeekForwardByTime(FBFSVGPlayerRef player, double seconds) {
+    double current = FBFSVGPlayer_GetCurrentTime(player);
+    FBFSVGPlayer_SeekTo(player, current + seconds);
 }
 
-void SVGPlayer_SeekBackwardByTime(SVGPlayerRef player, double seconds) {
-    double current = SVGPlayer_GetCurrentTime(player);
-    SVGPlayer_SeekTo(player, current - seconds);
+void FBFSVGPlayer_SeekBackwardByTime(FBFSVGPlayerRef player, double seconds) {
+    double current = FBFSVGPlayer_GetCurrentTime(player);
+    FBFSVGPlayer_SeekTo(player, current - seconds);
 }
 
 // =============================================================================
 // Section 9: Frame Stepping Functions
 // =============================================================================
 
-void SVGPlayer_StepForward(SVGPlayerRef player) {
+void FBFSVGPlayer_StepForward(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -940,7 +940,7 @@ void SVGPlayer_StepForward(SVGPlayerRef player) {
     updateSVGForCurrentTime(player);
 }
 
-void SVGPlayer_StepBackward(SVGPlayerRef player) {
+void FBFSVGPlayer_StepBackward(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -949,7 +949,7 @@ void SVGPlayer_StepBackward(SVGPlayerRef player) {
     updateSVGForCurrentTime(player);
 }
 
-void SVGPlayer_StepByFrames(SVGPlayerRef player, int frames) {
+void FBFSVGPlayer_StepByFrames(FBFSVGPlayerRef player, int frames) {
     if (!player || !player->controller) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -962,7 +962,7 @@ void SVGPlayer_StepByFrames(SVGPlayerRef player, int frames) {
 // Section 10: Scrubbing Functions
 // =============================================================================
 
-void SVGPlayer_BeginScrubbing(SVGPlayerRef player) {
+void FBFSVGPlayer_BeginScrubbing(FBFSVGPlayerRef player) {
     if (!player || !player->controller) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -971,7 +971,7 @@ void SVGPlayer_BeginScrubbing(SVGPlayerRef player) {
     player->isScrubbing = true;
 }
 
-void SVGPlayer_ScrubToProgress(SVGPlayerRef player, float progress) {
+void FBFSVGPlayer_ScrubToProgress(FBFSVGPlayerRef player, float progress) {
     if (!player || !player->controller) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -979,7 +979,7 @@ void SVGPlayer_ScrubToProgress(SVGPlayerRef player, float progress) {
     updateSVGForCurrentTime(player);
 }
 
-void SVGPlayer_EndScrubbing(SVGPlayerRef player, bool resume) {
+void FBFSVGPlayer_EndScrubbing(FBFSVGPlayerRef player, bool resume) {
     if (!player || !player->controller) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -987,7 +987,7 @@ void SVGPlayer_EndScrubbing(SVGPlayerRef player, bool resume) {
     player->isScrubbing = false;
 }
 
-bool SVGPlayer_IsScrubbing(SVGPlayerRef player) {
+bool FBFSVGPlayer_IsScrubbing(FBFSVGPlayerRef player) {
     if (!player) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -998,7 +998,7 @@ bool SVGPlayer_IsScrubbing(SVGPlayerRef player) {
 // Section 11: Rendering Functions
 // =============================================================================
 
-bool SVGPlayer_Render(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale) {
+bool FBFSVGPlayer_Render(FBFSVGPlayerRef player, void* pixelBuffer, int width, int height, float scale) {
     if (!player || !pixelBuffer || width <= 0 || height <= 0) return false;
 
     auto renderStart = std::chrono::high_resolution_clock::now();
@@ -1086,12 +1086,12 @@ bool SVGPlayer_Render(SVGPlayerRef player, void* pixelBuffer, int width, int hei
     return true;
 }
 
-bool SVGPlayer_RenderAtTime(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale,
+bool FBFSVGPlayer_RenderAtTime(FBFSVGPlayerRef player, void* pixelBuffer, int width, int height, float scale,
                             double timeSeconds) {
     if (!player || !player->controller) return false;
 
     // Temporarily seek to the specified time
-    double savedTime = SVGPlayer_GetCurrentTime(player);
+    double savedTime = FBFSVGPlayer_GetCurrentTime(player);
 
     {
         std::lock_guard<std::mutex> lock(player->mutex);
@@ -1100,7 +1100,7 @@ bool SVGPlayer_RenderAtTime(SVGPlayerRef player, void* pixelBuffer, int width, i
     }
 
     // Render
-    bool result = SVGPlayer_Render(player, pixelBuffer, width, height, scale);
+    bool result = FBFSVGPlayer_Render(player, pixelBuffer, width, height, scale);
 
     // Restore original time
     {
@@ -1112,7 +1112,7 @@ bool SVGPlayer_RenderAtTime(SVGPlayerRef player, void* pixelBuffer, int width, i
     return result;
 }
 
-bool SVGPlayer_RenderFrame(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale, int frame) {
+bool FBFSVGPlayer_RenderFrame(FBFSVGPlayerRef player, void* pixelBuffer, int width, int height, float scale, int frame) {
     if (!player || !player->controller) return false;
 
     // Convert frame to time
@@ -1136,7 +1136,7 @@ bool SVGPlayer_RenderFrame(SVGPlayerRef player, void* pixelBuffer, int width, in
         }
     }
 
-    return SVGPlayer_RenderAtTime(player, pixelBuffer, width, height, scale, timeSeconds);
+    return FBFSVGPlayer_RenderAtTime(player, pixelBuffer, width, height, scale, timeSeconds);
 }
 
 // =============================================================================
@@ -1145,7 +1145,7 @@ bool SVGPlayer_RenderFrame(SVGPlayerRef player, void* pixelBuffer, int width, in
 
 // Internal helper - MUST be called while holding player->mutex
 // Prevents deadlock when called from functions that already hold the lock
-static bool viewToSVGInternal(SVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight,
+static bool viewToSVGInternal(FBFSVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight,
                                float* svgX, float* svgY) {
     // Caller must ensure: player != nullptr, svgX != nullptr, svgY != nullptr, mutex held
 
@@ -1153,7 +1153,7 @@ static bool viewToSVGInternal(SVGPlayerRef player, float viewX, float viewY, int
         return false;
     }
 
-    // Use currentViewBox for zoom support - must match SVGPlayer_Render logic
+    // Use currentViewBox for zoom support - must match FBFSVGPlayer_Render logic
     SkRect activeViewBox = player->currentViewBox;
     if (activeViewBox.isEmpty()) {
         activeViewBox = SkRect::MakeWH(static_cast<float>(player->svgWidth),
@@ -1185,7 +1185,7 @@ static bool viewToSVGInternal(SVGPlayerRef player, float viewX, float viewY, int
     return true;
 }
 
-bool SVGPlayer_ViewToSVG(SVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight, float* svgX,
+bool FBFSVGPlayer_ViewToSVG(FBFSVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight, float* svgX,
                          float* svgY) {
     if (!player || !svgX || !svgY) return false;
 
@@ -1193,7 +1193,7 @@ bool SVGPlayer_ViewToSVG(SVGPlayerRef player, float viewX, float viewY, int view
     return viewToSVGInternal(player, viewX, viewY, viewWidth, viewHeight, svgX, svgY);
 }
 
-bool SVGPlayer_SVGToView(SVGPlayerRef player, float svgX, float svgY, int viewWidth, int viewHeight, float* viewX,
+bool FBFSVGPlayer_SVGToView(FBFSVGPlayerRef player, float svgX, float svgY, int viewWidth, int viewHeight, float* viewX,
                          float* viewY) {
     if (!player || !viewX || !viewY) return false;
 
@@ -1203,7 +1203,7 @@ bool SVGPlayer_SVGToView(SVGPlayerRef player, float svgX, float svgY, int viewWi
         return false;
     }
 
-    // Use currentViewBox for zoom support - must match SVGPlayer_Render logic
+    // Use currentViewBox for zoom support - must match FBFSVGPlayer_Render logic
     SkRect activeViewBox = player->currentViewBox;
     if (activeViewBox.isEmpty()) {
         activeViewBox = SkRect::MakeWH(static_cast<float>(player->svgWidth),
@@ -1238,28 +1238,28 @@ bool SVGPlayer_SVGToView(SVGPlayerRef player, float svgX, float svgY, int viewWi
 // Section 13: Hit Testing Functions
 // =============================================================================
 
-void SVGPlayer_SubscribeToElement(SVGPlayerRef player, const char* objectID) {
+void FBFSVGPlayer_SubscribeToElement(FBFSVGPlayerRef player, const char* objectID) {
     if (!player || !objectID) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     player->subscribedElements.insert(std::string(objectID));
 }
 
-void SVGPlayer_UnsubscribeFromElement(SVGPlayerRef player, const char* objectID) {
+void FBFSVGPlayer_UnsubscribeFromElement(FBFSVGPlayerRef player, const char* objectID) {
     if (!player || !objectID) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     player->subscribedElements.erase(std::string(objectID));
 }
 
-void SVGPlayer_UnsubscribeFromAllElements(SVGPlayerRef player) {
+void FBFSVGPlayer_UnsubscribeFromAllElements(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     player->subscribedElements.clear();
 }
 
-const char* SVGPlayer_HitTest(SVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight) {
+const char* FBFSVGPlayer_HitTest(FBFSVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight) {
     if (!player) return nullptr;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1287,7 +1287,7 @@ const char* SVGPlayer_HitTest(SVGPlayerRef player, float viewX, float viewY, int
     return nullptr;
 }
 
-bool SVGPlayer_GetElementBounds(SVGPlayerRef player, const char* objectID, SVGRect* bounds) {
+bool FBFSVGPlayer_GetElementBounds(FBFSVGPlayerRef player, const char* objectID, SVGRect* bounds) {
     if (!player || !objectID || !bounds) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1306,7 +1306,7 @@ bool SVGPlayer_GetElementBounds(SVGPlayerRef player, const char* objectID, SVGRe
     return false;
 }
 
-int SVGPlayer_GetElementsAtPoint(SVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight,
+int FBFSVGPlayer_GetElementsAtPoint(FBFSVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight,
                                  const char** outElements, int maxElements) {
     if (!player || !outElements || maxElements <= 0) return 0;
 
@@ -1341,7 +1341,7 @@ int SVGPlayer_GetElementsAtPoint(SVGPlayerRef player, float viewX, float viewY, 
 // Section 14: Element Information Functions
 // =============================================================================
 
-bool SVGPlayer_ElementExists(SVGPlayerRef player, const char* elementID) {
+bool FBFSVGPlayer_ElementExists(FBFSVGPlayerRef player, const char* elementID) {
     if (!player || !elementID) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1352,7 +1352,7 @@ bool SVGPlayer_ElementExists(SVGPlayerRef player, const char* elementID) {
     return player->originalSvgData.find(searchPattern) != std::string::npos;
 }
 
-bool SVGPlayer_GetElementProperty(SVGPlayerRef player, const char* elementID, const char* propertyName, char* outValue,
+bool FBFSVGPlayer_GetElementProperty(FBFSVGPlayerRef player, const char* elementID, const char* propertyName, char* outValue,
                                   int maxLength) {
     if (!player || !elementID || !propertyName || !outValue || maxLength <= 0) {
         return false;
@@ -1371,7 +1371,7 @@ bool SVGPlayer_GetElementProperty(SVGPlayerRef player, const char* elementID, co
 // Section 15: Callback Functions
 // =============================================================================
 
-void SVGPlayer_SetStateChangeCallback(SVGPlayerRef player, SVGStateChangeCallback callback, void* userData) {
+void FBFSVGPlayer_SetStateChangeCallback(FBFSVGPlayerRef player, SVGStateChangeCallback callback, void* userData) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1398,7 +1398,7 @@ void SVGPlayer_SetStateChangeCallback(SVGPlayerRef player, SVGStateChangeCallbac
     }
 }
 
-void SVGPlayer_SetLoopCallback(SVGPlayerRef player, SVGLoopCallback callback, void* userData) {
+void FBFSVGPlayer_SetLoopCallback(FBFSVGPlayerRef player, SVGLoopCallback callback, void* userData) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1426,7 +1426,7 @@ void SVGPlayer_SetLoopCallback(SVGPlayerRef player, SVGLoopCallback callback, vo
     }
 }
 
-void SVGPlayer_SetEndCallback(SVGPlayerRef player, SVGEndCallback callback, void* userData) {
+void FBFSVGPlayer_SetEndCallback(FBFSVGPlayerRef player, SVGEndCallback callback, void* userData) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1453,7 +1453,7 @@ void SVGPlayer_SetEndCallback(SVGPlayerRef player, SVGEndCallback callback, void
     }
 }
 
-void SVGPlayer_SetErrorCallback(SVGPlayerRef player, SVGErrorCallback callback, void* userData) {
+void FBFSVGPlayer_SetErrorCallback(FBFSVGPlayerRef player, SVGErrorCallback callback, void* userData) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1461,7 +1461,7 @@ void SVGPlayer_SetErrorCallback(SVGPlayerRef player, SVGErrorCallback callback, 
     player->errorUserData = userData;
 }
 
-void SVGPlayer_SetElementTouchCallback(SVGPlayerRef player, SVGElementTouchCallback callback, void* userData) {
+void FBFSVGPlayer_SetElementTouchCallback(FBFSVGPlayerRef player, SVGElementTouchCallback callback, void* userData) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1473,7 +1473,7 @@ void SVGPlayer_SetElementTouchCallback(SVGPlayerRef player, SVGElementTouchCallb
 // Section 16: Statistics and Diagnostics
 // =============================================================================
 
-SVGRenderStats SVGPlayer_GetStats(SVGPlayerRef player) {
+SVGRenderStats FBFSVGPlayer_GetStats(FBFSVGPlayerRef player) {
     SVGRenderStats emptyStats = {};
     if (!player) return emptyStats;
 
@@ -1481,21 +1481,21 @@ SVGRenderStats SVGPlayer_GetStats(SVGPlayerRef player) {
     return player->stats;
 }
 
-void SVGPlayer_ResetStats(SVGPlayerRef player) {
+void FBFSVGPlayer_ResetStats(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     player->stats = {};
 }
 
-const char* SVGPlayer_GetLastError(SVGPlayerRef player) {
+const char* FBFSVGPlayer_GetLastError(FBFSVGPlayerRef player) {
     if (!player) return "";
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->lastError.c_str();
 }
 
-void SVGPlayer_ClearError(SVGPlayerRef player) {
+void FBFSVGPlayer_ClearError(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1506,7 +1506,7 @@ void SVGPlayer_ClearError(SVGPlayerRef player) {
 // Section 17: Pre-buffering Functions
 // =============================================================================
 
-void SVGPlayer_EnablePreBuffer(SVGPlayerRef player, bool enable) {
+void FBFSVGPlayer_EnablePreBuffer(FBFSVGPlayerRef player, bool enable) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1518,28 +1518,28 @@ void SVGPlayer_EnablePreBuffer(SVGPlayerRef player, bool enable) {
     }
 }
 
-bool SVGPlayer_IsPreBufferEnabled(SVGPlayerRef player) {
+bool FBFSVGPlayer_IsPreBufferEnabled(FBFSVGPlayerRef player) {
     if (!player) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->preBufferEnabled;
 }
 
-void SVGPlayer_SetPreBufferFrames(SVGPlayerRef player, int frameCount) {
+void FBFSVGPlayer_SetPreBufferFrames(FBFSVGPlayerRef player, int frameCount) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     player->preBufferFrameCount = std::max(1, std::min(frameCount, 60));
 }
 
-int SVGPlayer_GetBufferedFrames(SVGPlayerRef player) {
+int FBFSVGPlayer_GetBufferedFrames(FBFSVGPlayerRef player) {
     if (!player) return 0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return static_cast<int>(player->frameBuffer.size());
 }
 
-void SVGPlayer_ClearPreBuffer(SVGPlayerRef player) {
+void FBFSVGPlayer_ClearPreBuffer(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1551,28 +1551,28 @@ void SVGPlayer_ClearPreBuffer(SVGPlayerRef player) {
 // Section 18: Debug Overlay Functions
 // =============================================================================
 
-void SVGPlayer_EnableDebugOverlay(SVGPlayerRef player, bool enable) {
+void FBFSVGPlayer_EnableDebugOverlay(FBFSVGPlayerRef player, bool enable) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     player->debugOverlayEnabled = enable;
 }
 
-bool SVGPlayer_IsDebugOverlayEnabled(SVGPlayerRef player) {
+bool FBFSVGPlayer_IsDebugOverlayEnabled(FBFSVGPlayerRef player) {
     if (!player) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->debugOverlayEnabled;
 }
 
-void SVGPlayer_SetDebugFlags(SVGPlayerRef player, uint32_t flags) {
+void FBFSVGPlayer_SetDebugFlags(FBFSVGPlayerRef player, uint32_t flags) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     player->debugFlags = flags;
 }
 
-uint32_t SVGPlayer_GetDebugFlags(SVGPlayerRef player) {
+uint32_t FBFSVGPlayer_GetDebugFlags(FBFSVGPlayerRef player) {
     if (!player) return 0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1583,7 +1583,7 @@ uint32_t SVGPlayer_GetDebugFlags(SVGPlayerRef player) {
 // Section 19: Utility Functions
 // =============================================================================
 
-const char* SVGPlayer_FormatTime(double timeSeconds, char* outBuffer, int bufferSize) {
+const char* FBFSVGPlayer_FormatTime(double timeSeconds, char* outBuffer, int bufferSize) {
     if (!outBuffer || bufferSize <= 0) return "";
 
     int totalMs = static_cast<int>(timeSeconds * 1000);
@@ -1595,7 +1595,7 @@ const char* SVGPlayer_FormatTime(double timeSeconds, char* outBuffer, int buffer
     return outBuffer;
 }
 
-int SVGPlayer_TimeToFrame(SVGPlayerRef player, double timeSeconds) {
+int FBFSVGPlayer_TimeToFrame(FBFSVGPlayerRef player, double timeSeconds) {
     if (!player || !player->controller) return 0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1609,7 +1609,7 @@ int SVGPlayer_TimeToFrame(SVGPlayerRef player, double timeSeconds) {
     return static_cast<int>(progress * (totalFrames - 1));
 }
 
-double SVGPlayer_FrameToTime(SVGPlayerRef player, int frame) {
+double FBFSVGPlayer_FrameToTime(FBFSVGPlayerRef player, int frame) {
     if (!player || !player->controller) return 0.0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1629,7 +1629,7 @@ double SVGPlayer_FrameToTime(SVGPlayerRef player, int frame) {
 // Section 20: Zoom and ViewBox Functions
 // =============================================================================
 
-bool SVGPlayer_GetViewBox(SVGPlayerRef player, float* x, float* y, float* width, float* height) {
+bool FBFSVGPlayer_GetViewBox(FBFSVGPlayerRef player, float* x, float* y, float* width, float* height) {
     if (!player || !x || !y || !width || !height) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1643,7 +1643,7 @@ bool SVGPlayer_GetViewBox(SVGPlayerRef player, float* x, float* y, float* width,
     return true;
 }
 
-void SVGPlayer_SetViewBox(SVGPlayerRef player, float x, float y, float width, float height) {
+void FBFSVGPlayer_SetViewBox(FBFSVGPlayerRef player, float x, float y, float width, float height) {
     if (!player) return;
     if (width <= 0 || height <= 0) return;
 
@@ -1663,7 +1663,7 @@ void SVGPlayer_SetViewBox(SVGPlayerRef player, float x, float y, float width, fl
     }
 }
 
-void SVGPlayer_ResetViewBox(SVGPlayerRef player) {
+void FBFSVGPlayer_ResetViewBox(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1672,14 +1672,14 @@ void SVGPlayer_ResetViewBox(SVGPlayerRef player) {
     player->currentZoom = 1.0f;
 }
 
-float SVGPlayer_GetZoom(SVGPlayerRef player) {
+float FBFSVGPlayer_GetZoom(FBFSVGPlayerRef player) {
     if (!player) return 1.0f;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->currentZoom;
 }
 
-void SVGPlayer_SetZoom(SVGPlayerRef player, float zoom, float centerX, float centerY,
+void FBFSVGPlayer_SetZoom(FBFSVGPlayerRef player, float zoom, float centerX, float centerY,
                        int viewWidth, int viewHeight) {
     if (!player) return;
 
@@ -1731,35 +1731,35 @@ void SVGPlayer_SetZoom(SVGPlayerRef player, float zoom, float centerX, float cen
     player->currentZoom = zoom;
 }
 
-void SVGPlayer_ZoomIn(SVGPlayerRef player, float factor, int viewWidth, int viewHeight) {
+void FBFSVGPlayer_ZoomIn(FBFSVGPlayerRef player, float factor, int viewWidth, int viewHeight) {
     if (!player) return;
     if (factor <= 0) factor = 1.5f;  // Default zoom in factor
 
-    float currentZoom = SVGPlayer_GetZoom(player);
+    float currentZoom = FBFSVGPlayer_GetZoom(player);
     float newZoom = currentZoom * factor;
 
     // Zoom centered on the view
-    SVGPlayer_SetZoom(player, newZoom,
+    FBFSVGPlayer_SetZoom(player, newZoom,
                       static_cast<float>(viewWidth) / 2.0f,
                       static_cast<float>(viewHeight) / 2.0f,
                       viewWidth, viewHeight);
 }
 
-void SVGPlayer_ZoomOut(SVGPlayerRef player, float factor, int viewWidth, int viewHeight) {
+void FBFSVGPlayer_ZoomOut(FBFSVGPlayerRef player, float factor, int viewWidth, int viewHeight) {
     if (!player) return;
     if (factor <= 0) factor = 1.5f;  // Default zoom out factor
 
-    float currentZoom = SVGPlayer_GetZoom(player);
+    float currentZoom = FBFSVGPlayer_GetZoom(player);
     float newZoom = currentZoom / factor;
 
     // Zoom centered on the view
-    SVGPlayer_SetZoom(player, newZoom,
+    FBFSVGPlayer_SetZoom(player, newZoom,
                       static_cast<float>(viewWidth) / 2.0f,
                       static_cast<float>(viewHeight) / 2.0f,
                       viewWidth, viewHeight);
 }
 
-void SVGPlayer_ZoomToRect(SVGPlayerRef player, float svgX, float svgY, float svgWidth, float svgHeight) {
+void FBFSVGPlayer_ZoomToRect(FBFSVGPlayerRef player, float svgX, float svgY, float svgWidth, float svgHeight) {
     if (!player) return;
     if (svgWidth <= 0 || svgHeight <= 0) return;
 
@@ -1779,7 +1779,7 @@ void SVGPlayer_ZoomToRect(SVGPlayerRef player, float svgX, float svgY, float svg
     }
 }
 
-bool SVGPlayer_ZoomToElement(SVGPlayerRef player, const char* elementID, float padding) {
+bool FBFSVGPlayer_ZoomToElement(FBFSVGPlayerRef player, const char* elementID, float padding) {
     if (!player || !elementID) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1822,7 +1822,7 @@ bool SVGPlayer_ZoomToElement(SVGPlayerRef player, const char* elementID, float p
     return true;
 }
 
-void SVGPlayer_Pan(SVGPlayerRef player, float deltaX, float deltaY, int viewWidth, int viewHeight) {
+void FBFSVGPlayer_Pan(FBFSVGPlayerRef player, float deltaX, float deltaY, int viewWidth, int viewHeight) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -1861,14 +1861,14 @@ void SVGPlayer_Pan(SVGPlayerRef player, float deltaX, float deltaY, int viewWidt
                                                player->currentViewBox.height());
 }
 
-float SVGPlayer_GetMinZoom(SVGPlayerRef player) {
+float FBFSVGPlayer_GetMinZoom(FBFSVGPlayerRef player) {
     if (!player) return 0.1f;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->minZoom;
 }
 
-void SVGPlayer_SetMinZoom(SVGPlayerRef player, float minZoom) {
+void FBFSVGPlayer_SetMinZoom(FBFSVGPlayerRef player, float minZoom) {
     if (!player) return;
     if (minZoom <= 0) return;
 
@@ -1881,14 +1881,14 @@ void SVGPlayer_SetMinZoom(SVGPlayerRef player, float minZoom) {
     }
 }
 
-float SVGPlayer_GetMaxZoom(SVGPlayerRef player) {
+float FBFSVGPlayer_GetMaxZoom(FBFSVGPlayerRef player) {
     if (!player) return 10.0f;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->maxZoom;
 }
 
-void SVGPlayer_SetMaxZoom(SVGPlayerRef player, float maxZoom) {
+void FBFSVGPlayer_SetMaxZoom(FBFSVGPlayerRef player, float maxZoom) {
     if (!player) return;
     if (maxZoom <= 0) return;
 
@@ -1908,7 +1908,7 @@ void SVGPlayer_SetMaxZoom(SVGPlayerRef player, float maxZoom) {
 namespace {
 
 /// Parse SVG data and initialize layer
-bool parseLayerSVG(SVGLayer* layer, SVGPlayer* player) {
+bool parseLayerSVG(FBFSVGLayer* layer, FBFSVGPlayer* player) {
     if (!layer || !player || layer->svgData.empty()) return false;
 
     auto data = SkData::MakeWithoutCopy(layer->svgData.data(), layer->svgData.size());
@@ -1942,7 +1942,7 @@ bool parseLayerSVG(SVGLayer* layer, SVGPlayer* player) {
 
 }  // namespace
 
-SVGLayerRef SVGPlayer_CreateLayer(SVGPlayerRef player, const char* filepath) {
+FBFSVGLayerRef FBFSVGPlayer_CreateLayer(FBFSVGPlayerRef player, const char* filepath) {
     if (!player || !filepath) return nullptr;
 
     // Read file with RAII - unique_ptr automatically closes on exception or return
@@ -1972,15 +1972,15 @@ SVGLayerRef SVGPlayer_CreateLayer(SVGPlayerRef player, const char* filepath) {
     }
 
     // file is automatically closed when unique_ptr goes out of scope
-    return SVGPlayer_CreateLayerFromData(player, buffer.data(), buffer.size());
+    return FBFSVGPlayer_CreateLayerFromData(player, buffer.data(), buffer.size());
 }
 
-SVGLayerRef SVGPlayer_CreateLayerFromData(SVGPlayerRef player, const void* data, size_t length) {
+FBFSVGLayerRef FBFSVGPlayer_CreateLayerFromData(FBFSVGPlayerRef player, const void* data, size_t length) {
     if (!player || !data || length == 0) return nullptr;
 
     std::lock_guard<std::mutex> lock(player->mutex);
 
-    auto layer = std::make_unique<SVGLayer>();
+    auto layer = std::make_unique<FBFSVGLayer>();
     layer->owner = player;
     layer->svgData.assign(static_cast<const char*>(data), length);
 
@@ -1992,27 +1992,27 @@ SVGLayerRef SVGPlayer_CreateLayerFromData(SVGPlayerRef player, const void* data,
         return nullptr;
     }
 
-    SVGLayer* result = layer.get();
+    FBFSVGLayer* result = layer.get();
     player->layers.push_back(std::move(layer));
 
     return result;
 }
 
-void SVGPlayer_DestroyLayer(SVGPlayerRef player, SVGLayerRef layer) {
+void FBFSVGPlayer_DestroyLayer(FBFSVGPlayerRef player, FBFSVGLayerRef layer) {
     if (!player || !layer) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
 
     // Find and remove the layer
     auto it = std::find_if(player->layers.begin(), player->layers.end(),
-                           [layer](const std::unique_ptr<SVGLayer>& l) { return l.get() == layer; });
+                           [layer](const std::unique_ptr<FBFSVGLayer>& l) { return l.get() == layer; });
 
     if (it != player->layers.end()) {
         player->layers.erase(it);
     }
 }
 
-int SVGPlayer_GetLayerCount(SVGPlayerRef player) {
+int FBFSVGPlayer_GetLayerCount(FBFSVGPlayerRef player) {
     if (!player) return 0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2023,7 +2023,7 @@ int SVGPlayer_GetLayerCount(SVGPlayerRef player) {
     return count;
 }
 
-SVGLayerRef SVGPlayer_GetLayerAtIndex(SVGPlayerRef player, int index) {
+FBFSVGLayerRef FBFSVGPlayer_GetLayerAtIndex(FBFSVGPlayerRef player, int index) {
     if (!player || index < 0) return nullptr;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2035,123 +2035,123 @@ SVGLayerRef SVGPlayer_GetLayerAtIndex(SVGPlayerRef player, int index) {
     return player->layers[index].get();
 }
 
-void SVGLayer_SetPosition(SVGLayerRef layer, float x, float y) {
+void FBFSVGLayer_SetPosition(FBFSVGLayerRef layer, float x, float y) {
     if (!layer) return;
     layer->posX = x;
     layer->posY = y;
 }
 
-void SVGLayer_GetPosition(SVGLayerRef layer, float* x, float* y) {
+void FBFSVGLayer_GetPosition(FBFSVGLayerRef layer, float* x, float* y) {
     if (!layer) return;
     if (x) *x = layer->posX;
     if (y) *y = layer->posY;
 }
 
-void SVGLayer_SetOpacity(SVGLayerRef layer, float opacity) {
+void FBFSVGLayer_SetOpacity(FBFSVGLayerRef layer, float opacity) {
     if (!layer) return;
     layer->opacity = clamp(opacity, 0.0f, 1.0f);
 }
 
-float SVGLayer_GetOpacity(SVGLayerRef layer) {
+float FBFSVGLayer_GetOpacity(FBFSVGLayerRef layer) {
     if (!layer) return 1.0f;
     return layer->opacity;
 }
 
-void SVGLayer_SetZOrder(SVGLayerRef layer, int zOrder) {
+void FBFSVGLayer_SetZOrder(FBFSVGLayerRef layer, int zOrder) {
     if (!layer) return;
     layer->zOrder = zOrder;
 }
 
-int SVGLayer_GetZOrder(SVGLayerRef layer) {
+int FBFSVGLayer_GetZOrder(FBFSVGLayerRef layer) {
     if (!layer) return 0;
     return layer->zOrder;
 }
 
-void SVGLayer_SetVisible(SVGLayerRef layer, bool visible) {
+void FBFSVGLayer_SetVisible(FBFSVGLayerRef layer, bool visible) {
     if (!layer) return;
     layer->visible = visible;
 }
 
-bool SVGLayer_IsVisible(SVGLayerRef layer) {
+bool FBFSVGLayer_IsVisible(FBFSVGLayerRef layer) {
     if (!layer) return false;
     return layer->visible;
 }
 
-void SVGLayer_SetScale(SVGLayerRef layer, float scaleX, float scaleY) {
+void FBFSVGLayer_SetScale(FBFSVGLayerRef layer, float scaleX, float scaleY) {
     if (!layer) return;
     layer->scaleX = scaleX;
     layer->scaleY = scaleY;
 }
 
-void SVGLayer_GetScale(SVGLayerRef layer, float* scaleX, float* scaleY) {
+void FBFSVGLayer_GetScale(FBFSVGLayerRef layer, float* scaleX, float* scaleY) {
     if (!layer) return;
     if (scaleX) *scaleX = layer->scaleX;
     if (scaleY) *scaleY = layer->scaleY;
 }
 
-void SVGLayer_SetRotation(SVGLayerRef layer, float angleDegrees) {
+void FBFSVGLayer_SetRotation(FBFSVGLayerRef layer, float angleDegrees) {
     if (!layer) return;
     layer->rotation = angleDegrees;
 }
 
-float SVGLayer_GetRotation(SVGLayerRef layer) {
+float FBFSVGLayer_GetRotation(FBFSVGLayerRef layer) {
     if (!layer) return 0.0f;
     return layer->rotation;
 }
 
-void SVGLayer_SetBlendMode(SVGLayerRef layer, SVGLayerBlendMode blendMode) {
+void FBFSVGLayer_SetBlendMode(FBFSVGLayerRef layer, FBFSVGLayerBlendMode blendMode) {
     if (!layer) return;
     layer->blendMode = blendMode;
 }
 
-SVGLayerBlendMode SVGLayer_GetBlendMode(SVGLayerRef layer) {
-    if (!layer) return SVGLayerBlend_Normal;
+FBFSVGLayerBlendMode FBFSVGLayer_GetBlendMode(FBFSVGLayerRef layer) {
+    if (!layer) return FBFSVGLayerBlend_Normal;
     return layer->blendMode;
 }
 
-bool SVGLayer_GetSize(SVGLayerRef layer, int* width, int* height) {
+bool FBFSVGLayer_GetSize(FBFSVGLayerRef layer, int* width, int* height) {
     if (!layer) return false;
     if (width) *width = layer->width;
     if (height) *height = layer->height;
     return true;
 }
 
-double SVGLayer_GetDuration(SVGLayerRef layer) {
+double FBFSVGLayer_GetDuration(FBFSVGLayerRef layer) {
     if (!layer || !layer->controller) return 0.0;
     return layer->controller->getDuration();
 }
 
-bool SVGLayer_HasAnimations(SVGLayerRef layer) {
+bool FBFSVGLayer_HasAnimations(FBFSVGLayerRef layer) {
     if (!layer) return false;
     return layer->controller && layer->controller->getDuration() > 0.0;
 }
 
-void SVGLayer_Play(SVGLayerRef layer) {
+void FBFSVGLayer_Play(FBFSVGLayerRef layer) {
     if (!layer || !layer->controller) return;
     layer->controller->play();
 }
 
-void SVGLayer_Pause(SVGLayerRef layer) {
+void FBFSVGLayer_Pause(FBFSVGLayerRef layer) {
     if (!layer || !layer->controller) return;
     layer->controller->pause();
 }
 
-void SVGLayer_Stop(SVGLayerRef layer) {
+void FBFSVGLayer_Stop(FBFSVGLayerRef layer) {
     if (!layer || !layer->controller) return;
     layer->controller->stop();
 }
 
-void SVGLayer_SeekTo(SVGLayerRef layer, double timeSeconds) {
+void FBFSVGLayer_SeekTo(FBFSVGLayerRef layer, double timeSeconds) {
     if (!layer || !layer->controller) return;
     layer->controller->seekTo(timeSeconds);
 }
 
-bool SVGLayer_Update(SVGLayerRef layer, double deltaTime) {
+bool FBFSVGLayer_Update(FBFSVGLayerRef layer, double deltaTime) {
     if (!layer || !layer->controller) return false;
     return layer->controller->update(deltaTime);
 }
 
-bool SVGPlayer_UpdateAllLayers(SVGPlayerRef player, double deltaTime) {
+bool FBFSVGPlayer_UpdateAllLayers(FBFSVGPlayerRef player, double deltaTime) {
     if (!player) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2173,7 +2173,7 @@ bool SVGPlayer_UpdateAllLayers(SVGPlayerRef player, double deltaTime) {
     return needsRender;
 }
 
-void SVGPlayer_PlayAllLayers(SVGPlayerRef player) {
+void FBFSVGPlayer_PlayAllLayers(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2191,7 +2191,7 @@ void SVGPlayer_PlayAllLayers(SVGPlayerRef player) {
     }
 }
 
-void SVGPlayer_PauseAllLayers(SVGPlayerRef player) {
+void FBFSVGPlayer_PauseAllLayers(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2209,7 +2209,7 @@ void SVGPlayer_PauseAllLayers(SVGPlayerRef player) {
     }
 }
 
-void SVGPlayer_StopAllLayers(SVGPlayerRef player) {
+void FBFSVGPlayer_StopAllLayers(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2227,7 +2227,7 @@ void SVGPlayer_StopAllLayers(SVGPlayerRef player) {
     }
 }
 
-bool SVGPlayer_RenderComposite(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale) {
+bool FBFSVGPlayer_RenderComposite(FBFSVGPlayerRef player, void* pixelBuffer, int width, int height, float scale) {
     if (!player || !pixelBuffer || width <= 0 || height <= 0) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2248,7 +2248,7 @@ bool SVGPlayer_RenderComposite(SVGPlayerRef player, void* pixelBuffer, int width
     struct RenderItem {
         int zOrder;
         bool isPrimary;
-        SVGLayer* layer;
+        FBFSVGLayer* layer;
     };
     std::vector<RenderItem> items;
 
@@ -2300,7 +2300,7 @@ bool SVGPlayer_RenderComposite(SVGPlayerRef player, void* pixelBuffer, int width
             paint.setBlendMode(toSkBlendMode(layer->blendMode));
 
             // Render layer with saveLayer for opacity/blend
-            if (layer->opacity < 1.0f || layer->blendMode != SVGLayerBlend_Normal) {
+            if (layer->opacity < 1.0f || layer->blendMode != FBFSVGLayerBlend_Normal) {
                 SkRect bounds = SkRect::MakeWH(layer->width, layer->height);
                 canvas.saveLayerAlpha(&bounds, static_cast<U8CPU>(layer->opacity * 255));
             }
@@ -2310,7 +2310,7 @@ bool SVGPlayer_RenderComposite(SVGPlayerRef player, void* pixelBuffer, int width
                 layer->svgDom->render(&canvas);
             }
 
-            if (layer->opacity < 1.0f || layer->blendMode != SVGLayerBlend_Normal) {
+            if (layer->opacity < 1.0f || layer->blendMode != FBFSVGLayerBlend_Normal) {
                 canvas.restore();
             }
         }
@@ -2324,7 +2324,7 @@ bool SVGPlayer_RenderComposite(SVGPlayerRef player, void* pixelBuffer, int width
     return true;
 }
 
-bool SVGPlayer_RenderCompositeAtTime(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale,
+bool FBFSVGPlayer_RenderCompositeAtTime(FBFSVGPlayerRef player, void* pixelBuffer, int width, int height, float scale,
                                       double timeSeconds) {
     if (!player) return false;
 
@@ -2344,14 +2344,14 @@ bool SVGPlayer_RenderCompositeAtTime(SVGPlayerRef player, void* pixelBuffer, int
     }
 
     // Then render (RenderComposite does its own locking)
-    return SVGPlayer_RenderComposite(player, pixelBuffer, width, height, scale);
+    return FBFSVGPlayer_RenderComposite(player, pixelBuffer, width, height, scale);
 }
 
 // =============================================================================
 // Section 21: Frame Rate and Timing Control
 // =============================================================================
 
-void SVGPlayer_SetTargetFrameRate(SVGPlayerRef player, float fps) {
+void FBFSVGPlayer_SetTargetFrameRate(FBFSVGPlayerRef player, float fps) {
     if (!player) return;
     if (fps <= 0.0f) return;  // Invalid FPS
 
@@ -2359,14 +2359,14 @@ void SVGPlayer_SetTargetFrameRate(SVGPlayerRef player, float fps) {
     player->targetFrameRate = fps;
 }
 
-float SVGPlayer_GetTargetFrameRate(SVGPlayerRef player) {
+float FBFSVGPlayer_GetTargetFrameRate(FBFSVGPlayerRef player) {
     if (!player) return 60.0f;  // Default fallback
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->targetFrameRate;
 }
 
-double SVGPlayer_GetIdealFrameInterval(SVGPlayerRef player) {
+double FBFSVGPlayer_GetIdealFrameInterval(FBFSVGPlayerRef player) {
     if (!player) return 1.0 / 60.0;  // Default 60 FPS interval
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2374,7 +2374,7 @@ double SVGPlayer_GetIdealFrameInterval(SVGPlayerRef player) {
     return 1.0 / static_cast<double>(player->targetFrameRate);
 }
 
-void SVGPlayer_BeginFrame(SVGPlayerRef player) {
+void FBFSVGPlayer_BeginFrame(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2385,7 +2385,7 @@ void SVGPlayer_BeginFrame(SVGPlayerRef player) {
     player->frameBeginTimeSeconds = std::chrono::duration<double>(duration).count();
 }
 
-void SVGPlayer_EndFrame(SVGPlayerRef player) {
+void FBFSVGPlayer_EndFrame(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2400,8 +2400,8 @@ void SVGPlayer_EndFrame(SVGPlayerRef player) {
 
         // Add to rolling history for average calculation
         player->frameDurationHistory[player->frameHistoryIndex] = player->lastFrameDurationSeconds;
-        player->frameHistoryIndex = (player->frameHistoryIndex + 1) % SVGPlayer::FRAME_HISTORY_SIZE;
-        if (player->frameHistoryCount < SVGPlayer::FRAME_HISTORY_SIZE) {
+        player->frameHistoryIndex = (player->frameHistoryIndex + 1) % FBFSVGPlayer::FRAME_HISTORY_SIZE;
+        if (player->frameHistoryCount < FBFSVGPlayer::FRAME_HISTORY_SIZE) {
             player->frameHistoryCount++;
         }
 
@@ -2413,14 +2413,14 @@ void SVGPlayer_EndFrame(SVGPlayerRef player) {
     }
 }
 
-double SVGPlayer_GetLastFrameDuration(SVGPlayerRef player) {
+double FBFSVGPlayer_GetLastFrameDuration(FBFSVGPlayerRef player) {
     if (!player) return 0.0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->lastFrameDurationSeconds;
 }
 
-double SVGPlayer_GetAverageFrameDuration(SVGPlayerRef player) {
+double FBFSVGPlayer_GetAverageFrameDuration(FBFSVGPlayerRef player) {
     if (!player) return 0.0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2434,16 +2434,16 @@ double SVGPlayer_GetAverageFrameDuration(SVGPlayerRef player) {
     return sum / static_cast<double>(player->frameHistoryCount);
 }
 
-float SVGPlayer_GetMeasuredFPS(SVGPlayerRef player) {
+float FBFSVGPlayer_GetMeasuredFPS(FBFSVGPlayerRef player) {
     if (!player) return 0.0f;
 
-    double avgDuration = SVGPlayer_GetAverageFrameDuration(player);
+    double avgDuration = FBFSVGPlayer_GetAverageFrameDuration(player);
     if (avgDuration <= 0.0) return 0.0f;
 
     return static_cast<float>(1.0 / avgDuration);
 }
 
-bool SVGPlayer_ShouldRenderFrame(SVGPlayerRef player, double currentTimeSeconds) {
+bool FBFSVGPlayer_ShouldRenderFrame(FBFSVGPlayerRef player, double currentTimeSeconds) {
     if (!player) return false;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2456,21 +2456,21 @@ bool SVGPlayer_ShouldRenderFrame(SVGPlayerRef player, double currentTimeSeconds)
     return timeSinceLastRender >= (targetInterval * 0.9);
 }
 
-void SVGPlayer_MarkFrameRendered(SVGPlayerRef player, double renderTimeSeconds) {
+void FBFSVGPlayer_MarkFrameRendered(FBFSVGPlayerRef player, double renderTimeSeconds) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     player->lastRenderTimeSeconds = renderTimeSeconds;
 }
 
-int SVGPlayer_GetDroppedFrameCount(SVGPlayerRef player) {
+int FBFSVGPlayer_GetDroppedFrameCount(FBFSVGPlayerRef player) {
     if (!player) return 0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->droppedFrameCount;
 }
 
-void SVGPlayer_ResetFrameStats(SVGPlayerRef player) {
+void FBFSVGPlayer_ResetFrameStats(FBFSVGPlayerRef player) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->mutex);
@@ -2483,19 +2483,19 @@ void SVGPlayer_ResetFrameStats(SVGPlayerRef player) {
     player->frameBeginTimeSeconds = 0.0;
 
     // Clear history array
-    for (int i = 0; i < SVGPlayer::FRAME_HISTORY_SIZE; i++) {
+    for (int i = 0; i < FBFSVGPlayer::FRAME_HISTORY_SIZE; i++) {
         player->frameDurationHistory[i] = 0.0;
     }
 }
 
-double SVGPlayer_GetLastRenderTime(SVGPlayerRef player) {
+double FBFSVGPlayer_GetLastRenderTime(FBFSVGPlayerRef player) {
     if (!player) return 0.0;
 
     std::lock_guard<std::mutex> lock(player->mutex);
     return player->lastRenderTimeSeconds;
 }
 
-double SVGPlayer_GetTimeSinceLastRender(SVGPlayerRef player, double currentTimeSeconds) {
+double FBFSVGPlayer_GetTimeSinceLastRender(FBFSVGPlayerRef player, double currentTimeSeconds) {
     if (!player) return 0.0;
 
     std::lock_guard<std::mutex> lock(player->mutex);

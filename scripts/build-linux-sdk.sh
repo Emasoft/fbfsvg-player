@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# build-linux-sdk.sh - Build SVGPlayer SDK for Linux
+# build-linux-sdk.sh - Build FBFSVGPlayer SDK for Linux
 # Usage: ./build-linux-sdk.sh [options]
 # Options:
 #   -y, --non-interactive    Skip confirmation prompts (useful for CI/automation)
@@ -175,7 +175,7 @@ get_compiler() {
 
 # Main script starts here
 echo "=============================================="
-echo "SVGPlayer SDK for Linux - Build Script"
+echo "FBFSVGPlayer SDK for Linux - Build Script"
 echo "=============================================="
 echo ""
 
@@ -185,7 +185,7 @@ detect_architecture
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SDK_DIR="$PROJECT_ROOT/linux-sdk/SVGPlayer"
+SDK_DIR="$PROJECT_ROOT/linux-sdk/FBFSVGPlayer"
 SHARED_DIR="$PROJECT_ROOT/shared"
 BUILD_DIR="$PROJECT_ROOT/build/linux"
 SKIA_DIR="$PROJECT_ROOT/skia-build/src/skia"
@@ -278,8 +278,8 @@ fi
 INCLUDES="-I$SDK_DIR -I$PROJECT_ROOT -I$SKIA_DIR -I$SKIA_DIR/include -I$SKIA_DIR/modules"
 
 # Link flags for shared library
-LDFLAGS="-shared -Wl,--version-script=$SDK_DIR/libsvgplayer.map"
-if [ -f "$SDK_DIR/libsvgplayer.map" ]; then
+LDFLAGS="-shared -Wl,--version-script=$SDK_DIR/libfbfsvgplayer.map"
+if [ -f "$SDK_DIR/libfbfsvgplayer.map" ]; then
     echo "Using symbol version script"
 else
     LDFLAGS="-shared"
@@ -340,21 +340,21 @@ if pkg-config --exists fontconfig 2>/dev/null; then
 fi
 
 echo ""
-echo "Compiling SVGPlayer with shared animation controller..."
+echo "Compiling FBFSVGPlayer with shared animation controller..."
 echo "Compiler: $CXX"
 echo "Flags:    $CXXFLAGS"
-echo "Sources:  $SDK_DIR/svg_player.cpp"
+echo "Sources:  $SDK_DIR/fbfsvg_player.cpp"
 echo "          $SHARED_DIR/SVGAnimationController.cpp"
 echo "          $SHARED_DIR/SVGGridCompositor.cpp"
 echo "          $SHARED_DIR/svg_instrumentation.cpp"
 echo ""
 
 # Compile SDK source file to object
-echo "Compiling svg_player.cpp..."
-$CXX $CXXFLAGS $INCLUDES -c "$SDK_DIR/svg_player.cpp" -o "$BUILD_DIR/svg_player.o"
+echo "Compiling fbfsvg_player.cpp..."
+$CXX $CXXFLAGS $INCLUDES -c "$SDK_DIR/fbfsvg_player.cpp" -o "$BUILD_DIR/fbfsvg_player.o"
 
 if [ $? -ne 0 ]; then
-    echo "Compilation of svg_player.cpp failed!"
+    echo "Compilation of fbfsvg_player.cpp failed!"
     exit 1
 fi
 
@@ -388,7 +388,7 @@ fi
 echo "Linking shared library..."
 
 # Link shared library with all object files
-$CXX $LDFLAGS -o "$BUILD_DIR/libsvgplayer.so.1.0.0" "$BUILD_DIR/svg_player.o" "$BUILD_DIR/SVGAnimationController.o" "$BUILD_DIR/SVGGridCompositor.o" "$BUILD_DIR/svg_instrumentation.o" $LIBS
+$CXX $LDFLAGS -o "$BUILD_DIR/libfbfsvgplayer.so.1.0.0" "$BUILD_DIR/fbfsvg_player.o" "$BUILD_DIR/SVGAnimationController.o" "$BUILD_DIR/SVGGridCompositor.o" "$BUILD_DIR/svg_instrumentation.o" $LIBS
 
 if [ $? -ne 0 ]; then
     echo "Linking failed!"
@@ -397,25 +397,25 @@ fi
 
 # Create symlinks
 cd "$BUILD_DIR"
-ln -sf libsvgplayer.so.1.0.0 libsvgplayer.so.1
-ln -sf libsvgplayer.so.1 libsvgplayer.so
+ln -sf libfbfsvgplayer.so.1.0.0 libfbfsvgplayer.so.1
+ln -sf libfbfsvgplayer.so.1 libfbfsvgplayer.so
 cd - > /dev/null
 
 # Copy header file
-cp "$SDK_DIR/svg_player.h" "$BUILD_DIR/"
+cp "$SDK_DIR/fbfsvg_player.h" "$BUILD_DIR/"
 
 # Create pkg-config file
-cat > "$BUILD_DIR/svgplayer.pc" << EOF
+cat > "$BUILD_DIR/fbfsvgplayer.pc" << EOF
 prefix=/usr/local
 exec_prefix=\${prefix}
 libdir=\${exec_prefix}/lib
 includedir=\${prefix}/include
 
-Name: SVGPlayer
-Description: Cross-platform SVG Player library with SMIL animation support
+Name: FBFSVGPlayer
+Description: Cross-platform FBF.SVG Player library with SMIL animation support
 Version: 1.0.0
 Requires:
-Libs: -L\${libdir} -lsvgplayer
+Libs: -L\${libdir} -lfbfsvgplayer
 Cflags: -I\${includedir}
 EOF
 
@@ -425,19 +425,19 @@ echo "Build complete!"
 echo "=============================================="
 echo ""
 echo "Output files:"
-echo "  Library:     $BUILD_DIR/libsvgplayer.so"
-echo "  Header:      $BUILD_DIR/svg_player.h"
-echo "  pkg-config:  $BUILD_DIR/svgplayer.pc"
+echo "  Library:     $BUILD_DIR/libfbfsvgplayer.so"
+echo "  Header:      $BUILD_DIR/fbfsvg_player.h"
+echo "  pkg-config:  $BUILD_DIR/fbfsvgplayer.pc"
 echo ""
 echo "To install system-wide:"
-echo "  sudo cp $BUILD_DIR/libsvgplayer.so.1.0.0 /usr/local/lib/"
-echo "  sudo ln -sf /usr/local/lib/libsvgplayer.so.1.0.0 /usr/local/lib/libsvgplayer.so.1"
-echo "  sudo ln -sf /usr/local/lib/libsvgplayer.so.1 /usr/local/lib/libsvgplayer.so"
-echo "  sudo cp $BUILD_DIR/svg_player.h /usr/local/include/"
-echo "  sudo cp $BUILD_DIR/svgplayer.pc /usr/local/lib/pkgconfig/"
+echo "  sudo cp $BUILD_DIR/libfbfsvgplayer.so.1.0.0 /usr/local/lib/"
+echo "  sudo ln -sf /usr/local/lib/libfbfsvgplayer.so.1.0.0 /usr/local/lib/libfbfsvgplayer.so.1"
+echo "  sudo ln -sf /usr/local/lib/libfbfsvgplayer.so.1 /usr/local/lib/libfbfsvgplayer.so"
+echo "  sudo cp $BUILD_DIR/fbfsvg_player.h /usr/local/include/"
+echo "  sudo cp $BUILD_DIR/fbfsvgplayer.pc /usr/local/lib/pkgconfig/"
 echo "  sudo ldconfig"
 echo ""
 echo "To use in your project:"
-echo "  #include <svg_player.h>"
-echo "  Link with: -lsvgplayer"
+echo "  #include <fbfsvg_player.h>"
+echo "  Link with: -lfbfsvgplayer"
 echo ""

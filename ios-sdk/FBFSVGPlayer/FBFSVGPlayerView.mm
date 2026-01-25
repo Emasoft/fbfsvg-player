@@ -8,15 +8,15 @@
 // shared C++ core. These provide the API surface for developers to build
 // custom player UIs.
 
-#import "SVGPlayerView.h"
-#import "SVGPlayerController.h"
-#import "SVGPlayerMetalRenderer.h"
+#import "FBFSVGPlayerView.h"
+#import "FBFSVGPlayerController.h"
+#import "FBFSVGPlayerMetalRenderer.h"
 
-// Error domain for SVGPlayerView errors
-NSString * const SVGPlayerViewErrorDomain = @"com.svgplayer.view.error";
+// Error domain for FBFSVGPlayerView errors
+NSString * const FBFSVGPlayerViewErrorDomain = @"com.fbfsvgplayer.view.error";
 
 // Zero viewport constant
-const SVGViewport SVGViewportZero = {0, 0, 0, 0};
+const FBFSVGViewport FBFSVGViewportZero = {0, 0, 0, 0};
 
 // Default seek interval for rewind/fastforward
 static const NSTimeInterval kDefaultSeekInterval = 5.0;
@@ -28,18 +28,18 @@ static const CGFloat kDefaultMinZoomScale = 1.0;
 static const CGFloat kDefaultMaxZoomScale = 10.0;
 static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
-#pragma mark - SVGPresetView Implementation
+#pragma mark - FBFSVGPresetView Implementation
 
-@implementation SVGPresetView
+@implementation FBFSVGPresetView
 
-+ (instancetype)presetWithIdentifier:(NSString *)identifier viewport:(SVGViewport)viewport {
++ (instancetype)presetWithIdentifier:(NSString *)identifier viewport:(FBFSVGViewport)viewport {
     return [self presetWithIdentifier:identifier viewport:viewport displayName:nil];
 }
 
 + (instancetype)presetWithIdentifier:(NSString *)identifier
-                            viewport:(SVGViewport)viewport
+                            viewport:(FBFSVGViewport)viewport
                          displayName:(NSString *)displayName {
-    SVGPresetView *preset = [[SVGPresetView alloc] init];
+    FBFSVGPresetView *preset = [[FBFSVGPresetView alloc] init];
     if (preset) {
         preset->_identifier = [identifier copy];
         preset->_viewport = viewport;
@@ -50,11 +50,11 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 + (instancetype)presetWithIdentifier:(NSString *)identifier rect:(CGRect)rect {
-    return [self presetWithIdentifier:identifier viewport:SVGViewportFromRect(rect)];
+    return [self presetWithIdentifier:identifier viewport:FBFSVGViewportFromRect(rect)];
 }
 
 - (id)copyWithZone:(NSZone *)zone {
-    SVGPresetView *copy = [[SVGPresetView allocWithZone:zone] init];
+    FBFSVGPresetView *copy = [[FBFSVGPresetView allocWithZone:zone] init];
     if (copy) {
         copy->_identifier = [_identifier copy];
         copy->_viewport = _viewport;
@@ -66,8 +66,8 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
 - (BOOL)isEqual:(id)object {
     if (self == object) return YES;
-    if (![object isKindOfClass:[SVGPresetView class]]) return NO;
-    SVGPresetView *other = (SVGPresetView *)object;
+    if (![object isKindOfClass:[FBFSVGPresetView class]]) return NO;
+    FBFSVGPresetView *other = (FBFSVGPresetView *)object;
     return [self.identifier isEqualToString:other.identifier];
 }
 
@@ -76,29 +76,29 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (NSString *)description {
-    return [NSString stringWithFormat:@"<SVGPresetView: %@ viewport:(%.1f, %.1f, %.1f, %.1f)>",
+    return [NSString stringWithFormat:@"<FBFSVGPresetView: %@ viewport:(%.1f, %.1f, %.1f, %.1f)>",
             self.identifier, self.viewport.x, self.viewport.y, self.viewport.width, self.viewport.height];
 }
 
 @end
 
-@interface SVGPlayerView () <UIGestureRecognizerDelegate>
+@interface FBFSVGPlayerView () <UIGestureRecognizerDelegate>
 // SVG controller for loading and rendering
-@property (nonatomic, strong) SVGPlayerController *controller;
+@property (nonatomic, strong) FBFSVGPlayerController *controller;
 // Metal renderer
-@property (nonatomic, strong) id<SVGPlayerRenderer> renderer;
+@property (nonatomic, strong) id<FBFSVGPlayerRenderer> renderer;
 // Display link for animation timing
 @property (nonatomic, strong) CADisplayLink *displayLink;
 // Last frame timestamp for delta time calculation
 @property (nonatomic, assign) CFTimeInterval lastTimestamp;
 // Internal playback state
-@property (nonatomic, assign) SVGViewPlaybackState internalPlaybackState;
+@property (nonatomic, assign) FBFSVGViewPlaybackState internalPlaybackState;
 // Cached last error
 @property (nonatomic, strong, nullable) NSError *internalLastError;
 // Flag to track if view has appeared
 @property (nonatomic, assign) BOOL hasAppeared;
 // Repeat mode
-@property (nonatomic, assign) SVGRepeatMode internalRepeatMode;
+@property (nonatomic, assign) FBFSVGRepeatMode internalRepeatMode;
 // Repeat count
 @property (nonatomic, assign) NSInteger internalRepeatCount;
 // Current repeat iteration
@@ -108,7 +108,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 // Scrubbing state
 @property (nonatomic, assign) BOOL internalSeeking;
 // Playback state before scrubbing
-@property (nonatomic, assign) SVGViewPlaybackState stateBeforeSeeking;
+@property (nonatomic, assign) FBFSVGViewPlaybackState stateBeforeSeeking;
 // Fullscreen state
 @property (nonatomic, assign) BOOL internalFullscreen;
 // Orientation lock state
@@ -121,7 +121,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 @property (nonatomic, strong) UIWindow *fullscreenWindow;
 
 // Viewport/Zoom properties
-@property (nonatomic, assign) SVGViewport internalViewport;
+@property (nonatomic, assign) FBFSVGViewport internalViewport;
 @property (nonatomic, assign) CGFloat internalZoomScale;
 @property (nonatomic, assign) CGFloat internalMinZoomScale;
 @property (nonatomic, assign) CGFloat internalMaxZoomScale;
@@ -134,7 +134,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 @property (nonatomic, strong) UITapGestureRecognizer *doubleTapGestureRecognizer;
 
 // Preset views storage
-@property (nonatomic, strong) NSMutableDictionary<NSString *, SVGPresetView *> *presetViewsStorage;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, FBFSVGPresetView *> *presetViewsStorage;
 
 // Loop counter
 @property (nonatomic, assign) NSInteger loopCount;
@@ -145,7 +145,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 @property (nonatomic, assign) NSTimeInterval internalLongPressDuration;
 @end
 
-@implementation SVGPlayerView
+@implementation FBFSVGPlayerView
 
 #pragma mark - Initialization
 
@@ -177,10 +177,10 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     _autoPlay = YES;
     _loop = YES;
     _playbackSpeed = 1.0;
-    _svgContentMode = SVGContentModeScaleAspectFit;
-    _internalPlaybackState = SVGViewPlaybackStateStopped;
+    _svgContentMode = FBFSVGContentModeScaleAspectFit;
+    _internalPlaybackState = FBFSVGViewPlaybackStateStopped;
     _hasAppeared = NO;
-    _internalRepeatMode = SVGRepeatModeLoop;
+    _internalRepeatMode = FBFSVGRepeatModeLoop;
     _internalRepeatCount = 1;
     _internalCurrentRepeatIteration = 0;
     _internalPlayingForward = YES;
@@ -190,7 +190,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     _preferredOrientation = UIInterfaceOrientationMaskAll;
 
     // Viewport/Zoom defaults
-    _internalViewport = SVGViewportZero;
+    _internalViewport = FBFSVGViewportZero;
     _internalZoomScale = 1.0;
     _internalMinZoomScale = kDefaultMinZoomScale;
     _internalMaxZoomScale = kDefaultMaxZoomScale;
@@ -214,13 +214,13 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     self.backgroundColor = [UIColor whiteColor];
 
     // Initialize controller
-    _controller = [SVGPlayerController controller];
+    _controller = [FBFSVGPlayerController controller];
     _controller.looping = _loop;
 
     // Initialize Metal renderer
-    _renderer = [[SVGPlayerMetalRenderer alloc] initWithView:self controller:_controller];
+    _renderer = [[FBFSVGPlayerMetalRenderer alloc] initWithView:self controller:_controller];
     if (!_renderer) {
-        NSLog(@"SVGPlayerView: Metal renderer initialization failed");
+        NSLog(@"FBFSVGPlayerView: Metal renderer initialization failed");
     }
 
     // Setup display link for animation
@@ -284,7 +284,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (void)displayLinkFired:(CADisplayLink *)displayLink {
-    if (self.internalPlaybackState != SVGViewPlaybackStatePlaying) {
+    if (self.internalPlaybackState != FBFSVGViewPlaybackStatePlaying) {
         return;
     }
 
@@ -326,7 +326,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     if (!self.loop && self.controller.duration > 0) {
         if (self.controller.currentTime >= self.controller.duration) {
             // Handle repeat modes
-            if (self.internalRepeatMode == SVGRepeatModeCount) {
+            if (self.internalRepeatMode == FBFSVGRepeatModeCount) {
                 self.internalCurrentRepeatIteration++;
                 self.loopCount++;  // Also increment loopCount
                 if (self.internalCurrentRepeatIteration >= self.internalRepeatCount) {
@@ -360,7 +360,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (void)handlePlaybackFinished {
-    self.internalPlaybackState = SVGViewPlaybackStateEnded;
+    self.internalPlaybackState = FBFSVGViewPlaybackStateEnded;
     self.displayLink.paused = YES;
     [self.controller pause];
 
@@ -369,7 +369,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
         [self.delegate svgPlayerViewDidFinishPlaying:self];
     }
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didChangePlaybackState:)]) {
-        [self.delegate svgPlayerView:self didChangePlaybackState:SVGViewPlaybackStateEnded];
+        [self.delegate svgPlayerView:self didChangePlaybackState:FBFSVGViewPlaybackStateEnded];
     }
 }
 
@@ -419,7 +419,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     CGContextFillPath(context);
 
     // Label text
-    NSString *label = self.svgFileName.length > 0 ? self.svgFileName : @"SVGPlayerView";
+    NSString *label = self.svgFileName.length > 0 ? self.svgFileName : @"FBFSVGPlayerView";
     NSDictionary *attrs = @{
         NSFontAttributeName: [UIFont systemFontOfSize:12 weight:UIFontWeightMedium],
         NSForegroundColorAttributeName: [UIColor darkGrayColor]
@@ -462,7 +462,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 - (void)setLoop:(BOOL)loop {
     _loop = loop;
     self.controller.looping = loop;
-    self.internalRepeatMode = loop ? SVGRepeatModeLoop : SVGRepeatModeNone;
+    self.internalRepeatMode = loop ? FBFSVGRepeatModeLoop : FBFSVGRepeatModeNone;
 }
 
 - (void)setSvgBackgroundColor:(UIColor *)svgBackgroundColor {
@@ -475,16 +475,16 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     _playbackSpeed = MAX(0.1, MIN(10.0, playbackSpeed));
 }
 
-- (void)setRepeatMode:(SVGRepeatMode)repeatMode {
+- (void)setRepeatMode:(FBFSVGRepeatMode)repeatMode {
     _internalRepeatMode = repeatMode;
     // Sync with loop property
-    _loop = (repeatMode == SVGRepeatModeLoop ||
-             repeatMode == SVGRepeatModeReverse ||
-             repeatMode == SVGRepeatModeCount);
+    _loop = (repeatMode == FBFSVGRepeatModeLoop ||
+             repeatMode == FBFSVGRepeatModeReverse ||
+             repeatMode == FBFSVGRepeatModeCount);
     self.controller.looping = _loop;
 }
 
-- (SVGRepeatMode)repeatMode {
+- (FBFSVGRepeatMode)repeatMode {
     return _internalRepeatMode;
 }
 
@@ -617,30 +617,30 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 - (void)play {
     if (!self.controller.isLoaded) return;
 
-    SVGViewPlaybackState previousState = self.internalPlaybackState;
-    self.internalPlaybackState = SVGViewPlaybackStatePlaying;
+    FBFSVGViewPlaybackState previousState = self.internalPlaybackState;
+    self.internalPlaybackState = FBFSVGViewPlaybackStatePlaying;
     self.lastTimestamp = CACurrentMediaTime();
     self.displayLink.paused = NO;
     [self.controller play];
 
     // Notify delegate if state changed
-    if (previousState != SVGViewPlaybackStatePlaying) {
+    if (previousState != FBFSVGViewPlaybackStatePlaying) {
         if ([self.delegate respondsToSelector:@selector(svgPlayerView:didChangePlaybackState:)]) {
-            [self.delegate svgPlayerView:self didChangePlaybackState:SVGViewPlaybackStatePlaying];
+            [self.delegate svgPlayerView:self didChangePlaybackState:FBFSVGViewPlaybackStatePlaying];
         }
     }
 }
 
 - (void)pause {
-    SVGViewPlaybackState previousState = self.internalPlaybackState;
-    self.internalPlaybackState = SVGViewPlaybackStatePaused;
+    FBFSVGViewPlaybackState previousState = self.internalPlaybackState;
+    self.internalPlaybackState = FBFSVGViewPlaybackStatePaused;
     self.displayLink.paused = YES;
     [self.controller pause];
 
     // Notify delegate if state changed
-    if (previousState != SVGViewPlaybackStatePaused) {
+    if (previousState != FBFSVGViewPlaybackStatePaused) {
         if ([self.delegate respondsToSelector:@selector(svgPlayerView:didChangePlaybackState:)]) {
-            [self.delegate svgPlayerView:self didChangePlaybackState:SVGViewPlaybackStatePaused];
+            [self.delegate svgPlayerView:self didChangePlaybackState:FBFSVGViewPlaybackStatePaused];
         }
 
         // Notify pause event
@@ -651,15 +651,15 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (void)resume {
-    if (self.internalPlaybackState == SVGViewPlaybackStatePaused ||
-        self.internalPlaybackState == SVGViewPlaybackStateEnded) {
+    if (self.internalPlaybackState == FBFSVGViewPlaybackStatePaused ||
+        self.internalPlaybackState == FBFSVGViewPlaybackStateEnded) {
         [self play];
     }
 }
 
 - (void)stop {
-    SVGViewPlaybackState previousState = self.internalPlaybackState;
-    self.internalPlaybackState = SVGViewPlaybackStateStopped;
+    FBFSVGViewPlaybackState previousState = self.internalPlaybackState;
+    self.internalPlaybackState = FBFSVGViewPlaybackStateStopped;
     self.displayLink.paused = YES;
     [self.controller stop];
     self.internalCurrentRepeatIteration = 0;
@@ -668,9 +668,9 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     [self setNeedsRender];
 
     // Notify delegate if state changed
-    if (previousState != SVGViewPlaybackStateStopped) {
+    if (previousState != FBFSVGViewPlaybackStateStopped) {
         if ([self.delegate respondsToSelector:@selector(svgPlayerView:didChangePlaybackState:)]) {
-            [self.delegate svgPlayerView:self didChangePlaybackState:SVGViewPlaybackStateStopped];
+            [self.delegate svgPlayerView:self didChangePlaybackState:FBFSVGViewPlaybackStateStopped];
         }
 
         // Notify reset to start event
@@ -681,7 +681,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (void)togglePlayback {
-    if (self.playbackState == SVGViewPlaybackStatePlaying) {
+    if (self.playbackState == FBFSVGViewPlaybackStatePlaying) {
         [self pause];
     } else {
         [self play];
@@ -724,7 +724,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
 - (void)stepForward {
     // Pause if playing
-    if (self.internalPlaybackState == SVGViewPlaybackStatePlaying) {
+    if (self.internalPlaybackState == FBFSVGViewPlaybackStatePlaying) {
         [self pause];
     }
     [self.controller stepForward];
@@ -733,7 +733,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
 - (void)stepBackward {
     // Pause if playing
-    if (self.internalPlaybackState == SVGViewPlaybackStatePlaying) {
+    if (self.internalPlaybackState == FBFSVGViewPlaybackStatePlaying) {
         [self pause];
     }
     [self.controller stepBackward];
@@ -742,7 +742,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
 - (void)stepByFrames:(NSInteger)count {
     // Pause if playing
-    if (self.internalPlaybackState == SVGViewPlaybackStatePlaying) {
+    if (self.internalPlaybackState == FBFSVGViewPlaybackStatePlaying) {
         [self pause];
     }
     [self.controller stepByFrames:count];
@@ -776,7 +776,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     self.stateBeforeSeeking = self.internalPlaybackState;
     self.internalSeeking = YES;
 
-    if (self.internalPlaybackState == SVGViewPlaybackStatePlaying) {
+    if (self.internalPlaybackState == FBFSVGViewPlaybackStatePlaying) {
         [self pause];
     }
 
@@ -801,7 +801,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
         [self.delegate svgPlayerView:self didEndSeekingAtTime:self.controller.currentTime];
     }
 
-    if (shouldResume && self.stateBeforeSeeking == SVGViewPlaybackStatePlaying) {
+    if (shouldResume && self.stateBeforeSeeking == FBFSVGViewPlaybackStatePlaying) {
         [self play];
     }
 }
@@ -948,7 +948,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
 #pragma mark - Properties (Readonly)
 
-- (SVGViewPlaybackState)playbackState {
+- (FBFSVGViewPlaybackState)playbackState {
     return self.internalPlaybackState;
 }
 
@@ -992,8 +992,8 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     return self.controller.statistics.fps;
 }
 
-- (SVGTimelineInfo)timelineInfo {
-    SVGTimelineInfo info;
+- (FBFSVGTimelineInfo)timelineInfo {
+    FBFSVGTimelineInfo info;
     info.currentTime = self.controller.currentTime;
     info.duration = self.controller.duration;
     info.elapsedTime = info.currentTime;
@@ -1015,15 +1015,15 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (BOOL)isPlaying {
-    return self.playbackState == SVGViewPlaybackStatePlaying;
+    return self.playbackState == FBFSVGViewPlaybackStatePlaying;
 }
 
 - (BOOL)isPaused {
-    return self.playbackState == SVGViewPlaybackStatePaused;
+    return self.playbackState == FBFSVGViewPlaybackStatePaused;
 }
 
 - (BOOL)isStopped {
-    return self.playbackState == SVGViewPlaybackStateStopped;
+    return self.playbackState == FBFSVGViewPlaybackStateStopped;
 }
 
 - (BOOL)isSeeking {
@@ -1063,15 +1063,15 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 #pragma mark - Formatted Time Strings
 
 - (NSString *)formattedElapsedTime {
-    return [SVGPlayerView formatTime:self.currentTime];
+    return [FBFSVGPlayerView formatTime:self.currentTime];
 }
 
 - (NSString *)formattedRemainingTime {
-    return [NSString stringWithFormat:@"-%@", [SVGPlayerView formatTime:self.remainingTime]];
+    return [NSString stringWithFormat:@"-%@", [FBFSVGPlayerView formatTime:self.remainingTime]];
 }
 
 - (NSString *)formattedDuration {
-    return [SVGPlayerView formatTime:self.duration];
+    return [FBFSVGPlayerView formatTime:self.duration];
 }
 
 + (NSString *)formatTime:(NSTimeInterval)time {
@@ -1200,7 +1200,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
     if (newWindow == nil) {
         // View is being removed from window - pause animation
-        if (self.internalPlaybackState == SVGViewPlaybackStatePlaying) {
+        if (self.internalPlaybackState == FBFSVGViewPlaybackStatePlaying) {
             self.displayLink.paused = YES;
         }
     }
@@ -1213,14 +1213,14 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
         self.hasAppeared = YES;
 
         // Resume animation if it was playing
-        if (self.internalPlaybackState == SVGViewPlaybackStatePlaying) {
+        if (self.internalPlaybackState == FBFSVGViewPlaybackStatePlaying) {
             self.lastTimestamp = CACurrentMediaTime();
             self.displayLink.paused = NO;
         }
 
         // Auto-play on first appearance if enabled
         if (self.autoPlay && self.controller.isLoaded &&
-            self.internalPlaybackState == SVGViewPlaybackStateStopped) {
+            self.internalPlaybackState == FBFSVGViewPlaybackStateStopped) {
             [self play];
         }
     }
@@ -1246,7 +1246,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (void)handleErrorWithMessage:(NSString *)message code:(NSInteger)code {
-    NSError *error = [NSError errorWithDomain:SVGPlayerViewErrorDomain
+    NSError *error = [NSError errorWithDomain:FBFSVGPlayerViewErrorDomain
                                          code:code
                                      userInfo:@{NSLocalizedDescriptionKey: message}];
     [self handleError:error];
@@ -1284,17 +1284,17 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     return self.internalZoomScale;
 }
 
-- (SVGViewport)currentViewport {
+- (FBFSVGViewport)currentViewport {
     return self.internalViewport;
 }
 
-- (SVGViewport)defaultViewport {
+- (FBFSVGViewport)defaultViewport {
     // Return the full SVG bounds as the default viewport
     CGSize svgSize = self.controller.intrinsicSize;
     if (svgSize.width > 0 && svgSize.height > 0) {
-        return SVGViewportMake(0, 0, svgSize.width, svgSize.height);
+        return FBFSVGViewportMake(0, 0, svgSize.width, svgSize.height);
     }
-    return SVGViewportZero;
+    return FBFSVGViewportZero;
 }
 
 - (BOOL)isZoomed {
@@ -1321,8 +1321,8 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     self.doubleTapGestureRecognizer.enabled = doubleTapResetsZoom;
 }
 
-- (void)setViewport:(SVGViewport)viewport animated:(BOOL)animated {
-    SVGViewport previousViewport = self.internalViewport;
+- (void)setViewport:(FBFSVGViewport)viewport animated:(BOOL)animated {
+    FBFSVGViewport previousViewport = self.internalViewport;
 
     // Use the shared library to set the viewBox directly
     [self.controller setViewBoxX:viewport.x y:viewport.y width:viewport.width height:viewport.height];
@@ -1336,7 +1336,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
     // Notify delegate
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didChangeViewport:)]) {
-        SVGZoomInfo info;
+        FBFSVGZoomInfo info;
         info.previousViewport = previousViewport;
         info.newViewport = self.internalViewport;
         info.zoomScale = self.internalZoomScale;
@@ -1349,7 +1349,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (void)setViewportRect:(CGRect)rect animated:(BOOL)animated {
-    [self setViewport:SVGViewportFromRect(rect) animated:animated];
+    [self setViewport:FBFSVGViewportFromRect(rect) animated:animated];
 }
 
 - (void)zoomToScale:(CGFloat)scale animated:(BOOL)animated {
@@ -1361,7 +1361,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     // Clamp scale to local limits (will also be clamped by shared library)
     scale = MAX(self.internalMinZoomScale, MIN(scale, self.internalMaxZoomScale));
 
-    SVGViewport previousViewport = self.internalViewport;
+    FBFSVGViewport previousViewport = self.internalViewport;
 
     // Use the shared library zoom API - this handles all viewBox calculation and clamping
     [self.controller setZoom:scale centeredAt:center viewSize:self.bounds.size];
@@ -1375,7 +1375,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
     // Notify delegate
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didChangeViewport:)]) {
-        SVGZoomInfo info;
+        FBFSVGZoomInfo info;
         info.previousViewport = previousViewport;
         info.newViewport = self.internalViewport;
         info.zoomScale = self.internalZoomScale;
@@ -1402,7 +1402,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (void)resetZoomAnimated:(BOOL)animated {
-    SVGViewport previousViewport = self.internalViewport;
+    FBFSVGViewport previousViewport = self.internalViewport;
 
     // Use the shared library reset API - this restores the original viewBox
     [self.controller resetViewBox];
@@ -1420,7 +1420,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     }
 
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didChangeViewport:)]) {
-        SVGZoomInfo info;
+        FBFSVGZoomInfo info;
         info.previousViewport = previousViewport;
         info.newViewport = self.internalViewport;
         info.zoomScale = self.internalZoomScale;
@@ -1437,7 +1437,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     // The controller's convertViewPointToSVG: is also available but this local
     // implementation handles our custom viewport state including zoom/pan
     CGSize viewSize = self.bounds.size;
-    SVGViewport vp = self.internalViewport;
+    FBFSVGViewport vp = self.internalViewport;
 
     if (viewSize.width <= 0 || viewSize.height <= 0) {
         return CGPointZero;
@@ -1455,7 +1455,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
 - (CGPoint)convertPointFromSVGCoordinates:(CGPoint)point {
     CGSize viewSize = self.bounds.size;
-    SVGViewport vp = self.internalViewport;
+    FBFSVGViewport vp = self.internalViewport;
 
     if (vp.width <= 0 || vp.height <= 0) {
         vp = self.defaultViewport;
@@ -1490,14 +1490,14 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 - (void)syncViewportFromController {
     CGFloat x = 0, y = 0, width = 0, height = 0;
     if ([self.controller getViewBoxX:&x y:&y width:&width height:&height]) {
-        self.internalViewport = SVGViewportMake(x, y, width, height);
+        self.internalViewport = FBFSVGViewportMake(x, y, width, height);
     }
 }
 
 /// Sync shared library viewBox from internal viewport state
 /// Call this to push internal viewport changes to the shared library
 - (void)syncViewportToController {
-    SVGViewport vp = self.internalViewport;
+    FBFSVGViewport vp = self.internalViewport;
     [self.controller setViewBoxX:vp.x y:vp.y width:vp.width height:vp.height];
 }
 
@@ -1507,7 +1507,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     if (!self.pinchToZoomEnabled) return;
 
     CGPoint center = [gesture locationInView:self];
-    SVGViewport previousViewport = self.internalViewport;
+    FBFSVGViewport previousViewport = self.internalViewport;
 
     if (gesture.state == UIGestureRecognizerStateBegan ||
         gesture.state == UIGestureRecognizerStateChanged) {
@@ -1537,7 +1537,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
         // Notify delegate of zoom gesture completion
         if ([self.delegate respondsToSelector:@selector(svgPlayerView:didZoom:)]) {
-            SVGZoomInfo info;
+            FBFSVGZoomInfo info;
             info.previousViewport = previousViewport;
             info.newViewport = self.internalViewport;
             info.zoomScale = self.internalZoomScale;
@@ -1612,18 +1612,18 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
 #pragma mark - Preset Views
 
-- (NSArray<SVGPresetView *> *)presetViews {
+- (NSArray<FBFSVGPresetView *> *)presetViews {
     return [self.presetViewsStorage allValues];
 }
 
-- (void)registerPresetView:(SVGPresetView *)preset {
+- (void)registerPresetView:(FBFSVGPresetView *)preset {
     if (preset && preset.identifier.length > 0) {
         self.presetViewsStorage[preset.identifier] = [preset copy];
     }
 }
 
-- (void)registerPresetViews:(NSArray<SVGPresetView *> *)presets {
-    for (SVGPresetView *preset in presets) {
+- (void)registerPresetViews:(NSArray<FBFSVGPresetView *> *)presets {
+    for (FBFSVGPresetView *preset in presets) {
         [self registerPresetView:preset];
     }
 }
@@ -1638,11 +1638,11 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     [self.presetViewsStorage removeAllObjects];
 }
 
-- (SVGPresetView *)presetViewWithIdentifier:(NSString *)identifier {
+- (FBFSVGPresetView *)presetViewWithIdentifier:(NSString *)identifier {
     return self.presetViewsStorage[identifier];
 }
 
-- (void)transitionToPreset:(SVGPresetView *)preset animated:(BOOL)animated {
+- (void)transitionToPreset:(FBFSVGPresetView *)preset animated:(BOOL)animated {
     if (!preset) return;
 
     // Notify delegate
@@ -1660,7 +1660,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 }
 
 - (BOOL)transitionToPresetWithIdentifier:(NSString *)identifier animated:(BOOL)animated {
-    SVGPresetView *preset = [self presetViewWithIdentifier:identifier];
+    FBFSVGPresetView *preset = [self presetViewWithIdentifier:identifier];
     if (preset) {
         [self transitionToPreset:preset animated:animated];
         return YES;
@@ -1806,7 +1806,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 // Implementation outline:
 // 1. Get touch location in view coordinates
 // 2. Call hitTestSubscribedElementAtPoint: to find hit element
-// 3. If element is hit, create SVGElementTouchInfo and call delegate
+// 3. If element is hit, create FBFSVGElementTouchInfo and call delegate
 // 4. Track enter/exit for drag events across element boundaries
 // 5. Track long press timer for long press events
 //
@@ -1817,11 +1817,11 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 
 /// Create a dual point from view coordinates (internal helper)
 /// @param viewPoint The point in view coordinates
-/// @return SVGDualPoint with both view and SVG coordinates
-- (SVGDualPoint)dualPointFromViewPoint:(CGPoint)viewPoint {
+/// @return FBFSVGDualPoint with both view and SVG coordinates
+- (FBFSVGDualPoint)dualPointFromViewPoint:(CGPoint)viewPoint {
     // Convert view coordinates to SVG coordinates using current viewport/zoom
     CGPoint svgPoint = [self convertPointToSVGCoordinates:viewPoint];
-    return SVGDualPointMake(viewPoint, svgPoint);
+    return FBFSVGDualPointMake(viewPoint, svgPoint);
 }
 
 /// Dispatch a tap event to the delegate (called from touch handling)
@@ -1832,7 +1832,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     // (touch down + touch up without significant movement, and no second tap follows)
     // MUTUALLY EXCLUSIVE: Will not fire if double-tap or drag is detected
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didTapElementWithID:atLocation:)]) {
-        SVGDualPoint location = [self dualPointFromViewPoint:viewPoint];
+        FBFSVGDualPoint location = [self dualPointFromViewPoint:viewPoint];
         [self.delegate svgPlayerView:self didTapElementWithID:objectID atLocation:location];
     }
 }
@@ -1845,7 +1845,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     // MUTUALLY EXCLUSIVE: If this fires, single tap will NOT fire
     // iOS handles this via UITapGestureRecognizer with numberOfTapsRequired = 2
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didDoubleTapElementWithID:atLocation:)]) {
-        SVGDualPoint location = [self dualPointFromViewPoint:viewPoint];
+        FBFSVGDualPoint location = [self dualPointFromViewPoint:viewPoint];
         [self.delegate svgPlayerView:self didDoubleTapElementWithID:objectID atLocation:location];
     }
 }
@@ -1856,7 +1856,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 - (void)dispatchLongPressEventForObjectID:(NSString *)objectID atViewPoint:(CGPoint)viewPoint {
     // TODO: This will be called by a timer when touch is held for longPressDuration
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didLongPressElementWithID:atLocation:)]) {
-        SVGDualPoint location = [self dualPointFromViewPoint:viewPoint];
+        FBFSVGDualPoint location = [self dualPointFromViewPoint:viewPoint];
         [self.delegate svgPlayerView:self didLongPressElementWithID:objectID atLocation:location];
     }
 }
@@ -1871,7 +1871,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
     // TODO: This will be called on touchesMoved when drag threshold is exceeded
     // MUTUALLY EXCLUSIVE: Once drag fires, tap will NOT fire for this touch sequence
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didDragElementWithID:currentLocation:translation:)]) {
-        SVGDualPoint currentLocation = [self dualPointFromViewPoint:currentViewPoint];
+        FBFSVGDualPoint currentLocation = [self dualPointFromViewPoint:currentViewPoint];
 
         // Calculate translation in both coordinate systems
         CGPoint viewTranslation = CGPointMake(currentViewPoint.x - startViewPoint.x,
@@ -1879,7 +1879,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
         CGPoint svgStart = [self convertPointToSVGCoordinates:startViewPoint];
         CGPoint svgTranslation = CGPointMake(currentLocation.svgPoint.x - svgStart.x,
                                               currentLocation.svgPoint.y - svgStart.y);
-        SVGDualPoint translation = SVGDualPointMake(viewTranslation, svgTranslation);
+        FBFSVGDualPoint translation = FBFSVGDualPointMake(viewTranslation, svgTranslation);
 
         [self.delegate svgPlayerView:self
               didDragElementWithID:objectID
@@ -1897,7 +1897,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
                       startViewPoint:(CGPoint)startViewPoint {
     // TODO: This will be called on touchesEnded after a drag sequence
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didDropElementWithID:atLocation:totalTranslation:)]) {
-        SVGDualPoint dropLocation = [self dualPointFromViewPoint:dropViewPoint];
+        FBFSVGDualPoint dropLocation = [self dualPointFromViewPoint:dropViewPoint];
 
         // Calculate total translation in both coordinate systems
         CGPoint viewTranslation = CGPointMake(dropViewPoint.x - startViewPoint.x,
@@ -1905,7 +1905,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
         CGPoint svgStart = [self convertPointToSVGCoordinates:startViewPoint];
         CGPoint svgTranslation = CGPointMake(dropLocation.svgPoint.x - svgStart.x,
                                               dropLocation.svgPoint.y - svgStart.y);
-        SVGDualPoint totalTranslation = SVGDualPointMake(viewTranslation, svgTranslation);
+        FBFSVGDualPoint totalTranslation = FBFSVGDualPointMake(viewTranslation, svgTranslation);
 
         [self.delegate svgPlayerView:self
               didDropElementWithID:objectID
@@ -1917,7 +1917,7 @@ static const NSTimeInterval kDefaultViewportTransitionDuration = 0.3;
 /// Dispatch a detailed touch event (for advanced use cases)
 /// @param objectID The objectID of the touched element
 /// @param touchInfo The full touch info structure
-- (void)dispatchDetailedTouchEventForObjectID:(NSString *)objectID touchInfo:(SVGElementTouchInfo)touchInfo {
+- (void)dispatchDetailedTouchEventForObjectID:(NSString *)objectID touchInfo:(FBFSVGElementTouchInfo)touchInfo {
     // TODO: This provides full touch details for advanced use cases
     if ([self.delegate respondsToSelector:@selector(svgPlayerView:didTouchElement:touchInfo:)]) {
         [self.delegate svgPlayerView:self didTouchElement:objectID touchInfo:touchInfo];

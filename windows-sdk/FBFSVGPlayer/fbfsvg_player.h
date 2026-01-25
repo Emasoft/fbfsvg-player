@@ -1,7 +1,7 @@
 // svg_player.h - Windows SVG Player SDK (Stub)
 //
 // This header provides the Windows SDK for the SVG animation player.
-// It forwards to the unified cross-platform API defined in shared/svg_player_api.h
+// It forwards to the unified cross-platform API defined in shared/fbfsvg_player_api.h
 //
 // WINDOWS IMPLEMENTATION STATUS: STUB ONLY
 // =========================================
@@ -17,17 +17,17 @@
 // 3. Future implementation template
 //
 // Usage (when implemented):
-//   1. Create a player: SVGPlayer_Create()
-//   2. Load an SVG file: SVGPlayer_LoadSVG() or SVGPlayer_LoadSVGData()
+//   1. Create a player: FBFSVGPlayer_Create()
+//   2. Load an SVG file: FBFSVGPlayer_LoadSVG() or FBFSVGPlayer_LoadSVGData()
 //   3. In your render loop:
-//      - SVGPlayer_Update() to advance animation time
-//      - SVGPlayer_Render() to render to a pixel buffer
+//      - FBFSVGPlayer_Update() to advance animation time
+//      - FBFSVGPlayer_Render() to render to a pixel buffer
 //   4. Display the pixel buffer using your GUI toolkit (WPF, Win32, etc.)
-//   5. Cleanup: SVGPlayer_Destroy()
+//   5. Cleanup: FBFSVGPlayer_Destroy()
 //
 // Thread Safety:
-//   - Each SVGPlayerRef should only be used from one thread at a time
-//   - Multiple SVGPlayerRef instances can be used from different threads
+//   - Each FBFSVGPlayerRef should only be used from one thread at a time
+//   - Multiple FBFSVGPlayerRef instances can be used from different threads
 //
 // Memory:
 //   - The caller is responsible for allocating/freeing the pixel buffer
@@ -38,25 +38,25 @@
 #pragma once
 
 // Include the unified cross-platform API
-#include "../../shared/svg_player_api.h"
+#include "../../shared/fbfsvg_player_api.h"
 
 // ============================================================================
 // Windows Platform Status
 // ============================================================================
 
 // Define this to 1 when the Windows implementation is complete
-#define SVG_PLAYER_WINDOWS_IMPLEMENTED 0
+#define FBFSVG_PLAYER_WINDOWS_IMPLEMENTED 0
 
-#if !SVG_PLAYER_WINDOWS_IMPLEMENTED
+#if !FBFSVG_PLAYER_WINDOWS_IMPLEMENTED
 
 // Compile-time warning for stub status
 #ifdef _MSC_VER
-    #pragma message("SVGPlayer Windows SDK: Stub only - implementation pending")
+    #pragma message("FBFSVGPlayer Windows SDK: Stub only - implementation pending")
 #else
-    #warning "SVGPlayer Windows SDK: Stub only - implementation pending"
+    #warning "FBFSVGPlayer Windows SDK: Stub only - implementation pending"
 #endif
 
-#endif // !SVG_PLAYER_WINDOWS_IMPLEMENTED
+#endif // !FBFSVG_PLAYER_WINDOWS_IMPLEMENTED
 
 // ============================================================================
 // Windows-Specific Extensions (planned)
@@ -70,31 +70,31 @@
 /// Create an SVG player with Direct3D 11 rendering
 /// @param device ID3D11Device pointer
 /// @return Handle to the player, or NULL on failure
-SVG_PLAYER_API SVGPlayerRef SVGPlayer_CreateD3D11(void* device);
+FBFSVG_PLAYER_API FBFSVGPlayerRef FBFSVGPlayer_CreateD3D11(void* device);
 
 /// Create an SVG player with Direct3D 12 rendering
 /// @param device ID3D12Device pointer
 /// @return Handle to the player, or NULL on failure
-SVG_PLAYER_API SVGPlayerRef SVGPlayer_CreateD3D12(void* device);
+FBFSVG_PLAYER_API FBFSVGPlayerRef FBFSVGPlayer_CreateD3D12(void* device);
 
 /// Render directly to a D3D11 texture
 /// @param player Handle to the player
 /// @param texture ID3D11Texture2D pointer
 /// @param scale HiDPI scale factor
 /// @return true on success
-SVG_PLAYER_API bool SVGPlayer_RenderToD3D11Texture(SVGPlayerRef player, void* texture, float scale);
+FBFSVG_PLAYER_API bool FBFSVGPlayer_RenderToD3D11Texture(FBFSVGPlayerRef player, void* texture, float scale);
 
 /// Render directly to a D3D12 resource
 /// @param player Handle to the player
 /// @param resource ID3D12Resource pointer
 /// @param scale HiDPI scale factor
 /// @return true on success
-SVG_PLAYER_API bool SVGPlayer_RenderToD3D12Resource(SVGPlayerRef player, void* resource, float scale);
+FBFSVG_PLAYER_API bool FBFSVGPlayer_RenderToD3D12Resource(FBFSVGPlayerRef player, void* resource, float scale);
 
 /// Set DirectWrite font fallback (for custom fonts)
 /// @param player Handle to the player
 /// @param fontCollection IDWriteFontCollection pointer
-SVG_PLAYER_API void SVGPlayer_SetDWriteFontCollection(SVGPlayerRef player, void* fontCollection);
+FBFSVG_PLAYER_API void FBFSVGPlayer_SetDWriteFontCollection(FBFSVGPlayerRef player, void* fontCollection);
 
 #endif // Future Windows extensions
 
@@ -112,7 +112,7 @@ SVG_PLAYER_API void SVGPlayer_SetDWriteFontCollection(SVGPlayerRef player, void*
 // 2. Create windows-sdk/SVGPlayer/svg_player.cpp:
 //    - Similar to linux-sdk structure
 //    - Include shared/svg_player_api.cpp
-//    - Compile with SVG_PLAYER_BUILDING_DLL defined
+//    - Compile with FBFSVG_PLAYER_BUILDING_DLL defined
 //
 // 3. Build system (CMakeLists.txt or vcxproj):
 //    - Link against Skia Windows libraries
@@ -127,7 +127,7 @@ SVG_PLAYER_API void SVGPlayer_SetDWriteFontCollection(SVGPlayerRef player, void*
 //
 // Example implementation skeleton:
 //
-//   #define SVG_PLAYER_BUILDING_DLL
+//   #define FBFSVG_PLAYER_BUILDING_DLL
 //   #include "../../shared/svg_player_api.cpp"
 //   #include "../../shared/SVGAnimationController.cpp"
 //   #include "../../shared/SVGGridCompositor.cpp"

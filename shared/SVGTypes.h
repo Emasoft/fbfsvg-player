@@ -2,8 +2,8 @@
 // This header provides unified data structures used across all platforms
 // (macOS, Linux, iOS)
 
-#ifndef SVGPLAYER_TYPES_H
-#define SVGPLAYER_TYPES_H
+#ifndef FBFSVGPLAYER_TYPES_H
+#define FBFSVGPLAYER_TYPES_H
 
 #include <stddef.h>  // For size_t
 #include <stdint.h>  // For int32_t, uint64_t, etc.
@@ -121,4 +121,4 @@ typedef struct {
 }
 #endif
 
-#endif // SVGPLAYER_TYPES_H
+#endif // FBFSVGPLAYER_TYPES_H

@@ -4,17 +4,17 @@
 // It forwards to the unified cross-platform API defined in shared/svg_player_api.h
 //
 // Usage:
-//   1. Create a player: SVGPlayer_Create()
-//   2. Load an SVG file: SVGPlayer_LoadSVG() or SVGPlayer_LoadSVGData()
+//   1. Create a player: FBFSVGPlayer_Create()
+//   2. Load an SVG file: FBFSVGPlayer_LoadSVG() or FBFSVGPlayer_LoadSVGData()
 //   3. In your display link callback:
-//      - SVGPlayer_Update() to advance animation time
-//      - SVGPlayer_Render() to render to a pixel buffer
+//      - FBFSVGPlayer_Update() to advance animation time
+//      - FBFSVGPlayer_Render() to render to a pixel buffer
 //   4. Display the pixel buffer in a NSImageView or CALayer
-//   5. Cleanup: SVGPlayer_Destroy()
+//   5. Cleanup: FBFSVGPlayer_Destroy()
 //
 // Thread Safety:
-//   - Each SVGPlayerRef should only be used from one thread at a time
-//   - Multiple SVGPlayerRef instances can be used from different threads
+//   - Each FBFSVGPlayerRef should only be used from one thread at a time
+//   - Multiple FBFSVGPlayerRef instances can be used from different threads
 //
 // Memory:
 //   - The caller is responsible for allocating/freeing the pixel buffer
@@ -25,7 +25,7 @@
 #pragma once
 
 // Include the unified cross-platform API
-#include "../../shared/svg_player_api.h"
+#include "../../shared/fbfsvg_player_api.h"
 
 // ============================================================================
 // macOS-Specific Extensions

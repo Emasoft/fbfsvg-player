@@ -272,8 +272,8 @@ else
     echo ""
     echo "Build artifacts:"
     [ "${BUILD_RESULTS[macOS]}" = "SUCCESS" ] && echo "  - macOS: build/fbfsvg-player"
-    [ "${BUILD_RESULTS[iOS]}" = "SUCCESS" ] && echo "  - iOS:   build/SVGPlayer.xcframework/"
-    [ "${BUILD_RESULTS[Linux]}" = "SUCCESS" ] && echo "  - Linux: build/linux/libsvgplayer.so"
+    [ "${BUILD_RESULTS[iOS]}" = "SUCCESS" ] && echo "  - iOS:   build/FBFSVGPlayer.xcframework/"
+    [ "${BUILD_RESULTS[Linux]}" = "SUCCESS" ] && echo "  - Linux: build/linux/libfbfsvgplayer.so"
 fi
 
 # Run tests if not skipped

@@ -573,7 +573,7 @@ void printHelp(const char* programName) {
     std::cerr << "      4. The player will now always open on that desktop\n";
     std::cerr << "    This is useful for running tests on a separate desktop.\n\n";
     std::cerr << "BUILD INFO:\n";
-    std::cerr << "    " << SVG_PLAYER_BUILD_INFO << "\n";
+    std::cerr << "    " << FBFSVG_PLAYER_BUILD_INFO << "\n";
 }
 
 // Use shared types from the animation controller
@@ -1915,7 +1915,7 @@ int main(int argc, char* argv[]) {
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
             // Show full version info and exit
             std::cerr << SVGPlayerVersion::getVersionBanner() << std::endl;
-            std::cerr << "Build: " << SVG_PLAYER_BUILD_INFO << std::endl;
+            std::cerr << "Build: " << FBFSVG_PLAYER_BUILD_INFO << std::endl;
             return 0;
         }
         if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {

@@ -110,15 +110,15 @@ jobs:
           ls -la build/linux/
 
           echo "Verifying ELF format..."
-          file build/linux/libsvgplayer.so
+          file build/linux/libfbfsvgplayer.so
 
           echo "Checking exported symbols..."
-          nm -D build/linux/libsvgplayer.so | grep -E "SVGPlayer_" | head -20
+          nm -D build/linux/libfbfsvgplayer.so | grep -E "FBFSVGPlayer_" | head -20
 
           echo "Verifying key symbols..."
-          nm -D build/linux/libsvgplayer.so | grep -q "SVGPlayer_Create"
-          nm -D build/linux/libsvgplayer.so | grep -q "SVGPlayer_Destroy"
-          nm -D build/linux/libsvgplayer.so | grep -q "SVGPlayer_LoadSVG"
+          nm -D build/linux/libfbfsvgplayer.so | grep -q "FBFSVGPlayer_Create"
+          nm -D build/linux/libfbfsvgplayer.so | grep -q "FBFSVGPlayer_Destroy"
+          nm -D build/linux/libfbfsvgplayer.so | grep -q "FBFSVGPlayer_LoadSVG"
 
       - name: Smoke Test
         run: |
@@ -128,11 +128,11 @@ jobs:
           #include <stdio.h>
           #include <dlfcn.h>
           int main() {
-              void* lib = dlopen("./build/linux/libsvgplayer.so", RTLD_NOW);
+              void* lib = dlopen("./build/linux/libfbfsvgplayer.so", RTLD_NOW);
               if (!lib) { printf("FAIL: %s\n", dlerror()); return 1; }
-              void* sym = dlsym(lib, "SVGPlayer_Create");
+              void* sym = dlsym(lib, "FBFSVGPlayer_Create");
               if (!sym) { printf("FAIL: Symbol not found\n"); return 1; }
-              printf("SUCCESS: Library loads and SVGPlayer_Create found\n");
+              printf("SUCCESS: Library loads and FBFSVGPlayer_Create found\n");
               dlclose(lib);
               return 0;
           }
@@ -144,9 +144,9 @@ jobs:
         with:
           name: linux-sdk
           path: |
-            build/linux/libsvgplayer.so*
+            build/linux/libfbfsvgplayer.so*
             build/linux/svg_player.h
-            build/linux/svgplayer.pc
+            build/linux/fbfsvgplayer.pc
 
   # ==========================================================================
   # macOS Build and Test
@@ -359,16 +359,16 @@ jobs:
           ls -la build/
 
           echo "Checking XCFramework structure..."
-          ls -la build/SVGPlayer.xcframework/
+          ls -la build/FBFSVGPlayer.xcframework/
 
           echo "Verifying Info.plist..."
-          cat build/SVGPlayer.xcframework/Info.plist
+          cat build/FBFSVGPlayer.xcframework/Info.plist
 
       - name: Upload iOS Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ios-xcframework
-          path: build/SVGPlayer.xcframework
+          path: build/FBFSVGPlayer.xcframework
 
   # ==========================================================================
   # Windows Build and Test

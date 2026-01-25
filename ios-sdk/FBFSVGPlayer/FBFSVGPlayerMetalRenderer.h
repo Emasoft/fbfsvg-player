@@ -1,6 +1,6 @@
-// SVGPlayerMetalRenderer.h - Metal-based GPU renderer for SVGPlayerView
+// SVGPlayerMetalRenderer.h - Metal-based GPU renderer for FBFSVGPlayerView
 //
-// This class handles Metal rendering for the SVGPlayerView.
+// This class handles Metal rendering for the FBFSVGPlayerView.
 // It creates an MTKView, manages Metal resources, and renders
 // SVG content using Skia's Metal backend.
 
@@ -9,12 +9,12 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@class SVGPlayerController;
+@class FBFSVGPlayerController;
 
-#pragma mark - SVGPlayerRenderer Protocol
+#pragma mark - FBFSVGPlayerRenderer Protocol
 
 /// Protocol for SVG renderers (allows future extension to other backends)
-@protocol SVGPlayerRenderer <NSObject>
+@protocol FBFSVGPlayerRenderer <NSObject>
 
 /// Render the current frame
 - (void)render;
@@ -33,21 +33,21 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
-#pragma mark - SVGPlayerMetalRenderer
+#pragma mark - FBFSVGPlayerMetalRenderer
 
-/// Metal-based GPU renderer for SVGPlayerView
+/// Metal-based GPU renderer for FBFSVGPlayerView
 ///
 /// This renderer uses MTKView and Metal to render SVG content
 /// with GPU acceleration. It renders Skia content to a Metal texture
 /// and displays it efficiently.
-@interface SVGPlayerMetalRenderer : NSObject <SVGPlayerRenderer>
+@interface FBFSVGPlayerMetalRenderer : NSObject <FBFSVGPlayerRenderer>
 
 /// Initialize with a parent view and controller
 /// @param view The parent UIView to render into
 /// @param controller The SVG controller providing content
 /// @return A new renderer, or nil if Metal is not available
 - (nullable instancetype)initWithView:(UIView *)view
-                           controller:(SVGPlayerController *)controller NS_DESIGNATED_INITIALIZER;
+                           controller:(FBFSVGPlayerController *)controller NS_DESIGNATED_INITIALIZER;
 
 /// Unavailable - use initWithView:controller: instead
 - (instancetype)init NS_UNAVAILABLE;

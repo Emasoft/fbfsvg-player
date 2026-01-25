@@ -223,11 +223,11 @@ if [ "$TEST_MACOS" = true ]; then
     # Check iOS XCFramework
     section_header "Test: iOS XCFramework Verification"
 
-    if [ -d "$PROJECT_ROOT/build/SVGPlayer.xcframework" ]; then
+    if [ -d "$PROJECT_ROOT/build/FBFSVGPlayer.xcframework" ]; then
         log_info "Found iOS XCFramework"
 
         # Verify framework structure
-        if [ -f "$PROJECT_ROOT/build/SVGPlayer.xcframework/Info.plist" ]; then
+        if [ -f "$PROJECT_ROOT/build/FBFSVGPlayer.xcframework/Info.plist" ]; then
             log_success "XCFramework has valid Info.plist"
             record_result "ios_xcframework_valid" true
         else
@@ -250,17 +250,17 @@ if [ "$TEST_LINUX" = true ]; then
     # Check if running on Linux or need Docker
     if [ "$(uname -s)" = "Linux" ]; then
         # Native Linux
-        if [ -f "$PROJECT_ROOT/build/linux/libsvgplayer.so" ]; then
+        if [ -f "$PROJECT_ROOT/build/linux/libfbfsvgplayer.so" ]; then
             log_info "Found Linux shared library"
 
             # Verify library is valid ELF
-            if file -L "$PROJECT_ROOT/build/linux/libsvgplayer.so" | grep -q "ELF"; then
+            if file -L "$PROJECT_ROOT/build/linux/libfbfsvgplayer.so" | grep -q "ELF"; then
                 log_success "Linux library is valid ELF shared object"
                 record_result "linux_library_valid" true
 
                 # Check exported symbols
-                if nm -D "$PROJECT_ROOT/build/linux/libsvgplayer.so" 2>/dev/null | grep -q "SVGPlayer_Create"; then
-                    log_success "Linux library exports SVGPlayer_Create symbol"
+                if nm -D "$PROJECT_ROOT/build/linux/libfbfsvgplayer.so" 2>/dev/null | grep -q "FBFSVGPlayer_Create"; then
+                    log_success "Linux library exports FBFSVGPlayer_Create symbol"
                     record_result "linux_symbols_exported" true
                 else
                     log_fail "Linux library missing expected symbols"
@@ -305,9 +305,9 @@ if [ "$TEST_LINUX" = true ]; then
             # Run tests inside container
             if docker compose -f "$PROJECT_ROOT/docker/docker-compose.yml" exec -T "$DOCKER_SERVICE" bash -c "
                 cd /workspace
-                if [ -f build/linux/libsvgplayer.so ]; then
-                    file -L build/linux/libsvgplayer.so | grep -q 'ELF' && \
-                    nm -D build/linux/libsvgplayer.so 2>/dev/null | grep -q 'SVGPlayer_Create'
+                if [ -f build/linux/libfbfsvgplayer.so ]; then
+                    file -L build/linux/libfbfsvgplayer.so | grep -q 'ELF' && \
+                    nm -D build/linux/libfbfsvgplayer.so 2>/dev/null | grep -q 'FBFSVGPlayer_Create'
                 else
                     exit 1
                 fi

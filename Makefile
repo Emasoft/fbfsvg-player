@@ -78,7 +78,7 @@ ifeq ($(PLATFORM),macos)
 	@echo ""
 	@echo "Outputs:"
 	@echo "  macOS: $(BUILD_DIR)/fbfsvg-player"
-	@echo "  iOS:   $(BUILD_DIR)/SVGPlayer.xcframework/"
+	@echo "  iOS:   $(BUILD_DIR)/FBFSVGPlayer.xcframework/"
 else
 	@echo "Error: Apple platform builds require macOS host"
 	@exit 1
@@ -98,7 +98,7 @@ ifeq ($(PLATFORM),linux)
 	@echo ""
 	@echo "Outputs:"
 	@echo "  Desktop: $(BUILD_DIR)/fbfsvg-player"
-	@echo "  SDK:     $(BUILD_DIR)/linux/libsvgplayer.so"
+	@echo "  SDK:     $(BUILD_DIR)/linux/libfbfsvgplayer.so"
 else
 	@echo "Linux builds require Linux host. Use Docker:"
 	@echo "  cd docker && docker-compose up -d"
@@ -506,7 +506,7 @@ help:
 	@echo "  make linux          Build for current Linux architecture"
 	@echo "  make linux-debug    Build with debug symbols"
 	@echo "  make linux-ci       Build non-interactively (for CI)"
-	@echo "  make linux-sdk      Build SVGPlayer shared library for Linux"
+	@echo "  make linux-sdk      Build FBFSVGPlayer shared library for Linux"
 	@echo "  make linux-sdk-debug  Build Linux SDK with debug symbols"
 	@echo "  make linux-sdk-ci   Build Linux SDK non-interactively"
 	@echo ""
@@ -516,7 +516,7 @@ help:
 	@echo "  make ios-simulator  Build for iOS simulator"
 	@echo "  make ios-simulator-universal  Build universal simulator"
 	@echo "  make ios-xcframework  Build XCFramework (device + simulator)"
-	@echo "  make ios-framework  Build SVGPlayer.xcframework SDK"
+	@echo "  make ios-framework  Build FBFSVGPlayer.xcframework SDK"
 	@echo "  make ios-framework-clean  Clean and rebuild iOS framework"
 	@echo ""
 	@echo "=== Skia Targets ==="

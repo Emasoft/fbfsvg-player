@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# run-tests-ios.sh - iOS Test Runner Stub for SVG Player
+# run-tests-ios.sh - iOS Test Runner Stub for FBFSVGPlayer
 #
 # This is a STUB. iOS testing requires XCTest integration.
-# Real tests would run via: xcodebuild test -scheme SVGPlayer -destination 'platform=iOS Simulator'
+# Real tests would run via: xcodebuild test -scheme FBFSVGPlayer -destination 'platform=iOS Simulator'
 #
 # Usage:
 #   ./scripts/run-tests-ios.sh [OPTIONS]
@@ -88,12 +88,12 @@ echo ""
 log_warn "This is a placeholder script. iOS testing is not yet implemented."
 log_info ""
 log_info "To implement iOS testing, create an XCTest target in Xcode that:"
-log_info "1. Links against the SVGPlayer iOS framework"
+log_info "1. Links against the FBFSVGPlayer iOS framework"
 log_info "2. Imports the C++ test harness via bridging header"
 log_info "3. Wraps each test case as an XCTestCase method"
 log_info ""
 log_info "Then run tests via:"
-log_info "  xcodebuild test -scheme SVGPlayerTests \\"
+log_info "  xcodebuild test -scheme FBFSVGPlayerTests \\"
 log_info "    -destination 'platform=iOS Simulator,name=${DESTINATION}'"
 log_info ""
 
@@ -127,7 +127,7 @@ cat > "$RESULT_FILE" << EOF
     "destination": "${DESTINATION}",
     "message": "iOS XCTest integration pending. This is a placeholder result.",
     "implementation_notes": [
-        "Create ios-sdk/SVGPlayerTests/ XCTest target",
+        "Create ios-sdk/FBFSVGPlayerTests/ XCTest target",
         "Add bridging header for C++ test harness",
         "Implement XCTestCase wrappers for each test",
         "Configure test scheme in Xcode",

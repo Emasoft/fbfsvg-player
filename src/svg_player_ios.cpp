@@ -1,4 +1,4 @@
-// svg_player_ios.cpp - iOS SVG Player implementation
+// svg_player_ios.cpp - iOS FBF SVG Player implementation
 // This file provides the implementation for the iOS SVG rendering API.
 // It uses Skia for rendering and CoreText for fonts.
 //
@@ -82,7 +82,7 @@ static sk_sp<SkSVGDOM> makeSVGDOMWithFontSupport(SkStream& stream) {
 // SMILAnimation struct is now defined in shared/SVGAnimationController.h
 
 // Internal SVG Player implementation
-struct SVGPlayer {
+struct FBFSVGPlayer {
     // SVG DOM and resources
     sk_sp<SkSVGDOM> svgDom;
     sk_sp<SkFontMgr> fontMgr;
@@ -96,14 +96,14 @@ struct SVGPlayer {
     double animationTime = 0.0;
     double animationDuration = 0.0;
     bool looping = true;
-    SVGPlaybackState playbackState = SVGPlaybackState_Stopped;
+    FBFSVGPlaybackState playbackState = FBFSVGPlaybackState_Stopped;
 
     // Rendering state
     int svgWidth = 0;
     int svgHeight = 0;
 
     // Statistics
-    SVGRenderStats stats = {};
+    FBFSVGRenderStats stats = {};
     std::chrono::time_point<SteadyClock> lastFrameTime;
     int frameCount = 0;
     double fpsAccumulator = 0.0;
@@ -114,18 +114,18 @@ struct SVGPlayer {
     // Thread safety
     std::mutex renderMutex;
 
-    SVGPlayer() {
+    FBFSVGPlayer() {
         fontMgr = SkFontMgr_New_CoreText(nullptr);
         lastFrameTime = SteadyClock::now();
     }
 };
 
 // Forward declarations for internal functions
-static bool parseSMILAnimations(SVGPlayer* player, const std::string& svgContent);
-static bool updateSVGForAnimation(SVGPlayer* player, double time);
+static bool parseSMILAnimations(FBFSVGPlayer* player, const std::string& svgContent);
+static bool updateSVGForAnimation(FBFSVGPlayer* player, double time);
 
 // Parse SMIL animations from SVG content using shared animation controller
-static bool parseSMILAnimations(SVGPlayer* player, const std::string& svgContent) {
+static bool parseSMILAnimations(FBFSVGPlayer* player, const std::string& svgContent) {
     player->animations.clear();
     player->animationDuration = 0.0;
 
@@ -147,7 +147,7 @@ static bool parseSMILAnimations(SVGPlayer* player, const std::string& svgContent
 }
 
 // Update SVG DOM for current animation time
-static bool updateSVGForAnimation(SVGPlayer* player, double time) {
+static bool updateSVGForAnimation(FBFSVGPlayer* player, double time) {
     if (!player->svgDom || player->animations.empty()) {
         return false;
     }
@@ -197,25 +197,25 @@ static bool updateSVGForAnimation(SVGPlayer* player, double time) {
 
 // Public API Implementation
 
-SVGPlayerRef SVGPlayer_Create(void) {
+FBFSVGPlayerRef FBFSVGPlayer_Create(void) {
     try {
-        return new SVGPlayer();
+        return new FBFSVGPlayer();
     } catch (const std::exception& e) {
-        fprintf(stderr, "SVGPlayer iOS: Player creation failed: %s\n", e.what());
+        fprintf(stderr, "FBFSVGPlayer iOS: Player creation failed: %s\n", e.what());
         return nullptr;
     } catch (...) {
-        fprintf(stderr, "SVGPlayer iOS: Player creation failed with unknown error\n");
+        fprintf(stderr, "FBFSVGPlayer iOS: Player creation failed with unknown error\n");
         return nullptr;
     }
 }
 
-void SVGPlayer_Destroy(SVGPlayerRef player) {
+void FBFSVGPlayer_Destroy(FBFSVGPlayerRef player) {
     if (player) {
         delete player;
     }
 }
 
-bool SVGPlayer_LoadSVG(SVGPlayerRef player, const char* filepath) {
+bool FBFSVGPlayer_LoadSVG(FBFSVGPlayerRef player, const char* filepath) {
     if (!player || !filepath) {
         if (player) player->lastError = "Invalid parameters";
         return false;
@@ -235,10 +235,10 @@ bool SVGPlayer_LoadSVG(SVGPlayerRef player, const char* filepath) {
     buffer << file.rdbuf();
     player->svgContent = buffer.str();
 
-    return SVGPlayer_LoadSVGData(player, player->svgContent.c_str(), player->svgContent.size());
+    return FBFSVGPlayer_LoadSVGData(player, player->svgContent.c_str(), player->svgContent.size());
 }
 
-bool SVGPlayer_LoadSVGData(SVGPlayerRef player, const void* data, size_t length) {
+bool FBFSVGPlayer_LoadSVGData(FBFSVGPlayerRef player, const void* data, size_t length) {
     if (!player || !data || length == 0) {
         if (player) player->lastError = "Invalid parameters";
         return false;
@@ -280,13 +280,13 @@ bool SVGPlayer_LoadSVGData(SVGPlayerRef player, const void* data, size_t length)
 
     // Reset animation state
     player->animationTime = 0.0;
-    player->playbackState = SVGPlaybackState_Stopped;
+    player->playbackState = FBFSVGPlaybackState_Stopped;
     player->stats = {};
 
     return true;
 }
 
-bool SVGPlayer_GetSize(SVGPlayerRef player, int* width, int* height) {
+bool FBFSVGPlayer_GetSize(FBFSVGPlayerRef player, int* width, int* height) {
     if (!player || !player->svgDom) {
         return false;
     }
@@ -296,28 +296,28 @@ bool SVGPlayer_GetSize(SVGPlayerRef player, int* width, int* height) {
     return true;
 }
 
-void SVGPlayer_SetPlaybackState(SVGPlayerRef player, SVGPlaybackState state) {
+void FBFSVGPlayer_SetPlaybackState(FBFSVGPlayerRef player, FBFSVGPlaybackState state) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->renderMutex);
     player->playbackState = state;
 
-    if (state == SVGPlaybackState_Playing) {
+    if (state == FBFSVGPlaybackState_Playing) {
         player->lastFrameTime = SteadyClock::now();
     }
 }
 
-SVGPlaybackState SVGPlayer_GetPlaybackState(SVGPlayerRef player) {
-    if (!player) return SVGPlaybackState_Stopped;
+FBFSVGPlaybackState FBFSVGPlayer_GetPlaybackState(FBFSVGPlayerRef player) {
+    if (!player) return FBFSVGPlaybackState_Stopped;
     return player->playbackState;
 }
 
-bool SVGPlayer_Update(SVGPlayerRef player, double deltaTime) {
+bool FBFSVGPlayer_Update(FBFSVGPlayerRef player, double deltaTime) {
     if (!player) return false;
 
     std::lock_guard<std::mutex> lock(player->renderMutex);
 
-    if (player->playbackState != SVGPlaybackState_Playing) {
+    if (player->playbackState != FBFSVGPlaybackState_Playing) {
         return true;  // Not an error, just not playing
     }
 
@@ -328,7 +328,7 @@ bool SVGPlayer_Update(SVGPlayerRef player, double deltaTime) {
         player->animationTime = fmod(player->animationTime, player->animationDuration);
     } else if (!player->looping && player->animationTime >= player->animationDuration) {
         player->animationTime = player->animationDuration;
-        player->playbackState = SVGPlaybackState_Stopped;
+        player->playbackState = FBFSVGPlaybackState_Stopped;
     }
 
     // Update animation
@@ -336,7 +336,7 @@ bool SVGPlayer_Update(SVGPlayerRef player, double deltaTime) {
     return true;
 }
 
-void SVGPlayer_SeekTo(SVGPlayerRef player, double timeSeconds) {
+void FBFSVGPlayer_SeekTo(FBFSVGPlayerRef player, double timeSeconds) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->renderMutex);
@@ -353,7 +353,7 @@ void SVGPlayer_SeekTo(SVGPlayerRef player, double timeSeconds) {
     updateSVGForAnimation(player, player->animationTime);
 }
 
-bool SVGPlayer_Render(SVGPlayerRef player, void* pixelBuffer, int width, int height, float scale) {
+bool FBFSVGPlayer_Render(FBFSVGPlayerRef player, void* pixelBuffer, int width, int height, float scale) {
     if (!player || !pixelBuffer || width <= 0 || height <= 0) {
         if (player) player->lastError = "Invalid render parameters";
         return false;
@@ -438,29 +438,29 @@ bool SVGPlayer_Render(SVGPlayerRef player, void* pixelBuffer, int width, int hei
     return true;
 }
 
-SVGRenderStats SVGPlayer_GetStats(SVGPlayerRef player) {
+FBFSVGRenderStats FBFSVGPlayer_GetStats(FBFSVGPlayerRef player) {
     if (!player) {
         return {};
     }
     return player->stats;
 }
 
-double SVGPlayer_GetDuration(SVGPlayerRef player) {
+double FBFSVGPlayer_GetDuration(FBFSVGPlayerRef player) {
     if (!player) return 0.0;
     return player->animationDuration;
 }
 
-bool SVGPlayer_IsLooping(SVGPlayerRef player) {
+bool FBFSVGPlayer_IsLooping(FBFSVGPlayerRef player) {
     if (!player) return false;
     return player->looping;
 }
 
-void SVGPlayer_SetLooping(SVGPlayerRef player, bool looping) {
+void FBFSVGPlayer_SetLooping(FBFSVGPlayerRef player, bool looping) {
     if (!player) return;
     player->looping = looping;
 }
 
-const char* SVGPlayer_GetLastError(SVGPlayerRef player) {
+const char* FBFSVGPlayer_GetLastError(FBFSVGPlayerRef player) {
     if (!player) return "Invalid player handle";
     return player->lastError.c_str();
 }

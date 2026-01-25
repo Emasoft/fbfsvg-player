@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# run-tests-windows.sh - Windows Test Runner Stub for SVG Player
+# run-tests-windows.sh - Windows Test Runner Stub for FBFSVGPlayer
 #
 # This is a STUB. The Windows SDK is not yet implemented.
 # When implemented, tests would run via MSTest or Google Test.
@@ -69,11 +69,11 @@ log_warn "This is a placeholder script. Windows SDK is not yet implemented."
 log_info ""
 log_info "Windows SDK implementation roadmap:"
 log_info "1. Build Skia for Windows (D3D11/D3D12 backend)"
-log_info "2. Implement windows-sdk/SVGPlayer/svg_player.cpp"
+log_info "2. Implement windows-sdk/FBFSVGPlayer/fbfsvg_player.cpp"
 log_info "3. Create MSTest or Google Test project"
 log_info "4. Set up Windows CI/CD (GitHub Actions or Azure DevOps)"
 log_info ""
-log_info "See windows-sdk/SVGPlayer/svg_player.h for implementation notes."
+log_info "See windows-sdk/FBFSVGPlayer/fbfsvg_player.h for implementation notes."
 log_info ""
 
 # Create stub result file

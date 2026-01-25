@@ -5,16 +5,16 @@
 // saves them as PPM files (a simple image format).
 //
 // Compile with:
-//   gcc -o simple_player simple_player.c -lsvgplayer -lm
+//   gcc -o simple_player simple_player.c -lfbfsvgplayer -lm
 //
 // Or if not installed system-wide:
-//   gcc -o simple_player simple_player.c -I../SVGPlayer \
-//       -L../../build/linux -lsvgplayer -Wl,-rpath,../../build/linux -lm
+//   gcc -o simple_player simple_player.c -I../FBFSVGPlayer \
+//       -L../../build/linux -lfbfsvgplayer -Wl,-rpath,../../build/linux -lm
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <svg_player.h>
+#include <fbfsvg_player.h>
 
 // Save RGBA buffer to PPM file (simple format, no dependencies)
 static int save_ppm(const char* filename, const uint8_t* pixels, int width, int height) {
@@ -52,10 +52,10 @@ int main(int argc, char* argv[]) {
     const char* output_prefix = (argc > 2) ? argv[2] : "frame";
 
     // Print library version
-    printf("SVGPlayer version: %s\n", SVGPlayer_GetVersion());
+    printf("SVGPlayer version: %s\n", FBFSVGPlayer_GetVersion());
 
     // Create player
-    SVGPlayerHandle player = SVGPlayer_Create();
+    FBFSVGPlayerHandle player = FBFSVGPlayer_Create();
     if (!player) {
         fprintf(stderr, "Error: Failed to create SVGPlayer\n");
         return 1;
@@ -63,23 +63,23 @@ int main(int argc, char* argv[]) {
 
     // Load SVG file
     printf("Loading: %s\n", svg_file);
-    if (!SVGPlayer_LoadSVG(player, svg_file)) {
-        fprintf(stderr, "Error: %s\n", SVGPlayer_GetLastError(player));
-        SVGPlayer_Destroy(player);
+    if (!FBFSVGPlayer_LoadSVG(player, svg_file)) {
+        fprintf(stderr, "Error: %s\n", FBFSVGPlayer_GetLastError(player));
+        FBFSVGPlayer_Destroy(player);
         return 1;
     }
 
     // Get SVG size
     int svg_width, svg_height;
-    if (!SVGPlayer_GetSize(player, &svg_width, &svg_height)) {
+    if (!FBFSVGPlayer_GetSize(player, &svg_width, &svg_height)) {
         fprintf(stderr, "Error: Could not get SVG size\n");
-        SVGPlayer_Destroy(player);
+        FBFSVGPlayer_Destroy(player);
         return 1;
     }
 
     printf("SVG size: %dx%d\n", svg_width, svg_height);
-    printf("Duration: %.2f seconds\n", SVGPlayer_GetDuration(player));
-    printf("Total frames: %d\n", SVGPlayer_GetTotalFrames(player));
+    printf("Duration: %.2f seconds\n", FBFSVGPlayer_GetDuration(player));
+    printf("Total frames: %d\n", FBFSVGPlayer_GetTotalFrames(player));
 
     // Use a reasonable render size
     int render_width = (svg_width > 0) ? svg_width : 800;
@@ -96,12 +96,12 @@ int main(int argc, char* argv[]) {
     uint8_t* pixels = (uint8_t*)malloc(buffer_size);
     if (!pixels) {
         fprintf(stderr, "Error: Failed to allocate pixel buffer\n");
-        SVGPlayer_Destroy(player);
+        FBFSVGPlayer_Destroy(player);
         return 1;
     }
 
     // Start playback
-    SVGPlayer_Play(player);
+    FBFSVGPlayer_Play(player);
 
     // Render a few frames
     int num_frames = 10;
@@ -111,11 +111,11 @@ int main(int argc, char* argv[]) {
 
     for (int i = 0; i < num_frames; i++) {
         // Update animation
-        SVGPlayer_Update(player, frame_time);
+        FBFSVGPlayer_Update(player, frame_time);
 
         // Render current frame
-        if (!SVGPlayer_Render(player, pixels, render_width, render_height, 1.0f)) {
-            fprintf(stderr, "Error: Render failed: %s\n", SVGPlayer_GetLastError(player));
+        if (!FBFSVGPlayer_Render(player, pixels, render_width, render_height, 1.0f)) {
+            fprintf(stderr, "Error: Render failed: %s\n", FBFSVGPlayer_GetLastError(player));
             continue;
         }
 
@@ -126,13 +126,13 @@ int main(int argc, char* argv[]) {
         if (save_ppm(filename, pixels, render_width, render_height) == 0) {
             printf("  Saved: %s (time=%.2fs, frame=%d)\n",
                    filename,
-                   SVGPlayer_GetCurrentTime(player),
-                   SVGPlayer_GetCurrentFrame(player));
+                   FBFSVGPlayer_GetCurrentTime(player),
+                   FBFSVGPlayer_GetCurrentFrame(player));
         }
     }
 
     // Get stats
-    SVGRenderStats stats = SVGPlayer_GetStats(player);
+    FBFSVGRenderStats stats = FBFSVGPlayer_GetStats(player);
     printf("\nStatistics:\n");
     printf("  Render time: %.2f ms\n", stats.renderTimeMs);
     printf("  Update time: %.2f ms\n", stats.updateTimeMs);
@@ -141,7 +141,7 @@ int main(int argc, char* argv[]) {
 
     // Cleanup
     free(pixels);
-    SVGPlayer_Destroy(player);
+    FBFSVGPlayer_Destroy(player);
 
     printf("\nDone!\n");
     return 0;
