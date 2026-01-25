@@ -515,7 +515,7 @@ std::vector<std::string> scanFolderForSVGSequence(const std::string& folderPath)
 
 // Print extensive help screen
 void printHelp(const char* programName) {
-    std::cerr << SVGPlayerVersion::getVersionBanner() << "\n\n";
+    std::cerr << FBFSVGPlayerVersion::getVersionBanner() << "\n\n";
     std::cerr << "USAGE:\n";
     std::cerr << "    " << programName << " <input.svg|folder> [OPTIONS]\n\n";
     std::cerr << "DESCRIPTION:\n";
@@ -1886,7 +1886,7 @@ int main(int argc, char* argv[]) {
 
     // Print startup banner (suppress in JSON benchmark mode for clean output)
     if (!g_jsonOutput) {
-        std::cerr << SVGPlayerVersion::getStartupBanner() << std::endl;
+        std::cerr << FBFSVGPlayerVersion::getStartupBanner() << std::endl;
     }
 
     // Parse command-line arguments
@@ -1914,7 +1914,7 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
             // Show full version info and exit
-            std::cerr << SVGPlayerVersion::getVersionBanner() << std::endl;
+            std::cerr << FBFSVGPlayerVersion::getVersionBanner() << std::endl;
             std::cerr << "Build: " << FBFSVG_PLAYER_BUILD_INFO << std::endl;
             return 0;
         }

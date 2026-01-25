@@ -15,6 +15,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
+#include "include/core/SkFont.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
@@ -999,6 +1000,118 @@ bool FBFSVGPlayer_IsScrubbing(FBFSVGPlayerRef player) {
 // Section 11: Rendering Functions
 // =============================================================================
 
+/// Helper function to render debug overlay on canvas
+/// Must be called after SVG rendering with canvas transform reset to screen coordinates
+static void renderDebugOverlay(FBFSVGPlayer* player, SkCanvas* canvas, int width, int height, float scale) {
+    if (!player || !canvas) return;
+
+    // Reset canvas transform to draw in screen coordinates
+    canvas->resetMatrix();
+
+    // Build list of text lines based on enabled debug flags
+    std::vector<std::string> lines;
+    char buffer[256];
+
+    if (player->debugFlags & SVGDebugFlag_ShowFPS) {
+        snprintf(buffer, sizeof(buffer), "FPS: %.1f", player->stats.fps);
+        lines.push_back(buffer);
+    }
+
+    if (player->debugFlags & SVGDebugFlag_ShowFrameInfo) {
+        snprintf(buffer, sizeof(buffer), "Frame: %d / %d",
+                 player->stats.currentFrame, player->stats.totalFrames);
+        lines.push_back(buffer);
+        snprintf(buffer, sizeof(buffer), "Time: %.2fs", player->stats.animationTimeMs / 1000.0);
+        lines.push_back(buffer);
+    }
+
+    if (player->debugFlags & SVGDebugFlag_ShowTiming) {
+        snprintf(buffer, sizeof(buffer), "Render: %.2fms", player->stats.renderTimeMs);
+        lines.push_back(buffer);
+        snprintf(buffer, sizeof(buffer), "Update: %.2fms", player->stats.updateTimeMs);
+        lines.push_back(buffer);
+    }
+
+    if (player->debugFlags & SVGDebugFlag_ShowMemory) {
+        // Convert bytes to human-readable format
+        size_t bytes = player->stats.peakMemoryBytes;
+        if (bytes >= 1024 * 1024) {
+            snprintf(buffer, sizeof(buffer), "Memory: %.1f MB", bytes / (1024.0 * 1024.0));
+        } else if (bytes >= 1024) {
+            snprintf(buffer, sizeof(buffer), "Memory: %.1f KB", bytes / 1024.0);
+        } else {
+            snprintf(buffer, sizeof(buffer), "Memory: %zu B", bytes);
+        }
+        lines.push_back(buffer);
+    }
+
+    if (lines.empty()) return;
+
+    // Setup font for text rendering - use system default font via font manager
+    SkFont font;
+    if (player->fontMgr) {
+        sk_sp<SkTypeface> typeface = player->fontMgr->matchFamilyStyle(nullptr, SkFontStyle::Normal());
+        if (typeface) {
+            font.setTypeface(typeface);
+        }
+    }
+    font.setSize(14.0f * scale);  // Scale font with HiDPI
+
+    // Calculate overlay dimensions
+    const float padding = 8.0f * scale;
+    const float lineHeight = 18.0f * scale;
+    float maxTextWidth = 0.0f;
+
+    for (const auto& line : lines) {
+        SkRect textBounds;
+        font.measureText(line.c_str(), line.size(), SkTextEncoding::kUTF8, &textBounds);
+        maxTextWidth = std::max(maxTextWidth, textBounds.width());
+    }
+
+    float overlayWidth = maxTextWidth + padding * 2;
+    float overlayHeight = lineHeight * lines.size() + padding * 2;
+
+    // Draw semi-transparent dark background for readability
+    SkPaint bgPaint;
+    bgPaint.setColor(SkColorSetARGB(200, 0, 0, 0));  // Dark semi-transparent background
+    bgPaint.setAntiAlias(true);
+
+    SkRect bgRect = SkRect::MakeXYWH(padding, padding, overlayWidth, overlayHeight);
+    canvas->drawRoundRect(bgRect, 4.0f * scale, 4.0f * scale, bgPaint);
+
+    // Draw text lines
+    SkPaint textPaint;
+    textPaint.setColor(SK_ColorWHITE);
+    textPaint.setAntiAlias(true);
+
+    float y = padding * 2 + font.getSize();  // Start below top padding, accounting for baseline
+    for (const auto& line : lines) {
+        canvas->drawString(line.c_str(), padding * 2, y, font, textPaint);
+        y += lineHeight;
+    }
+
+    // Handle SVGDebugFlag_ShowBounds - draw element bounding boxes
+    if (player->debugFlags & SVGDebugFlag_ShowBounds) {
+        // Draw bounds for cached elements
+        SkPaint boundsPaint;
+        boundsPaint.setStyle(SkPaint::kStroke_Style);
+        boundsPaint.setStrokeWidth(1.0f);
+        boundsPaint.setColor(SkColorSetARGB(180, 255, 0, 255));  // Magenta for visibility
+        boundsPaint.setAntiAlias(true);
+
+        for (const auto& [elementId, bounds] : player->elementBoundsCache) {
+            // Convert SVG coordinates to screen coordinates (simplified - assumes fit-to-view)
+            SkRect screenRect = SkRect::MakeXYWH(
+                bounds.x * scale,
+                bounds.y * scale,
+                bounds.width * scale,
+                bounds.height * scale
+            );
+            canvas->drawRect(screenRect, boundsPaint);
+        }
+    }
+}
+
 bool FBFSVGPlayer_Render(FBFSVGPlayerRef player, void* pixelBuffer, int width, int height, float scale) {
     if (!player || !pixelBuffer || width <= 0 || height <= 0) return false;
 
@@ -1069,20 +1182,19 @@ bool FBFSVGPlayer_Render(FBFSVGPlayerRef player, void* pixelBuffer, int width, i
     // Render SVG - the canvas transform will show only the viewBox portion
     player->svgDom->render(canvas);
 
-    // Render debug overlay if enabled
-    if (player->debugOverlayEnabled && player->debugFlags != SVGDebugFlag_None) {
-        // TODO: Implement debug overlay rendering
-        // This would draw FPS, frame info, timing, memory usage, etc.
-    }
-
-    // Note: No flush needed for raster surfaces backed by WrapPixels
-    // The pixels are written directly to the buffer during render()
-
-    // Update statistics
+    // Update statistics before rendering debug overlay so it shows current values
     auto renderEnd = std::chrono::high_resolution_clock::now();
     player->stats.renderTimeMs = std::chrono::duration<double, std::milli>(renderEnd - renderStart).count();
     player->stats.elementsRendered++;
     player->stats.fps = (player->stats.renderTimeMs > 0) ? 1000.0 / player->stats.renderTimeMs : 0.0;
+
+    // Render debug overlay if enabled - draws FPS, frame info, timing, memory, element bounds
+    if (player->debugOverlayEnabled && player->debugFlags != SVGDebugFlag_None) {
+        renderDebugOverlay(player, canvas, width, height, scale);
+    }
+
+    // Note: No flush needed for raster surfaces backed by WrapPixels
+    // The pixels are written directly to the buffer during render()
 
     return true;
 }
