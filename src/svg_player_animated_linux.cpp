@@ -430,6 +430,7 @@ void printHelp(const char* programName) {
     std::cerr << "    --cpu             Use CPU raster rendering instead of Graphite GPU\n";
     std::cerr << "    --sequential      Sequential animation mode\n";
     std::cerr << "    --duration=SECS   Benchmark duration in seconds (auto-exit)\n";
+    std::cerr << "    --benchmark[=N]   Run N frames then exit (default: 300 frames)\n";
     std::cerr << "    --screenshot=PATH Take screenshot and save to PATH\n";
     std::cerr << "    --json            Output benchmark results as JSON\n";
     std::cerr << "    --remote-control[=PORT]  Enable remote control server (default port: 9999)\n\n";
@@ -1533,6 +1534,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::string> sequenceFiles;  // List of SVG files for image sequence mode
     std::vector<std::string> sequenceSvgContents;  // Pre-loaded SVG contents for image sequence mode
     int benchmarkDuration = 0;          // --duration=SECS
+    int benchmarkFrames = 0;            // --benchmark=N (run N frames then exit, default 300)
     std::string screenshotPath;         // --screenshot=PATH
     bool useGraphiteBackend = true;  // Graphite GPU backend (Vulkan on Linux)
     bool remoteControlEnabled = false;  // --remote-control flag
@@ -1583,6 +1585,15 @@ int main(int argc, char* argv[]) {
             benchmarkDuration = atoi(argv[i] + 11);
             if (benchmarkDuration <= 0) {
                 std::cerr << "Invalid duration: must be positive" << std::endl;
+                return 1;
+            }
+        } else if (strcmp(argv[i], "--benchmark") == 0) {
+            // Default to 300 frames
+            benchmarkFrames = 300;
+        } else if (strncmp(argv[i], "--benchmark=", 12) == 0) {
+            benchmarkFrames = atoi(argv[i] + 12);
+            if (benchmarkFrames <= 0) {
+                std::cerr << "Invalid benchmark frame count: must be positive" << std::endl;
                 return 1;
             }
         } else if (strcmp(argv[i], "--json") == 0) {
@@ -1751,12 +1762,10 @@ int main(int argc, char* argv[]) {
     std::cout << "Aspect ratio: " << aspectRatio << std::endl;
 
     // Initialize SDL with hints to reduce stutters
-    // Force Metal renderer on macOS for better performance
-    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "metal");
+    // Force OpenGL renderer on Linux for better performance
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
     // Enable render batching for better throughput
     SDL_SetHint(SDL_HINT_RENDER_BATCHING, "1");
-    // Use Metal's direct-to-display for lower latency
-    SDL_SetHint(SDL_HINT_RENDER_METAL_PREFER_LOW_POWER_DEVICE, "0");
     // Use linear (bilinear) filtering for texture scaling - prevents pixelation
     // "0" = nearest, "1" = linear, "2" = best (anisotropic if available)
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "1");
@@ -2362,6 +2371,12 @@ int main(int argc, char* argv[]) {
                 running = false;
                 break;
             }
+        }
+
+        // Benchmark mode: exit after specified number of frames
+        if (benchmarkFrames > 0 && static_cast<int>(displayCycles) >= benchmarkFrames) {
+            running = false;
+            break;
         }
 
         // Calculate frame time from last frame
