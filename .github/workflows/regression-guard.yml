@@ -113,27 +113,29 @@ jobs:
           BASELINE_DIR="tests/baselines/${{ matrix.platform }}_${PLATFORM}"
           LAST_GOOD=$(cat "${BASELINE_DIR}/commit_hash.txt" 2>/dev/null || echo "unknown")
 
-          # Create GitHub issue
+          # Create GitHub issue with heredoc to avoid YAML parsing issues
+          ISSUE_BODY=$(cat <<BODY_EOF
+          ## Regression Detected
+
+          Bad Commit: ${COMMIT_SHA}
+          Last Good Commit: ${LAST_GOOD}
+
+          ### Actions Taken
+          1. This issue was auto-created
+          2. Main branch was reverted to last known good commit
+
+          ### Investigation Steps
+          1. Review the test report artifact
+          2. Checkout the bad commit locally and debug
+          3. Submit a fix as a new PR
+
+          ### Test Output
+          $(tail -50 test-output.log 2>/dev/null || echo "No test output available")
+          BODY_EOF
+          )
           gh issue create \
             --title "REGRESSION: Auto-reverted ${COMMIT_SHORT}" \
-            --body "## Regression Detected
-
-**Bad Commit:** ${COMMIT_SHA}
-**Last Good Commit:** ${LAST_GOOD}
-
-### Actions Taken
-1. This issue was auto-created
-2. Main branch was reverted to last known good commit
-
-### Investigation Steps
-1. Review the [test report artifact](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
-2. Checkout the bad commit locally and debug
-3. Submit a fix as a new PR
-
-### Test Output
-\`\`\`
-$(tail -50 test-output.log)
-\`\`\`" \
+            --body "${ISSUE_BODY}" \
             --label "regression,automated,priority-high"
 
           # Revert to last good commit
@@ -142,10 +144,7 @@ $(tail -50 test-output.log)
 
           if [[ "${LAST_GOOD}" != "unknown" ]]; then
             git revert --no-commit ${COMMIT_SHA}
-            git commit -m "Revert regression: ${COMMIT_SHORT}
-
-This reverts commit ${COMMIT_SHA} which caused test regressions.
-See issue for details."
+            git commit -m "Revert regression: ${COMMIT_SHORT} - reverts ${COMMIT_SHA} due to test failures"
             git push origin main
           else
             echo "::warning::Cannot auto-revert: no baseline commit found"
