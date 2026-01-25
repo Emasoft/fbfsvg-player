@@ -8,6 +8,7 @@
 #include "fbfsvg_player_api.h"
 
 #include "SVGAnimationController.h"
+#include "ElementBoundsExtractor.h"
 
 // Skia headers
 #include "include/core/SkBitmap.h"
@@ -1292,18 +1293,43 @@ bool FBFSVGPlayer_GetElementBounds(FBFSVGPlayerRef player, const char* objectID,
 
     std::lock_guard<std::mutex> lock(player->mutex);
 
-    // Check cache first
+    // Check cache first - avoids re-parsing SVG for repeated queries
     auto it = player->elementBoundsCache.find(objectID);
     if (it != player->elementBoundsCache.end()) {
         *bounds = it->second;
         return true;
     }
 
-    // TODO: Query Skia DOM for element bounds
-    // This requires traversing the DOM tree to find the element by ID
-    // and computing its bounding box. For now, return false.
+    // No SVG loaded - cannot extract bounds
+    if (player->originalSvgData.empty()) {
+        return false;
+    }
 
-    return false;
+    // Use ElementBoundsExtractor to parse SVG and find element bounds
+    // This parses the SVG string to find the element by ID and extract its position/size
+    svgplayer::DirtyRect dirtyBounds;
+    bool found = svgplayer::ElementBoundsExtractor::extractBoundsForId(
+        player->originalSvgData,
+        std::string(objectID),
+        dirtyBounds
+    );
+
+    if (!found) {
+        return false;
+    }
+
+    // Convert DirtyRect to SVGRect and cache the result
+    SVGRect result;
+    result.x = dirtyBounds.x;
+    result.y = dirtyBounds.y;
+    result.width = dirtyBounds.width;
+    result.height = dirtyBounds.height;
+
+    // Cache for future lookups - bounds are static for FBF.SVG files
+    player->elementBoundsCache[objectID] = result;
+
+    *bounds = result;
+    return true;
 }
 
 int FBFSVGPlayer_GetElementsAtPoint(FBFSVGPlayerRef player, float viewX, float viewY, int viewWidth, int viewHeight,
@@ -1352,6 +1378,124 @@ bool FBFSVGPlayer_ElementExists(FBFSVGPlayerRef player, const char* elementID) {
     return player->originalSvgData.find(searchPattern) != std::string::npos;
 }
 
+/// Helper: Convert SkSVGPaint to string (hex color, "none", or IRI reference)
+static std::string svgPaintToString(const SkSVGPaint& paint) {
+    switch (paint.type()) {
+        case SkSVGPaint::Type::kNone:
+            return "none";
+        case SkSVGPaint::Type::kColor: {
+            // Extract color from SkSVGColor
+            const SkSVGColor& color = paint.color();
+            if (color.type() == SkSVGColor::Type::kCurrentColor) {
+                return "currentColor";
+            }
+            // Convert SkColor (ARGB) to hex string #RRGGBB or #AARRGGBB
+            SkColor c = color.color();
+            uint8_t a = SkColorGetA(c);
+            uint8_t r = SkColorGetR(c);
+            uint8_t g = SkColorGetG(c);
+            uint8_t b = SkColorGetB(c);
+            char buf[16];
+            if (a == 255) {
+                snprintf(buf, sizeof(buf), "#%02x%02x%02x", r, g, b);
+            } else {
+                snprintf(buf, sizeof(buf), "#%02x%02x%02x%02x", a, r, g, b);
+            }
+            return std::string(buf);
+        }
+        case SkSVGPaint::Type::kIRI: {
+            // Return the IRI reference (e.g., "url(#gradientId)")
+            const SkSVGIRI& iri = paint.iri();
+            return std::string("url(#") + iri.iri().c_str() + ")";
+        }
+    }
+    return "";
+}
+
+/// Helper: Convert SkSVGLength to string (value + unit suffix)
+static std::string svgLengthToString(const SkSVGLength& length) {
+    char buf[64];
+    const char* unitStr = "";
+    switch (length.unit()) {
+        case SkSVGLength::Unit::kNumber:    unitStr = ""; break;
+        case SkSVGLength::Unit::kPercentage: unitStr = "%"; break;
+        case SkSVGLength::Unit::kEMS:       unitStr = "em"; break;
+        case SkSVGLength::Unit::kEXS:       unitStr = "ex"; break;
+        case SkSVGLength::Unit::kPX:        unitStr = "px"; break;
+        case SkSVGLength::Unit::kCM:        unitStr = "cm"; break;
+        case SkSVGLength::Unit::kMM:        unitStr = "mm"; break;
+        case SkSVGLength::Unit::kIN:        unitStr = "in"; break;
+        case SkSVGLength::Unit::kPT:        unitStr = "pt"; break;
+        case SkSVGLength::Unit::kPC:        unitStr = "pc"; break;
+        default:                            unitStr = ""; break;
+    }
+    snprintf(buf, sizeof(buf), "%.4g%s", length.value(), unitStr);
+    return std::string(buf);
+}
+
+/// Helper: Convert SkSVGVisibility to string
+static std::string svgVisibilityToString(const SkSVGVisibility& vis) {
+    switch (vis.type()) {
+        case SkSVGVisibility::Type::kVisible:  return "visible";
+        case SkSVGVisibility::Type::kHidden:   return "hidden";
+        case SkSVGVisibility::Type::kCollapse: return "collapse";
+        case SkSVGVisibility::Type::kInherit:  return "inherit";
+    }
+    return "";
+}
+
+/// Helper: Convert SkSVGLineCap to string
+static std::string svgLineCapToString(SkSVGLineCap cap) {
+    switch (cap) {
+        case SkSVGLineCap::kButt:   return "butt";
+        case SkSVGLineCap::kRound:  return "round";
+        case SkSVGLineCap::kSquare: return "square";
+    }
+    return "";
+}
+
+/// Helper: Convert SkSVGLineJoin to string
+static std::string svgLineJoinToString(const SkSVGLineJoin& join) {
+    switch (join.type()) {
+        case SkSVGLineJoin::Type::kMiter:   return "miter";
+        case SkSVGLineJoin::Type::kRound:   return "round";
+        case SkSVGLineJoin::Type::kBevel:   return "bevel";
+        case SkSVGLineJoin::Type::kInherit: return "inherit";
+    }
+    return "";
+}
+
+/// Helper: Convert SkSVGFillRule to string
+static std::string svgFillRuleToString(const SkSVGFillRule& rule) {
+    switch (rule.type()) {
+        case SkSVGFillRule::Type::kNonZero: return "nonzero";
+        case SkSVGFillRule::Type::kEvenOdd: return "evenodd";
+        case SkSVGFillRule::Type::kInherit: return "inherit";
+    }
+    return "";
+}
+
+/// Helper: Convert SkSVGDisplay to string
+static std::string svgDisplayToString(SkSVGDisplay display) {
+    switch (display) {
+        case SkSVGDisplay::kInline: return "inline";
+        case SkSVGDisplay::kNone:   return "none";
+    }
+    return "";
+}
+
+/// Helper: Copy string to output buffer with bounds checking
+static bool copyToOutBuffer(const std::string& value, char* outValue, int maxLength) {
+    if (value.empty()) {
+        outValue[0] = '\0';
+        return false;
+    }
+    size_t copyLen = std::min(value.size(), static_cast<size_t>(maxLength - 1));
+    std::memcpy(outValue, value.c_str(), copyLen);
+    outValue[copyLen] = '\0';
+    return true;
+}
+
 bool FBFSVGPlayer_GetElementProperty(FBFSVGPlayerRef player, const char* elementID, const char* propertyName, char* outValue,
                                   int maxLength) {
     if (!player || !elementID || !propertyName || !outValue || maxLength <= 0) {
@@ -1360,11 +1504,172 @@ bool FBFSVGPlayer_GetElementProperty(FBFSVGPlayerRef player, const char* element
 
     std::lock_guard<std::mutex> lock(player->mutex);
 
-    // TODO: Implement proper DOM traversal to get element properties
-    // For now, this is a stub that returns false
+    // Ensure SVG DOM is loaded
+    if (!player->svgDom) {
+        outValue[0] = '\0';
+        return false;
+    }
 
-    outValue[0] = '\0';
-    return false;
+    // Find the element by ID in the Skia SVG DOM
+    sk_sp<SkSVGNode>* nodePtr = player->svgDom->findNodeById(elementID);
+    if (!nodePtr || !*nodePtr) {
+        outValue[0] = '\0';
+        return false;
+    }
+
+    SkSVGNode* node = nodePtr->get();
+    std::string propNameStr(propertyName);
+    std::string result;
+
+    // Map property name to SkSVGNode getter and convert to string
+    // Presentation attributes (inherited)
+    if (propNameStr == "fill") {
+        const auto& prop = node->getFill();
+        if (prop.isValue()) {
+            result = svgPaintToString(*prop);
+        }
+    } else if (propNameStr == "stroke") {
+        const auto& prop = node->getStroke();
+        if (prop.isValue()) {
+            result = svgPaintToString(*prop);
+        }
+    } else if (propNameStr == "fill-opacity" || propNameStr == "fillOpacity") {
+        const auto& prop = node->getFillOpacity();
+        if (prop.isValue()) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.4g", *prop);
+            result = buf;
+        }
+    } else if (propNameStr == "stroke-opacity" || propNameStr == "strokeOpacity") {
+        const auto& prop = node->getStrokeOpacity();
+        if (prop.isValue()) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.4g", *prop);
+            result = buf;
+        }
+    } else if (propNameStr == "opacity") {
+        const auto& prop = node->getOpacity();
+        if (prop.isValue()) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.4g", *prop);
+            result = buf;
+        }
+    } else if (propNameStr == "stroke-width" || propNameStr == "strokeWidth") {
+        const auto& prop = node->getStrokeWidth();
+        if (prop.isValue()) {
+            result = svgLengthToString(*prop);
+        }
+    } else if (propNameStr == "stroke-linecap" || propNameStr == "strokeLinecap") {
+        const auto& prop = node->getStrokeLineCap();
+        if (prop.isValue()) {
+            result = svgLineCapToString(*prop);
+        }
+    } else if (propNameStr == "stroke-linejoin" || propNameStr == "strokeLinejoin") {
+        const auto& prop = node->getStrokeLineJoin();
+        if (prop.isValue()) {
+            result = svgLineJoinToString(*prop);
+        }
+    } else if (propNameStr == "stroke-miterlimit" || propNameStr == "strokeMiterlimit") {
+        const auto& prop = node->getStrokeMiterLimit();
+        if (prop.isValue()) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.4g", *prop);
+            result = buf;
+        }
+    } else if (propNameStr == "visibility") {
+        const auto& prop = node->getVisibility();
+        if (prop.isValue()) {
+            result = svgVisibilityToString(*prop);
+        }
+    } else if (propNameStr == "display") {
+        const auto& prop = node->getDisplay();
+        if (prop.isValue()) {
+            result = svgDisplayToString(*prop);
+        }
+    } else if (propNameStr == "fill-rule" || propNameStr == "fillRule") {
+        const auto& prop = node->getFillRule();
+        if (prop.isValue()) {
+            result = svgFillRuleToString(*prop);
+        }
+    } else if (propNameStr == "clip-rule" || propNameStr == "clipRule") {
+        const auto& prop = node->getClipRule();
+        if (prop.isValue()) {
+            result = svgFillRuleToString(*prop);
+        }
+    } else if (propNameStr == "color") {
+        const auto& prop = node->getColor();
+        if (prop.isValue()) {
+            // SkSVGColorType is SkColor (uint32_t ARGB)
+            SkColor c = *prop;
+            char buf[16];
+            uint8_t a = SkColorGetA(c);
+            uint8_t r = SkColorGetR(c);
+            uint8_t g = SkColorGetG(c);
+            uint8_t b = SkColorGetB(c);
+            if (a == 255) {
+                snprintf(buf, sizeof(buf), "#%02x%02x%02x", r, g, b);
+            } else {
+                snprintf(buf, sizeof(buf), "#%02x%02x%02x%02x", a, r, g, b);
+            }
+            result = buf;
+        }
+    } else if (propNameStr == "font-family" || propNameStr == "fontFamily") {
+        const auto& prop = node->getFontFamily();
+        if (prop.isValue() && prop->type() == SkSVGFontFamily::Type::kFamily) {
+            result = prop->family().c_str();
+        }
+    } else if (propNameStr == "font-size" || propNameStr == "fontSize") {
+        const auto& prop = node->getFontSize();
+        if (prop.isValue() && prop->type() == SkSVGFontSize::Type::kLength) {
+            result = svgLengthToString(prop->size());
+        }
+    } else if (propNameStr == "font-style" || propNameStr == "fontStyle") {
+        const auto& prop = node->getFontStyle();
+        if (prop.isValue()) {
+            switch (prop->type()) {
+                case SkSVGFontStyle::Type::kNormal:  result = "normal"; break;
+                case SkSVGFontStyle::Type::kItalic:  result = "italic"; break;
+                case SkSVGFontStyle::Type::kOblique: result = "oblique"; break;
+                case SkSVGFontStyle::Type::kInherit: result = "inherit"; break;
+            }
+        }
+    } else if (propNameStr == "font-weight" || propNameStr == "fontWeight") {
+        const auto& prop = node->getFontWeight();
+        if (prop.isValue()) {
+            switch (prop->type()) {
+                case SkSVGFontWeight::Type::k100:     result = "100"; break;
+                case SkSVGFontWeight::Type::k200:     result = "200"; break;
+                case SkSVGFontWeight::Type::k300:     result = "300"; break;
+                case SkSVGFontWeight::Type::k400:     result = "400"; break;
+                case SkSVGFontWeight::Type::k500:     result = "500"; break;
+                case SkSVGFontWeight::Type::k600:     result = "600"; break;
+                case SkSVGFontWeight::Type::k700:     result = "700"; break;
+                case SkSVGFontWeight::Type::k800:     result = "800"; break;
+                case SkSVGFontWeight::Type::k900:     result = "900"; break;
+                case SkSVGFontWeight::Type::kNormal:  result = "normal"; break;
+                case SkSVGFontWeight::Type::kBold:    result = "bold"; break;
+                case SkSVGFontWeight::Type::kBolder:  result = "bolder"; break;
+                case SkSVGFontWeight::Type::kLighter: result = "lighter"; break;
+                case SkSVGFontWeight::Type::kInherit: result = "inherit"; break;
+            }
+        }
+    } else if (propNameStr == "text-anchor" || propNameStr == "textAnchor") {
+        const auto& prop = node->getTextAnchor();
+        if (prop.isValue()) {
+            switch (prop->type()) {
+                case SkSVGTextAnchor::Type::kStart:   result = "start"; break;
+                case SkSVGTextAnchor::Type::kMiddle:  result = "middle"; break;
+                case SkSVGTextAnchor::Type::kEnd:     result = "end"; break;
+                case SkSVGTextAnchor::Type::kInherit: result = "inherit"; break;
+            }
+        }
+    } else {
+        // Unknown property name - return false with empty string
+        outValue[0] = '\0';
+        return false;
+    }
+
+    return copyToOutBuffer(result, outValue, maxLength);
 }
 
 // =============================================================================

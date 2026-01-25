@@ -18,6 +18,129 @@ static const CGFloat kDefaultFrameRate = 60.0;
 // Default seek interval for rewind/fastforward
 static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
+// =============================================================================
+// Static C Callback Bridge Functions
+// =============================================================================
+// These functions bridge the C API callbacks to the Objective-C delegate protocol.
+// Each callback receives the FBFSVGPlayerController as userData and dispatches
+// to the delegate on the main thread.
+
+/// Bridge for playback state change callbacks
+static void StateChangeCallbackBridge(void* userData, SVGPlaybackState newState) {
+    if (!userData) return;
+
+    FBFSVGPlayerController* controller = (__bridge FBFSVGPlayerController*)userData;
+    id<FBFSVGPlayerControllerDelegate> delegate = controller.delegate;
+
+    if (delegate && [delegate respondsToSelector:@selector(svgPlayerController:didChangePlaybackState:)]) {
+        // Convert C enum to Obj-C enum (same underlying values)
+        FBFSVGControllerPlaybackState objcState;
+        switch (newState) {
+            case SVGPlaybackState_Stopped:
+                objcState = FBFSVGControllerPlaybackStateStopped;
+                break;
+            case SVGPlaybackState_Playing:
+                objcState = FBFSVGControllerPlaybackStatePlaying;
+                break;
+            case SVGPlaybackState_Paused:
+                objcState = FBFSVGControllerPlaybackStatePaused;
+                break;
+            default:
+                objcState = FBFSVGControllerPlaybackStateStopped;
+                break;
+        }
+
+        // Dispatch to main thread if needed
+        if ([NSThread isMainThread]) {
+            [delegate svgPlayerController:controller didChangePlaybackState:objcState];
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [delegate svgPlayerController:controller didChangePlaybackState:objcState];
+            });
+        }
+    }
+}
+
+/// Bridge for loop callbacks
+static void LoopCallbackBridge(void* userData, int loopCount) {
+    if (!userData) return;
+
+    FBFSVGPlayerController* controller = (__bridge FBFSVGPlayerController*)userData;
+    id<FBFSVGPlayerControllerDelegate> delegate = controller.delegate;
+
+    if (delegate && [delegate respondsToSelector:@selector(svgPlayerController:didLoopWithCount:)]) {
+        if ([NSThread isMainThread]) {
+            [delegate svgPlayerController:controller didLoopWithCount:(NSInteger)loopCount];
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [delegate svgPlayerController:controller didLoopWithCount:(NSInteger)loopCount];
+            });
+        }
+    }
+}
+
+/// Bridge for animation end callbacks
+static void EndCallbackBridge(void* userData) {
+    if (!userData) return;
+
+    FBFSVGPlayerController* controller = (__bridge FBFSVGPlayerController*)userData;
+    id<FBFSVGPlayerControllerDelegate> delegate = controller.delegate;
+
+    if (delegate && [delegate respondsToSelector:@selector(svgPlayerControllerDidReachEnd:)]) {
+        if ([NSThread isMainThread]) {
+            [delegate svgPlayerControllerDidReachEnd:controller];
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [delegate svgPlayerControllerDidReachEnd:controller];
+            });
+        }
+    }
+}
+
+/// Bridge for error callbacks
+static void ErrorCallbackBridge(void* userData, int errorCode, const char* errorMessage) {
+    if (!userData) return;
+
+    FBFSVGPlayerController* controller = (__bridge FBFSVGPlayerController*)userData;
+    id<FBFSVGPlayerControllerDelegate> delegate = controller.delegate;
+
+    if (delegate && [delegate respondsToSelector:@selector(svgPlayerController:didEncounterError:message:)]) {
+        NSString* message = errorMessage ? @(errorMessage) : @"Unknown error";
+
+        if ([NSThread isMainThread]) {
+            [delegate svgPlayerController:controller didEncounterError:(NSInteger)errorCode message:message];
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [delegate svgPlayerController:controller didEncounterError:(NSInteger)errorCode message:message];
+            });
+        }
+    }
+}
+
+/// Bridge for element touch callbacks
+static void ElementTouchCallbackBridge(void* userData, const char* elementID, SVGDualPoint point) {
+    if (!userData || !elementID) return;
+
+    FBFSVGPlayerController* controller = (__bridge FBFSVGPlayerController*)userData;
+    id<FBFSVGPlayerControllerDelegate> delegate = controller.delegate;
+
+    if (delegate && [delegate respondsToSelector:@selector(svgPlayerController:didTouchElementWithID:atViewPoint:svgPoint:)]) {
+        NSString* objcElementID = @(elementID);
+        CGPoint viewPoint = CGPointMake(point.viewX, point.viewY);
+        CGPoint svgPoint = CGPointMake(point.svgX, point.svgY);
+
+        if ([NSThread isMainThread]) {
+            [delegate svgPlayerController:controller didTouchElementWithID:objcElementID atViewPoint:viewPoint svgPoint:svgPoint];
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [delegate svgPlayerController:controller didTouchElementWithID:objcElementID atViewPoint:viewPoint svgPoint:svgPoint];
+            });
+        }
+    }
+}
+
+// =============================================================================
+
 @interface FBFSVGPlayerController ()
 // The underlying unified C API handle
 @property (nonatomic, assign) FBFSVGPlayerRef handle;
@@ -227,6 +350,14 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
         if (_handle) {
             FBFSVGPlayer_SetLooping(_handle, YES);
+
+            // Register C API callbacks with self as userData
+            // Using __bridge to pass self as void* (ARC-safe, we own the handle lifetime)
+            FBFSVGPlayer_SetStateChangeCallback(_handle, &StateChangeCallbackBridge, (__bridge void *)self);
+            FBFSVGPlayer_SetLoopCallback(_handle, &LoopCallbackBridge, (__bridge void *)self);
+            FBFSVGPlayer_SetEndCallback(_handle, &EndCallbackBridge, (__bridge void *)self);
+            FBFSVGPlayer_SetErrorCallback(_handle, &ErrorCallbackBridge, (__bridge void *)self);
+            FBFSVGPlayer_SetElementTouchCallback(_handle, &ElementTouchCallbackBridge, (__bridge void *)self);
         }
     }
     return self;
@@ -234,6 +365,14 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 - (void)dealloc {
     if (_handle) {
+        // Unregister all callbacks before destroying the handle
+        // This prevents dangling pointer issues if callbacks fire during destruction
+        FBFSVGPlayer_SetStateChangeCallback(_handle, NULL, NULL);
+        FBFSVGPlayer_SetLoopCallback(_handle, NULL, NULL);
+        FBFSVGPlayer_SetEndCallback(_handle, NULL, NULL);
+        FBFSVGPlayer_SetErrorCallback(_handle, NULL, NULL);
+        FBFSVGPlayer_SetElementTouchCallback(_handle, NULL, NULL);
+
         FBFSVGPlayer_Destroy(_handle);
         _handle = NULL;
     }
@@ -309,11 +448,25 @@ static const NSTimeInterval kDefaultSeekInterval = 5.0;
 
 - (void)unload {
     if (self.handle) {
+        // Unregister callbacks before destroying
+        FBFSVGPlayer_SetStateChangeCallback(self.handle, NULL, NULL);
+        FBFSVGPlayer_SetLoopCallback(self.handle, NULL, NULL);
+        FBFSVGPlayer_SetEndCallback(self.handle, NULL, NULL);
+        FBFSVGPlayer_SetErrorCallback(self.handle, NULL, NULL);
+        FBFSVGPlayer_SetElementTouchCallback(self.handle, NULL, NULL);
+
         // Recreate the handle to reset state
         FBFSVGPlayer_Destroy(self.handle);
         self.handle = FBFSVGPlayer_Create();
         if (self.handle) {
             FBFSVGPlayer_SetLooping(self.handle, self.looping);
+
+            // Re-register callbacks on the new handle
+            FBFSVGPlayer_SetStateChangeCallback(self.handle, &StateChangeCallbackBridge, (__bridge void *)self);
+            FBFSVGPlayer_SetLoopCallback(self.handle, &LoopCallbackBridge, (__bridge void *)self);
+            FBFSVGPlayer_SetEndCallback(self.handle, &EndCallbackBridge, (__bridge void *)self);
+            FBFSVGPlayer_SetErrorCallback(self.handle, &ErrorCallbackBridge, (__bridge void *)self);
+            FBFSVGPlayer_SetElementTouchCallback(self.handle, &ElementTouchCallbackBridge, (__bridge void *)self);
         }
     }
     self.internalPlaybackState = FBFSVGControllerPlaybackStateStopped;

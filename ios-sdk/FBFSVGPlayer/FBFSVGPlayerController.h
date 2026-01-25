@@ -99,6 +99,54 @@ typedef NS_ENUM(NSInteger, FBFSVGPlayerLayerBlendMode) {
 /// Forward declaration for SVG layer (compositing support)
 @class FBFSVGPlayerLayer;
 
+/// Forward declaration for the controller (needed for delegate protocol)
+@class FBFSVGPlayerController;
+
+#pragma mark - Delegate Protocol
+
+/// Delegate protocol for receiving callbacks from the SVG player
+///
+/// All delegate methods are optional and called on the main thread.
+/// Implement these methods to respond to playback events, loops, errors, and element touches.
+@protocol FBFSVGPlayerControllerDelegate <NSObject>
+@optional
+
+/// Called when the playback state changes
+/// @param controller The controller that changed state
+/// @param newState The new playback state
+- (void)svgPlayerController:(FBFSVGPlayerController *)controller
+       didChangePlaybackState:(FBFSVGControllerPlaybackState)newState;
+
+/// Called when the animation loops (returns to start or reverses in ping-pong mode)
+/// @param controller The controller that looped
+/// @param loopCount The number of completed loops (1-indexed)
+- (void)svgPlayerController:(FBFSVGPlayerController *)controller
+                didLoopWithCount:(NSInteger)loopCount;
+
+/// Called when the animation reaches its end (non-looping mode only)
+/// @param controller The controller that finished
+- (void)svgPlayerControllerDidReachEnd:(FBFSVGPlayerController *)controller;
+
+/// Called when an error occurs during playback or rendering
+/// @param controller The controller where the error occurred
+/// @param errorCode The error code
+/// @param errorMessage Human-readable error description
+- (void)svgPlayerController:(FBFSVGPlayerController *)controller
+          didEncounterError:(NSInteger)errorCode
+                    message:(NSString *)errorMessage;
+
+/// Called when a subscribed element is touched/tapped
+/// @param controller The controller that detected the touch
+/// @param elementID The ID of the touched element
+/// @param viewPoint The touch location in view coordinates
+/// @param svgPoint The touch location in SVG coordinates
+- (void)svgPlayerController:(FBFSVGPlayerController *)controller
+          didTouchElementWithID:(NSString *)elementID
+                    atViewPoint:(CGPoint)viewPoint
+                     svgPoint:(CGPoint)svgPoint;
+
+@end
+
 #pragma mark - FBFSVGPlayerController
 
 /// Low-level controller for SVG rendering
@@ -117,6 +165,12 @@ typedef NS_ENUM(NSInteger, FBFSVGPlayerLayerBlendMode) {
 
 /// Create a new SVG player controller (designated initializer)
 - (instancetype)init NS_DESIGNATED_INITIALIZER;
+
+#pragma mark - Delegate
+
+/// Delegate for receiving playback callbacks
+/// The delegate is NOT retained (weak reference).
+@property (nonatomic, weak, nullable) id<FBFSVGPlayerControllerDelegate> delegate;
 
 #pragma mark - Loading
 
