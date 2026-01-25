@@ -337,7 +337,10 @@ jobs:
   # ==========================================================================
   macos-x64-build:
     name: macOS x64 Build
-    runs-on: macos-13  # Intel runner
+    # macos-13 was retired Dec 2024. macos-15-large provides x64 but requires GitHub paid plan.
+    # For now, skip x64 build - ARM64 is primary target. Uncomment when x64 runner is available.
+    if: false  # Disabled: no free x64 macOS runner available
+    runs-on: macos-15-large  # Intel (x64) runner - requires paid plan
     needs: api-compile-test
     steps:
       - name: Checkout
@@ -746,10 +749,11 @@ jobs:
           echo "Windows Build: ${{ needs.windows-build.result }}"
           echo ""
 
+          # Note: macos-x64 is skipped (no free x64 runner) - treat skipped as success
           if [ "${{ needs.api-compile-test.result }}" != "success" ] || \
              [ "${{ needs.linux-build.result }}" != "success" ] || \
              [ "${{ needs.macos-build.result }}" != "success" ] || \
-             [ "${{ needs.macos-x64-build.result }}" != "success" ] || \
+             ( [ "${{ needs.macos-x64-build.result }}" != "success" ] && [ "${{ needs.macos-x64-build.result }}" != "skipped" ] ) || \
              [ "${{ needs.ios-build.result }}" != "success" ] || \
              [ "${{ needs.windows-build.result }}" != "success" ]; then
             echo "One or more builds failed!"
