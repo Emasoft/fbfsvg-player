@@ -11,7 +11,7 @@
 
 // Include the unified implementation
 // This makes all the API functions available when this file is compiled
-#include "../../shared/svg_player_api.cpp"
+#include "../../shared/fbfsvg_player_api.cpp"
 
 // Note: By including the .cpp file directly, we get all the unified
 // implementation compiled into the Linux shared library (.so).

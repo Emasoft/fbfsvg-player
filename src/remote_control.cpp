@@ -14,6 +14,7 @@
     #include <ws2tcpip.h>
     #pragma comment(lib, "ws2_32.lib")
     typedef int socklen_t;
+    typedef int ssize_t;  // Windows uses int for socket send/recv return values
     #define CLOSE_SOCKET closesocket
     #define SOCKET_ERROR_CODE WSAGetLastError()
 #else

@@ -259,7 +259,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          brew install ninja pkg-config sdl2
+          brew install ninja pkg-config sdl2 coreutils
 
       - name: Cache Skia Build
         id: cache-skia
@@ -340,7 +340,12 @@ jobs:
           echo "Running player with benchmark mode..."
           # Run with benchmark flag for 5 frames and exit
           # The player should load the SVG, render frames, and exit cleanly
-          timeout 30 ./build/fbfsvg-player --benchmark=5 /tmp/test.svg || EXIT_CODE=$?
+          # Use gtimeout on macOS (from coreutils), timeout on Linux
+          TIMEOUT_CMD="timeout"
+          if command -v gtimeout &> /dev/null; then
+            TIMEOUT_CMD="gtimeout"
+          fi
+          $TIMEOUT_CMD 30 ./build/fbfsvg-player --benchmark=5 /tmp/test.svg || EXIT_CODE=$?
 
           # Check if player exited normally (0) or via timeout (124)
           if [ "${EXIT_CODE:-0}" -eq 0 ]; then
@@ -377,7 +382,7 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          brew install ninja pkg-config sdl2
+          brew install ninja pkg-config sdl2 coreutils
 
       - name: Cache Skia Build
         id: cache-skia
@@ -443,7 +448,12 @@ jobs:
           echo "Running player with benchmark mode..."
           # Run with benchmark flag for 5 frames and exit
           # The player should load the SVG, render frames, and exit cleanly
-          timeout 30 ./build/fbfsvg-player --benchmark=5 /tmp/test.svg || EXIT_CODE=$?
+          # Use gtimeout on macOS (from coreutils), timeout on Linux
+          TIMEOUT_CMD="timeout"
+          if command -v gtimeout &> /dev/null; then
+            TIMEOUT_CMD="gtimeout"
+          fi
+          $TIMEOUT_CMD 30 ./build/fbfsvg-player --benchmark=5 /tmp/test.svg || EXIT_CODE=$?
 
           # Check if player exited normally (0) or via timeout (124)
           if [ "${EXIT_CODE:-0}" -eq 0 ]; then
