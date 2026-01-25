@@ -51,3 +51,21 @@ skia-build/out/
 *.tmp
 *.temp
 *.log
+
+# Development folders (untracked local dev artifacts)
+*_dev/
+builds_dev/
+docs_dev/
+scripts_dev/
+samples_dev/
+examples_dev/
+tests_dev/
+downloads_dev/
+libs_dev/
+
+# Sample files (keep locally, not in git)
+svg_input_samples/
+samples/
+
+# Release artifacts (built, not tracked)
+release-*/
