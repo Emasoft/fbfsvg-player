@@ -394,7 +394,9 @@ test-build: $(BUILD_DIR)
 		$(SRC_DIR)/folder_browser.cpp \
 		shared/SVGAnimationController.cpp \
 		shared/SVGGridCompositor.cpp \
-		shared/svg_player_api.cpp \
+		shared/DirtyRegionTracker.cpp \
+		shared/ElementBoundsExtractor.cpp \
+		shared/fbfsvg_player_api.cpp \
 		shared/svg_instrumentation.cpp \
 		$(TEST_LDFLAGS) \
 		-o $(TEST_TARGET)

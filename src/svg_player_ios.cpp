@@ -96,14 +96,14 @@ struct FBFSVGPlayer {
     double animationTime = 0.0;
     double animationDuration = 0.0;
     bool looping = true;
-    FBFSVGPlaybackState playbackState = FBFSVGPlaybackState_Stopped;
+    SVGPlaybackState playbackState = SVGPlaybackState_Stopped;
 
     // Rendering state
     int svgWidth = 0;
     int svgHeight = 0;
 
     // Statistics
-    FBFSVGRenderStats stats = {};
+    SVGRenderStats stats = {};
     std::chrono::time_point<SteadyClock> lastFrameTime;
     int frameCount = 0;
     double fpsAccumulator = 0.0;
@@ -280,7 +280,7 @@ bool FBFSVGPlayer_LoadSVGData(FBFSVGPlayerRef player, const void* data, size_t l
 
     // Reset animation state
     player->animationTime = 0.0;
-    player->playbackState = FBFSVGPlaybackState_Stopped;
+    player->playbackState = SVGPlaybackState_Stopped;
     player->stats = {};
 
     return true;
@@ -296,19 +296,19 @@ bool FBFSVGPlayer_GetSize(FBFSVGPlayerRef player, int* width, int* height) {
     return true;
 }
 
-void FBFSVGPlayer_SetPlaybackState(FBFSVGPlayerRef player, FBFSVGPlaybackState state) {
+void FBFSVGPlayer_SetPlaybackState(FBFSVGPlayerRef player, SVGPlaybackState state) {
     if (!player) return;
 
     std::lock_guard<std::mutex> lock(player->renderMutex);
     player->playbackState = state;
 
-    if (state == FBFSVGPlaybackState_Playing) {
+    if (state == SVGPlaybackState_Playing) {
         player->lastFrameTime = SteadyClock::now();
     }
 }
 
-FBFSVGPlaybackState FBFSVGPlayer_GetPlaybackState(FBFSVGPlayerRef player) {
-    if (!player) return FBFSVGPlaybackState_Stopped;
+SVGPlaybackState FBFSVGPlayer_GetPlaybackState(FBFSVGPlayerRef player) {
+    if (!player) return SVGPlaybackState_Stopped;
     return player->playbackState;
 }
 
@@ -317,7 +317,7 @@ bool FBFSVGPlayer_Update(FBFSVGPlayerRef player, double deltaTime) {
 
     std::lock_guard<std::mutex> lock(player->renderMutex);
 
-    if (player->playbackState != FBFSVGPlaybackState_Playing) {
+    if (player->playbackState != SVGPlaybackState_Playing) {
         return true;  // Not an error, just not playing
     }
 
@@ -328,7 +328,7 @@ bool FBFSVGPlayer_Update(FBFSVGPlayerRef player, double deltaTime) {
         player->animationTime = fmod(player->animationTime, player->animationDuration);
     } else if (!player->looping && player->animationTime >= player->animationDuration) {
         player->animationTime = player->animationDuration;
-        player->playbackState = FBFSVGPlaybackState_Stopped;
+        player->playbackState = SVGPlaybackState_Stopped;
     }
 
     // Update animation
@@ -438,7 +438,7 @@ bool FBFSVGPlayer_Render(FBFSVGPlayerRef player, void* pixelBuffer, int width, i
     return true;
 }
 
-FBFSVGRenderStats FBFSVGPlayer_GetStats(FBFSVGPlayerRef player) {
+SVGRenderStats FBFSVGPlayer_GetStats(FBFSVGPlayerRef player) {
     if (!player) {
         return {};
     }

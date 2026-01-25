@@ -18,7 +18,7 @@
 // =============================================================================
 
 #define FBFSVG_PLAYER_VERSION_MAJOR 0
-#define FBFSVG_PLAYER_VERSION_MINOR 9
+#define FBFSVG_PLAYER_VERSION_MINOR 10
 #define FBFSVG_PLAYER_VERSION_PATCH 0
 
 // Pre-release identifier (comment out or set to 0 for stable releases)
