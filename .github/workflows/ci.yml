@@ -92,10 +92,24 @@ jobs:
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
             skia-build/src/skia/modules/skcms
-          key: skia-linux-${{ runner.arch }}-v5-${{ hashFiles('skia-build/build-linux.sh') }}
+          key: skia-linux-${{ runner.arch }}-v6-${{ hashFiles('skia-build/build-linux.sh') }}
 
-      - name: Build Skia (if not cached)
-        if: steps.cache-skia.outputs.cache-hit != 'true'
+      - name: Verify Skia Cache
+        id: verify-skia
+        run: |
+          ARCH="${{ runner.arch == 'X64' && 'x64' || 'arm64' }}"
+          SKIA_LIB="skia-build/src/skia/out/release-linux-${ARCH}/libskia.a"
+          if [[ -f "$SKIA_LIB" ]]; then
+            echo "skia_valid=true" >> $GITHUB_OUTPUT
+            echo "Skia cache valid: $SKIA_LIB exists"
+            ls -la "$SKIA_LIB"
+          else
+            echo "skia_valid=false" >> $GITHUB_OUTPUT
+            echo "::warning::Skia cache invalid or empty - will rebuild"
+          fi
+
+      - name: Build Skia (if not cached or cache invalid)
+        if: steps.cache-skia.outputs.cache-hit != 'true' || steps.verify-skia.outputs.skia_valid != 'true'
         run: |
           cd skia-build
           ./build-linux.sh -y
@@ -263,10 +277,23 @@ jobs:
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
             skia-build/src/skia/modules/skcms
-          key: skia-macos-arm64-v5-${{ hashFiles('skia-build/build-macos.sh') }}
+          key: skia-macos-arm64-v6-${{ hashFiles('skia-build/build-macos.sh') }}
 
-      - name: Build Skia (if not cached)
-        if: steps.cache-skia.outputs.cache-hit != 'true'
+      - name: Verify Skia Cache
+        id: verify-skia
+        run: |
+          SKIA_LIB="skia-build/src/skia/out/release-macos/libskia.a"
+          if [[ -f "$SKIA_LIB" ]]; then
+            echo "skia_valid=true" >> $GITHUB_OUTPUT
+            echo "Skia cache valid: $SKIA_LIB exists"
+            ls -la "$SKIA_LIB"
+          else
+            echo "skia_valid=false" >> $GITHUB_OUTPUT
+            echo "::warning::Skia cache invalid or empty - will rebuild"
+          fi
+
+      - name: Build Skia (if not cached or cache invalid)
+        if: steps.cache-skia.outputs.cache-hit != 'true' || steps.verify-skia.outputs.skia_valid != 'true'
         run: |
           cd skia-build
           # macOS build script has no interactive prompts, no -y needed
@@ -366,7 +393,7 @@ jobs:
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
             skia-build/src/skia/modules/skcms
-          key: skia-macos-x64-v5-${{ hashFiles('skia-build/build-macos.sh') }}
+          key: skia-macos-x64-v6-${{ hashFiles('skia-build/build-macos.sh') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
@@ -465,7 +492,7 @@ jobs:
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
             skia-build/src/skia/modules/skcms
-          key: skia-ios-v5-${{ hashFiles('skia-build/build-ios.sh', 'skia-build/build-ios-arch.sh') }}
+          key: skia-ios-v6-${{ hashFiles('skia-build/build-ios.sh', 'skia-build/build-ios-arch.sh') }}
 
       - name: Build Skia iOS Device (if not cached)
         if: steps.cache-skia-ios.outputs.cache-hit != 'true'
@@ -567,7 +594,7 @@ jobs:
             skia-build/src/skia/modules/skunicode
             skia-build/src/skia/modules/skresources
             skia-build/src/skia/modules/skcms
-          key: skia-windows-x64-v5-${{ hashFiles('skia-build/build-windows.bat', 'scripts/build-windows.bat') }}
+          key: skia-windows-x64-v6-${{ hashFiles('skia-build/build-windows.bat', 'scripts/build-windows.bat') }}
 
       - name: Build Skia (if not cached)
         if: steps.cache-skia.outputs.cache-hit != 'true'
