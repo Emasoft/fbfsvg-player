@@ -181,6 +181,8 @@ if "%VULKAN_AVAILABLE%"=="true" (
     set "INCLUDES=%INCLUDES% /I"%VULKAN_SDK_DIR%\Include""
     set "LIBPATHS=%LIBPATHS% /LIBPATH:"%VULKAN_SDK_DIR%\Lib""
     set "LIBS=%LIBS% vulkan-1.lib"
+    rem Define preprocessor macro to disable the stub implementation
+    set "CXXFLAGS=%CXXFLAGS% /DGRAPHITE_VULKAN_AVAILABLE"
     echo [INFO] Vulkan Graphite backend will be available
 )
 
@@ -205,7 +207,11 @@ set "SOURCES=%SOURCES% "%PROJECT_ROOT%\shared\svg_instrumentation.cpp""
 set "SOURCES=%SOURCES% "%PROJECT_ROOT%\shared\DirtyRegionTracker.cpp""
 set "SOURCES=%SOURCES% "%PROJECT_ROOT%\shared\ElementBoundsExtractor.cpp""
 
-rem Add Graphite Vulkan context if Vulkan SDK is available
+rem Always include the Graphite stub (provides createGraphiteContext returning nullptr)
+rem The stub is disabled via preprocessor when GRAPHITE_VULKAN_AVAILABLE is defined
+set "SOURCES=%SOURCES% "%PROJECT_ROOT%\src\graphite_context_stub.cpp""
+
+rem Add Graphite Vulkan context if Vulkan SDK is available (overrides stub)
 if "%VULKAN_AVAILABLE%"=="true" (
     set "SOURCES=%SOURCES% "%PROJECT_ROOT%\src\graphite_context_vulkan.cpp""
 )
