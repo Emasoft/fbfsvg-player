@@ -449,7 +449,7 @@ bool validateSVGContent(const std::string& content) {
 
 // Print extensive help screen
 void printHelp(const char* programName) {
-    std::cerr << SVGPlayerVersion::getVersionBanner() << "\n\n";
+    std::cerr << FBFSVGPlayerVersion::getVersionBanner() << "\n\n";
     std::cerr << "USAGE:\n";
     std::cerr << "    " << programName << " <input.svg> [OPTIONS]\n\n";
     std::cerr << "DESCRIPTION:\n";
@@ -1562,7 +1562,7 @@ int main(int argc, char* argv[]) {
     installSignalHandlers();
 
     // Print startup banner (always shown on execution)
-    std::cerr << SVGPlayerVersion::getStartupBanner() << std::endl;
+    std::cerr << FBFSVGPlayerVersion::getStartupBanner() << std::endl;
 
     // Parse command-line arguments
     const char* inputPath = nullptr;
@@ -1586,7 +1586,7 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--version") == 0 || strcmp(argv[i], "-v") == 0) {
             // Show full version info and exit
-            std::cerr << SVGPlayerVersion::getVersionBanner() << std::endl;
+            std::cerr << FBFSVGPlayerVersion::getVersionBanner() << std::endl;
             std::cerr << "Build: " << FBFSVG_PLAYER_BUILD_INFO << std::endl;
             return 0;
         }
@@ -2006,6 +2006,7 @@ int main(int argc, char* argv[]) {
     // Frame skip tracking for synchronization verification
     size_t framesRendered = 0;  // Actual frames we rendered
     size_t framesSkipped = 0;   // Frames skipped due to slow rendering
+    size_t framesShown = 0;     // Frames actually displayed on screen
     size_t lastRenderedAnimFrame = 0;
 
     // Sequential frame mode counter - increments each cycle instead of using wall-clock time
@@ -3777,8 +3778,25 @@ int main(int argc, char* argv[]) {
                     graphiteCanvas->translate(offsetX, offsetY);
                     graphiteCanvas->scale(uniformScale, uniformScale);
 
-                    // Render the animation frame
-                    g_animController.renderFrame(graphiteCanvas, renderWidth, renderHeight);
+                    // Apply SMIL animations to DOM nodes (FBF.SVG mode)
+                    if (svgDom && !animations.empty()) {
+                        for (const auto& anim : animations) {
+                            if (!anim.targetId.empty() && !anim.attributeName.empty() && !anim.values.empty()) {
+                                std::string value = anim.getCurrentValue(animTime);
+                                sk_sp<SkSVGNode>* nodePtr = svgDom->findNodeById(anim.targetId.c_str());
+                                if (nodePtr && *nodePtr) {
+                                    (*nodePtr)->setAttribute(anim.attributeName.c_str(), value.c_str());
+                                }
+                            }
+                        }
+                    }
+
+                    // Render SVG to Graphite canvas
+                    if (svgDom) {
+                        SkSize containerSize = SkSize::Make(static_cast<SkScalar>(svgWidth), static_cast<SkScalar>(svgHeight));
+                        svgDom->setContainerSize(containerSize);
+                        svgDom->render(graphiteCanvas);
+                    }
                     graphiteCanvas->restore();
 
                     // Submit frame to GPU
