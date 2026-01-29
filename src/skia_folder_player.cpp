@@ -31,6 +31,10 @@
 #include <sys/stat.h>
 #include <cstring>
 
+#include "../shared/player_utils.h"
+
+using svgplayer::extractFrameNumber;
+
 // Save screenshot as PPM
 bool saveScreenshotPPM(const uint32_t* pixels, int width, int height, const char* filename) {
     std::ofstream file(filename, std::ios::binary);
@@ -59,20 +63,6 @@ std::string loadSvgFile(const std::string& path) {
     std::stringstream buffer;
     buffer << file.rdbuf();
     return buffer.str();
-}
-
-// Extract frame number from filename
-int extractFrameNumber(const std::string& filename) {
-    std::regex pattern("_(\\d+)\\.svg$", std::regex::icase);
-    std::smatch match;
-    if (std::regex_search(filename, match, pattern)) {
-        return std::stoi(match[1].str());
-    }
-    std::regex fallback("(\\d+)\\.svg$", std::regex::icase);
-    if (std::regex_search(filename, match, fallback)) {
-        return std::stoi(match[1].str());
-    }
-    return -1;
 }
 
 // Scan folder for SVG files

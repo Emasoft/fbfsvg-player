@@ -52,6 +52,11 @@
 #include "../shared/DirtyRegionTracker.h"
 #include "../shared/ElementBoundsExtractor.h"
 
+// Shared utility functions (file validation, SVG sequence scanning)
+#include "../shared/player_utils.h"
+#include "../shared/rolling_average.h"
+#include "../shared/screenshot_utils.h"
+
 // Centralized version management for all platforms
 #include "../shared/version.h"
 
@@ -399,29 +404,11 @@ void installSignalHandlers() {
 }
 
 // =============================================================================
-// File validation helpers
+// File validation helpers (using shared utilities)
 // =============================================================================
-
-// Check if file exists and is readable
-bool fileExists(const char* path) {
-    struct stat st;
-    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
-}
-
-// Check if path is a directory
-bool isDirectory(const char* path) {
-    struct stat st;
-    return stat(path, &st) == 0 && S_ISDIR(st.st_mode);
-}
-
-// Get file size in bytes
-size_t getFileSize(const char* path) {
-    struct stat st;
-    if (stat(path, &st) == 0) {
-        return static_cast<size_t>(st.st_size);
-    }
-    return 0;
-}
+using svgplayer::fileExists;
+using svgplayer::isDirectory;
+using svgplayer::getFileSize;
 
 // Maximum SVG file size - effectively unlimited (8 GB practical limit)
 // With modern systems having 64GB+ RAM, no practical limit is needed
@@ -430,88 +417,14 @@ static constexpr size_t MAX_SVG_FILE_SIZE = 8ULL * 1024 * 1024 * 1024;
 // Debug overlay scaling factor (40% larger than original to match font size)
 static constexpr float DEBUG_OVERLAY_SCALE = 1.4f;
 
-// Validate SVG content (basic check for SVG structure)
-bool validateSVGContent(const std::string& content) {
-    // Check minimum length
-    if (content.length() < 20) {
-        return false;
-    }
-    // Check for SVG tag (case-insensitive search for <svg)
-    size_t pos = content.find("<svg");
-    if (pos == std::string::npos) {
-        pos = content.find("<SVG");
-    }
-    return pos != std::string::npos;
-}
+// SVG content validation (using shared utilities)
+using svgplayer::validateSVGContent;
 
 // =============================================================================
-// SVG Image Sequence (folder of individual SVG frames) support
+// SVG Image Sequence (folder of individual SVG frames) support (using shared utilities)
 // =============================================================================
-
-// Extract frame number from filename (e.g., "frame_0001.svg" -> 1)
-int extractFrameNumber(const std::string& filename) {
-    // Try pattern: name_NNNN.svg (underscore before number)
-    std::regex pattern("_(\\d+)\\.svg$", std::regex::icase);
-    std::smatch match;
-    if (std::regex_search(filename, match, pattern)) {
-        return std::stoi(match[1].str());
-    }
-    // Try fallback: NNNN.svg (just number before extension)
-    std::regex fallback("(\\d+)\\.svg$", std::regex::icase);
-    if (std::regex_search(filename, match, fallback)) {
-        return std::stoi(match[1].str());
-    }
-    return -1;  // No number found
-}
-
-// Scan folder for SVG files and return sorted list of paths
-std::vector<std::string> scanFolderForSVGSequence(const std::string& folderPath) {
-    std::vector<std::pair<int, std::string>> frameFiles;
-
-    DIR* dir = opendir(folderPath.c_str());
-    if (!dir) {
-        std::cerr << "Error: Cannot open folder: " << folderPath << std::endl;
-        return {};
-    }
-
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != nullptr) {
-        std::string name = entry->d_name;
-        // Check for .svg extension (case-insensitive)
-        if (name.size() > 4) {
-            std::string ext = name.substr(name.size() - 4);
-            if (ext == ".svg" || ext == ".SVG") {
-                int frameNum = extractFrameNumber(name);
-                std::string fullPath = folderPath + "/" + name;
-                frameFiles.push_back({frameNum, fullPath});
-            }
-        }
-    }
-    closedir(dir);
-
-    if (frameFiles.empty()) {
-        std::cerr << "Error: No SVG files found in folder: " << folderPath << std::endl;
-        return {};
-    }
-
-    // Sort by frame number (files without numbers sorted alphabetically at end)
-    std::sort(frameFiles.begin(), frameFiles.end(), [](const auto& a, const auto& b) {
-        if (a.first == -1 && b.first == -1) return a.second < b.second;  // Both no number: alphabetical
-        if (a.first == -1) return false;  // No number goes after numbered
-        if (b.first == -1) return true;   // Numbered goes before no number
-        return a.first < b.first;         // Both numbered: sort by number
-    });
-
-    // Extract sorted paths
-    std::vector<std::string> result;
-    result.reserve(frameFiles.size());
-    for (const auto& f : frameFiles) {
-        result.push_back(f.second);
-    }
-
-    std::cerr << "Found " << result.size() << " SVG frames in sequence" << std::endl;
-    return result;
-}
+using svgplayer::extractFrameNumber;
+using svgplayer::scanFolderForSVGSequence;
 
 // Print extensive help screen
 void printHelp(const char* programName) {
@@ -1627,126 +1540,12 @@ std::vector<SMILAnimation> extractAnimations(const std::string& svgPath) {
 // Call this after extractAnimations() or extractAnimationsFromContent()
 const std::string& getProcessedSVGContent() { return g_animController.getProcessedContent(); }
 
-// Rolling average calculator
-class RollingAverage {
-   public:
-    RollingAverage(size_t windowSize = 120) : maxSize_(windowSize) {}
+// Rolling average calculator (using shared utilities)
+using svgplayer::RollingAverage;
 
-    void add(double value) {
-        values_.push_back(value);
-        if (values_.size() > maxSize_) {
-            values_.pop_front();
-        }
-    }
-
-    double average() const {
-        if (values_.empty()) return 0.0;
-        double sum = 0.0;
-        for (double v : values_) sum += v;
-        return sum / values_.size();
-    }
-
-    double min() const {
-        if (values_.empty()) return 0.0;
-        double m = values_[0];
-        for (double v : values_)
-            if (v < m) m = v;
-        return m;
-    }
-
-    double max() const {
-        if (values_.empty()) return 0.0;
-        double m = values_[0];
-        for (double v : values_)
-            if (v > m) m = v;
-        return m;
-    }
-
-    double last() const {
-        if (values_.empty()) return 0.0;
-        return values_.back();
-    }
-
-    size_t count() const { return values_.size(); }
-
-    void reset() { values_.clear(); }
-
-   private:
-    std::deque<double> values_;
-    size_t maxSize_;
-};
-
-// Save screenshot as PPM (Portable Pixmap) - uncompressed format
-// PPM P6 format: binary RGB data, no compression, maximum compatibility
-// Input: ARGB8888 pixel buffer (32-bit per pixel)
-// Output: PPM file with 24-bit RGB (8 bits per channel)
-bool saveScreenshotPPM(const std::vector<uint32_t>& pixels, int width, int height, const std::string& filename) {
-    // Integer overflow protection: validate dimensions before calculating buffer size
-    // Maximum reasonable screenshot size: 32768x32768 (1 gigapixel)
-    constexpr int MAX_SCREENSHOT_DIM = 32768;
-    if (width <= 0 || height <= 0 || width > MAX_SCREENSHOT_DIM || height > MAX_SCREENSHOT_DIM) {
-        std::cerr << "Invalid screenshot dimensions: " << width << "x" << height << std::endl;
-        return false;
-    }
-
-    // Use size_t to avoid integer overflow in buffer size calculation
-    size_t pixelCount = static_cast<size_t>(width) * static_cast<size_t>(height);
-    size_t rgbBufferSize = pixelCount * 3;
-
-    // Sanity check: ensure input buffer has expected size
-    if (pixels.size() < pixelCount) {
-        std::cerr << "Pixel buffer too small: " << pixels.size() << " < " << pixelCount << std::endl;
-        return false;
-    }
-
-    std::ofstream file(filename, std::ios::binary);
-    if (!file.is_open()) {
-        std::cerr << "Failed to open file for screenshot: " << filename << std::endl;
-        return false;
-    }
-
-    // PPM P6 header: magic number, width, height, max color value
-    file << "P6\n" << width << " " << height << "\n255\n";
-
-    // Convert BGRA to RGB24 and write raw bytes
-    // ThreadedRenderer uses kBGRA_8888_SkColorType for consistent cross-platform behavior
-    // BGRA in memory: [B, G, R, A] → uint32_t on little-endian: 0xAARRGGBB
-    std::vector<uint8_t> rgb(rgbBufferSize);
-    for (size_t i = 0; i < pixelCount; ++i) {
-        uint32_t pixel = pixels[i];
-        rgb[i * 3 + 0] = (pixel >> 16) & 0xFF;  // R (byte 2 in BGRA)
-        rgb[i * 3 + 1] = (pixel >> 8) & 0xFF;   // G (byte 1 in BGRA)
-        rgb[i * 3 + 2] = pixel & 0xFF;          // B (byte 0 in BGRA)
-    }
-
-    file.write(reinterpret_cast<const char*>(rgb.data()), rgb.size());
-
-    // Verify write succeeded before closing
-    if (!file.good()) {
-        std::cerr << "Failed to write screenshot data to: " << filename << std::endl;
-        file.close();
-        return false;
-    }
-
-    file.close();
-    return true;
-}
-
-// Generate timestamped screenshot filename with resolution
-std::string generateScreenshotFilename(int width, int height) {
-    auto now = std::chrono::system_clock::now();
-    auto time = std::chrono::system_clock::to_time_t(now);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-
-    // Use localtime_r for thread safety (POSIX standard)
-    struct tm timeinfo;
-    localtime_r(&time, &timeinfo);
-
-    std::ostringstream ss;
-    ss << "screenshot_" << std::put_time(&timeinfo, "%Y%m%d_%H%M%S") << "_" << std::setfill('0')
-       << std::setw(3) << ms.count() << "_" << width << "x" << height << ".ppm";
-    return ss.str();
-}
+// Screenshot utilities (using shared utilities)
+using svgplayer::saveScreenshotPPM;
+using svgplayer::generateScreenshotFilename;
 
 // SVG loading error codes
 enum class SVGLoadError {
