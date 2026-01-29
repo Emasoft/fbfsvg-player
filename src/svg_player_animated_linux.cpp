@@ -439,8 +439,6 @@ void printHelp(const char* programName) {
     std::cerr << "    R             Restart animation from beginning\n";
     std::cerr << "    F             Toggle fullscreen mode\n";
     std::cerr << "    Left/Right    Seek backward/forward 1 second\n";
-    std::cerr << "    Up/Down       Speed up/slow down playback\n";
-    std::cerr << "    L             Toggle loop mode\n";
     std::cerr << "    P             Toggle parallel rendering mode\n";
     std::cerr << "    S             Show/hide statistics overlay\n";
     std::cerr << "    Q, Escape     Quit player\n\n";
