@@ -265,7 +265,7 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
 # Compiler flags
-CXXFLAGS="-std=c++17 -fPIC -fvisibility=hidden -fexceptions -frtti"
+CXXFLAGS="-std=c++17 -Wall -Wextra -Wno-unused-parameter -fPIC -fvisibility=hidden -fexceptions -frtti"
 if [ "$build_type" = "debug" ]; then
     CXXFLAGS="$CXXFLAGS -g -O0 -DDEBUG"
     echo "Building DEBUG version"

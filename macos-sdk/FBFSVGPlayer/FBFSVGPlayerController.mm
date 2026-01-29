@@ -234,6 +234,8 @@ static NSString *safeStringFromCString(const char *cString) {
 @property (nonatomic, assign) BOOL internalScrubbing;
 // Thread safety queue (Issue 1)
 @property (nonatomic, strong) dispatch_queue_t apiQueue;
+// Track last loop count to detect new loops
+@property (nonatomic, assign) NSInteger lastLoopCount;
 @end
 
 @implementation FBFSVGPlayerController
@@ -254,6 +256,7 @@ static NSString *safeStringFromCString(const char *cString) {
         _internalRepeatMode = SVGControllerRepeatModeLoop;
         _internalRepeatCount = 1;
         _internalScrubbing = NO;
+        _lastLoopCount = 0;
 
         if (_handle) {
             FBFSVGPlayer_SetLooping(_handle, YES);
@@ -299,6 +302,7 @@ static NSString *safeStringFromCString(const char *cString) {
     FBFSVGPlayer_SetLooping(self.handle, self.looping);
     self.internalPlaybackState = SVGControllerPlaybackStateStopped;
     self.internalErrorMessage = nil;
+    self.lastLoopCount = 0;
 
     return YES;
 }
@@ -329,6 +333,7 @@ static NSString *safeStringFromCString(const char *cString) {
     FBFSVGPlayer_SetLooping(self.handle, self.looping);
     self.internalPlaybackState = SVGControllerPlaybackStateStopped;
     self.internalErrorMessage = nil;
+    self.lastLoopCount = 0;
 
     return YES;
 }
@@ -510,19 +515,31 @@ static NSString *safeStringFromCString(const char *cString) {
 #pragma mark - Basic Playback Control
 
 - (void)play {
+    __block SVGControllerPlaybackState oldState;
     dispatch_sync(self.apiQueue, ^{
         if (!self.handle || !self.isLoaded) return;
+        oldState = self.internalPlaybackState;
         FBFSVGPlayer_Play(self.handle);
         self.internalPlaybackState = SVGControllerPlaybackStatePlaying;
     });
+    // Notify delegate if state changed
+    if (oldState != SVGControllerPlaybackStatePlaying) {
+        [self notifyDelegateOfPlaybackStateChange:SVGControllerPlaybackStatePlaying];
+    }
 }
 
 - (void)pause {
+    __block SVGControllerPlaybackState oldState;
     dispatch_sync(self.apiQueue, ^{
         if (!self.handle) return;
+        oldState = self.internalPlaybackState;
         FBFSVGPlayer_Pause(self.handle);
         self.internalPlaybackState = SVGControllerPlaybackStatePaused;
     });
+    // Notify delegate if state changed
+    if (oldState != SVGControllerPlaybackStatePaused) {
+        [self notifyDelegateOfPlaybackStateChange:SVGControllerPlaybackStatePaused];
+    }
 }
 
 - (void)resume {
@@ -532,16 +549,24 @@ static NSString *safeStringFromCString(const char *cString) {
 }
 
 - (void)stop {
+    __block SVGControllerPlaybackState oldState;
     dispatch_sync(self.apiQueue, ^{
         if (!self.handle) return;
+        oldState = self.internalPlaybackState;
         FBFSVGPlayer_Stop(self.handle);
         self.internalPlaybackState = SVGControllerPlaybackStateStopped;
+        self.lastLoopCount = 0;
     });
+    // Notify delegate if state changed
+    if (oldState != SVGControllerPlaybackStateStopped) {
+        [self notifyDelegateOfPlaybackStateChange:SVGControllerPlaybackStateStopped];
+    }
 }
 
 - (void)togglePlayback {
     if (!self.handle) return;
 
+    SVGControllerPlaybackState oldState = self.internalPlaybackState;
     FBFSVGPlayer_TogglePlayback(self.handle);
     SVGPlaybackState cState = FBFSVGPlayer_GetPlaybackState(self.handle);
     switch (cState) {
@@ -555,6 +580,10 @@ static NSString *safeStringFromCString(const char *cString) {
             self.internalPlaybackState = SVGControllerPlaybackStatePaused;
             break;
     }
+    // Notify delegate if state changed
+    if (oldState != self.internalPlaybackState) {
+        [self notifyDelegateOfPlaybackStateChange:self.internalPlaybackState];
+    }
 }
 
 #pragma mark - Animation Update
@@ -566,12 +595,20 @@ static NSString *safeStringFromCString(const char *cString) {
 - (void)update:(NSTimeInterval)deltaTime forward:(BOOL)forward {
     if (!self.handle || self.internalPlaybackState != SVGControllerPlaybackStatePlaying) return;
 
+    SVGControllerPlaybackState oldState = self.internalPlaybackState;
     NSTimeInterval adjustedDelta = deltaTime * self.internalPlaybackRate;
     if (!forward) {
         adjustedDelta = -adjustedDelta;
     }
 
     FBFSVGPlayer_Update(self.handle, adjustedDelta);
+
+    // Check for loop completion
+    NSInteger currentLoopCount = (NSInteger)FBFSVGPlayer_GetCompletedLoops(self.handle);
+    if (currentLoopCount > self.lastLoopCount) {
+        self.lastLoopCount = currentLoopCount;
+        [self notifyDelegateOfLoop:currentLoopCount];
+    }
 
     // Sync our internal state with the unified API state
     SVGPlaybackState cState = FBFSVGPlayer_GetPlaybackState(self.handle);
@@ -585,6 +622,18 @@ static NSString *safeStringFromCString(const char *cString) {
         case SVGPlaybackState_Paused:
             self.internalPlaybackState = SVGControllerPlaybackStatePaused;
             break;
+    }
+
+    // Check if animation ended (non-looping mode: state changed from playing to stopped)
+    if (oldState == SVGControllerPlaybackStatePlaying &&
+        self.internalPlaybackState == SVGControllerPlaybackStateStopped &&
+        self.internalRepeatMode == SVGControllerRepeatModeNone) {
+        [self notifyDelegateOfEnd];
+    }
+
+    // Notify delegate if state changed
+    if (oldState != self.internalPlaybackState) {
+        [self notifyDelegateOfPlaybackStateChange:self.internalPlaybackState];
     }
 }
 
@@ -816,6 +865,81 @@ static NSString *safeStringFromCString(const char *cString) {
                                      code:code
                                  userInfo:@{NSLocalizedDescriptionKey: message}];
     }
+
+    // Notify delegate of error
+    [self notifyDelegateOfError:code message:message];
+}
+
+#pragma mark - Delegate Notifications
+
+// Notify delegate of playback state change on main thread
+- (void)notifyDelegateOfPlaybackStateChange:(SVGControllerPlaybackState)newState {
+    if (!self.delegate) return;
+    if (![self.delegate respondsToSelector:@selector(svgPlayerController:didChangePlaybackState:)]) return;
+
+    if ([NSThread isMainThread]) {
+        [self.delegate svgPlayerController:self didChangePlaybackState:newState];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.delegate svgPlayerController:self didChangePlaybackState:newState];
+        });
+    }
+}
+
+// Notify delegate of loop completion on main thread
+- (void)notifyDelegateOfLoop:(NSInteger)loopCount {
+    if (!self.delegate) return;
+    if (![self.delegate respondsToSelector:@selector(svgPlayerController:didLoopWithCount:)]) return;
+
+    if ([NSThread isMainThread]) {
+        [self.delegate svgPlayerController:self didLoopWithCount:loopCount];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.delegate svgPlayerController:self didLoopWithCount:loopCount];
+        });
+    }
+}
+
+// Notify delegate of animation end on main thread
+- (void)notifyDelegateOfEnd {
+    if (!self.delegate) return;
+    if (![self.delegate respondsToSelector:@selector(svgPlayerControllerDidReachEnd:)]) return;
+
+    if ([NSThread isMainThread]) {
+        [self.delegate svgPlayerControllerDidReachEnd:self];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.delegate svgPlayerControllerDidReachEnd:self];
+        });
+    }
+}
+
+// Notify delegate of error on main thread
+- (void)notifyDelegateOfError:(NSInteger)errorCode message:(NSString *)message {
+    if (!self.delegate) return;
+    if (![self.delegate respondsToSelector:@selector(svgPlayerController:didEncounterError:message:)]) return;
+
+    if ([NSThread isMainThread]) {
+        [self.delegate svgPlayerController:self didEncounterError:errorCode message:message];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.delegate svgPlayerController:self didEncounterError:errorCode message:message];
+        });
+    }
+}
+
+// Notify delegate of element touch on main thread
+- (void)notifyDelegateOfElementTouch:(NSString *)elementID viewPoint:(NSPoint)viewPoint svgPoint:(NSPoint)svgPoint {
+    if (!self.delegate) return;
+    if (![self.delegate respondsToSelector:@selector(svgPlayerController:didTouchElementWithID:atViewPoint:svgPoint:)]) return;
+
+    if ([NSThread isMainThread]) {
+        [self.delegate svgPlayerController:self didTouchElementWithID:elementID atViewPoint:viewPoint svgPoint:svgPoint];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [self.delegate svgPlayerController:self didTouchElementWithID:elementID atViewPoint:viewPoint svgPoint:svgPoint];
+        });
+    }
 }
 
 #pragma mark - Hit Testing - Element Subscription
@@ -844,7 +968,11 @@ static NSString *safeStringFromCString(const char *cString) {
                                                (float)point.x, (float)point.y,
                                                (int)viewSize.width, (int)viewSize.height);
     if (elementID && strlen(elementID) > 0) {
-        return safeStringFromCString(elementID);
+        NSString *elementIDStr = safeStringFromCString(elementID);
+        // Convert to SVG coordinates for delegate notification
+        NSPoint svgPoint = [self convertViewPointToSVG:point viewSize:viewSize];
+        [self notifyDelegateOfElementTouch:elementIDStr viewPoint:point svgPoint:svgPoint];
+        return elementIDStr;
     }
     return nil;
 }

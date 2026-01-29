@@ -150,10 +150,10 @@ fi
 # Compiler settings
 CXX="clang++"
 if [ "$build_type" = "debug" ]; then
-    CXXFLAGS="-std=c++17 -g -O0 -DDEBUG"
+    CXXFLAGS="-std=c++17 -Wall -Wextra -Wno-unused-parameter -g -O0 -DDEBUG"
     log_info "Build type: DEBUG"
 else
-    CXXFLAGS="-std=c++17 -O2 -DNDEBUG"
+    CXXFLAGS="-std=c++17 -Wall -Wextra -Wno-unused-parameter -O2 -DNDEBUG"
     log_info "Build type: RELEASE"
 fi
 

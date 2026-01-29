@@ -322,9 +322,9 @@ else
 fi
 
 if [ "$build_type" = "debug" ]; then
-    CXXFLAGS="-std=c++17 -g -O0 -DDEBUG"
+    CXXFLAGS="-std=c++17 -Wall -Wextra -Wno-unused-parameter -g -O0 -DDEBUG"
 else
-    CXXFLAGS="-std=c++17 -O2"
+    CXXFLAGS="-std=c++17 -Wall -Wextra -Wno-unused-parameter -O2"
 fi
 
 # Directories

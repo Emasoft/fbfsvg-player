@@ -177,6 +177,9 @@ compile_sources() {
     # Common compiler flags (includes project root for shared/ directory)
     local common_flags=(
         -std=c++17
+        -Wall
+        -Wextra
+        -Wno-unused-parameter
         -O2
         $arch_flag
         -target "$target_triple"
