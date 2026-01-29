@@ -550,6 +550,8 @@ void printHelp(const char* programName) {
     std::cerr << "    M             Toggle maximize/restore (zoom)\n";
     std::cerr << "    T             Toggle frame limiter\n";
     std::cerr << "    Left/Right    Seek backward/forward 1 second\n";
+    std::cerr << "    Up/Down       Seek forward/backward 1 second (alternative)\n";
+    std::cerr << "    L             Toggle loop mode\n";
     std::cerr << "    P             Toggle parallel rendering mode\n";
     std::cerr << "    S             Show/hide statistics overlay\n";
     std::cerr << "    Q, Escape     Quit player\n\n";
@@ -3499,6 +3501,56 @@ int main(int argc, char* argv[]) {
                             std::cout << "Browser closed" << std::endl;
                         }
                         skipStatsThisFrame = true;
+                    } else if (event.key.keysym.sym == SDLK_l) {
+                        // Toggle loop mode (L key)
+                        auto currentMode = g_animController.getRepeatMode();
+                        if (currentMode == svgplayer::RepeatMode::Loop) {
+                            g_animController.setRepeatMode(svgplayer::RepeatMode::None);
+                            std::cout << "Loop mode: OFF (play once)" << std::endl;
+                        } else {
+                            g_animController.setRepeatMode(svgplayer::RepeatMode::Loop);
+                            std::cout << "Loop mode: ON (continuous)" << std::endl;
+                        }
+                    } else if (event.key.keysym.sym == SDLK_LEFT && !g_browserMode) {
+                        // Seek backward 1 second (only when not in browser mode)
+                        if (animationPaused) {
+                            pausedTime = std::max(0.0, pausedTime - 1.0);
+                            std::cout << "Seek backward to " << pausedTime << "s" << std::endl;
+                        } else {
+                            DurationSec seekDuration(1.0);
+                            animationStartTimeSteady += std::chrono::duration_cast<SteadyClock::duration>(seekDuration);
+                            std::cout << "Seek backward 1s" << std::endl;
+                        }
+                    } else if (event.key.keysym.sym == SDLK_RIGHT && !g_browserMode) {
+                        // Seek forward 1 second (only when not in browser mode)
+                        if (animationPaused) {
+                            pausedTime = std::min(maxDuration, pausedTime + 1.0);
+                            std::cout << "Seek forward to " << pausedTime << "s" << std::endl;
+                        } else {
+                            DurationSec seekDuration(1.0);
+                            animationStartTimeSteady -= std::chrono::duration_cast<SteadyClock::duration>(seekDuration);
+                            std::cout << "Seek forward 1s" << std::endl;
+                        }
+                    } else if (event.key.keysym.sym == SDLK_UP) {
+                        // Seek forward 1 second (alternative to Right arrow)
+                        if (animationPaused) {
+                            pausedTime = std::min(maxDuration, pausedTime + 1.0);
+                            std::cout << "Seek forward to " << pausedTime << "s" << std::endl;
+                        } else {
+                            DurationSec seekDuration(1.0);
+                            animationStartTimeSteady -= std::chrono::duration_cast<SteadyClock::duration>(seekDuration);
+                            std::cout << "Seek forward 1s" << std::endl;
+                        }
+                    } else if (event.key.keysym.sym == SDLK_DOWN) {
+                        // Seek backward 1 second (alternative to Left arrow)
+                        if (animationPaused) {
+                            pausedTime = std::max(0.0, pausedTime - 1.0);
+                            std::cout << "Seek backward to " << pausedTime << "s" << std::endl;
+                        } else {
+                            DurationSec seekDuration(1.0);
+                            animationStartTimeSteady += std::chrono::duration_cast<SteadyClock::duration>(seekDuration);
+                            std::cout << "Seek backward 1s" << std::endl;
+                        }
                     }
                     break;
 
