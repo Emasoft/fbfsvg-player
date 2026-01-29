@@ -46,6 +46,8 @@ CPP_SOURCES=(
     "$PROJECT_ROOT/shared/SVGAnimationController.cpp"
     "$PROJECT_ROOT/shared/SVGGridCompositor.cpp"
     "$PROJECT_ROOT/shared/svg_instrumentation.cpp"
+    "$PROJECT_ROOT/shared/DirtyRegionTracker.cpp"
+    "$PROJECT_ROOT/shared/ElementBoundsExtractor.cpp"
 )
 
 OBJC_SOURCES=(

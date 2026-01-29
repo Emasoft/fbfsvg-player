@@ -185,6 +185,7 @@ SKIA_LIBS="$SKIA_OUT_DIR/libsvg.a \
            $SKIA_OUT_DIR/libskia.a \
            $SKIA_OUT_DIR/libskresources.a \
            $SKIA_OUT_DIR/libskshaper.a \
+           $SKIA_OUT_DIR/libskparagraph.a \
            $SKIA_OUT_DIR/libharfbuzz.a \
            $SKIA_OUT_DIR/libskunicode_core.a \
            $SKIA_OUT_DIR/libskunicode_icu.a \

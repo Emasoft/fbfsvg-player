@@ -348,6 +348,7 @@ echo "          $SHARED_DIR/SVGAnimationController.cpp"
 echo "          $SHARED_DIR/SVGGridCompositor.cpp"
 echo "          $SHARED_DIR/svg_instrumentation.cpp"
 echo "          $SHARED_DIR/ElementBoundsExtractor.cpp"
+echo "          $SHARED_DIR/DirtyRegionTracker.cpp"
 echo ""
 
 # Compile SDK source file to object
@@ -395,10 +396,19 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+# Compile DirtyRegionTracker to object (performance optimization for partial re-rendering)
+echo "Compiling DirtyRegionTracker.cpp..."
+$CXX $CXXFLAGS $INCLUDES -c "$SHARED_DIR/DirtyRegionTracker.cpp" -o "$BUILD_DIR/DirtyRegionTracker.o"
+
+if [ $? -ne 0 ]; then
+    echo "Compilation of DirtyRegionTracker.cpp failed!"
+    exit 1
+fi
+
 echo "Linking shared library..."
 
 # Link shared library with all object files
-$CXX $LDFLAGS -o "$BUILD_DIR/libfbfsvgplayer.so.1.0.0" "$BUILD_DIR/fbfsvg_player.o" "$BUILD_DIR/SVGAnimationController.o" "$BUILD_DIR/SVGGridCompositor.o" "$BUILD_DIR/svg_instrumentation.o" "$BUILD_DIR/ElementBoundsExtractor.o" $LIBS
+$CXX $LDFLAGS -o "$BUILD_DIR/libfbfsvgplayer.so.1.0.0" "$BUILD_DIR/fbfsvg_player.o" "$BUILD_DIR/SVGAnimationController.o" "$BUILD_DIR/SVGGridCompositor.o" "$BUILD_DIR/svg_instrumentation.o" "$BUILD_DIR/ElementBoundsExtractor.o" "$BUILD_DIR/DirtyRegionTracker.o" $LIBS
 
 if [ $? -ne 0 ]; then
     echo "Linking failed!"
