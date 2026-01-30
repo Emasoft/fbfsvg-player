@@ -2086,7 +2086,7 @@ int main(int argc, char* argv[]) {
         // GetState - get current player state
         remoteServer->registerHandler(RemoteCommand::GetState, [&animationPaused, &pausedTime, &animationStartTimeSteady,
                                                                  &isFullscreen, window, &maxFrames, &maxDuration,
-                                                                 inputPath, &currentFrameIndex](const std::string&) {
+                                                                 inputPath, &currentFrameIndex, &g_animController](const std::string&) {
             PlayerState state;
             state.playing = !animationPaused;
             state.paused = animationPaused;
@@ -2112,7 +2112,7 @@ int main(int argc, char* argv[]) {
             state.currentFrame = static_cast<int>(currentFrameIndex);
             state.totalFrames = static_cast<int>(maxFrames);
             state.totalDuration = maxDuration;
-            state.playbackSpeed = 1.0;  // TODO: Add playback speed support
+            state.playbackSpeed = g_animController.getPlaybackRate();
             state.loadedFile = inputPath ? inputPath : "";
 
             return json::state(state);
@@ -2120,14 +2120,14 @@ int main(int argc, char* argv[]) {
 
         // GetStats - get performance statistics
         remoteServer->registerHandler(RemoteCommand::GetStats, [&frameTimes, &renderTimes, &framesDelivered,
-                                                                 &displayCycles, &renderWidth, &renderHeight](const std::string&) {
+                                                                 &displayCycles, &renderWidth, &renderHeight, &g_animController](const std::string&) {
             PlayerStats stats;
             stats.fps = frameTimes.count() > 0 ? 1000.0 / frameTimes.average() : 0.0;
             stats.avgFrameTime = frameTimes.average();
             stats.avgRenderTime = renderTimes.average();
             stats.droppedFrames = static_cast<int>(displayCycles - framesDelivered);
             stats.memoryUsage = static_cast<size_t>(renderWidth) * renderHeight * 4;  // Approximate
-            stats.elementsRendered = 0;  // TODO: Track rendered elements
+            stats.elementsRendered = static_cast<int>(g_animController.getAnimations().size());
             return json::stats(stats);
         });
 
