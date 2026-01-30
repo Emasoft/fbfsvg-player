@@ -2109,7 +2109,7 @@ int main(int argc, char* argv[]) {
         // GetState - get current player state
         remoteServer->registerHandler(RemoteCommand::GetState, [&animationPaused, &pausedTime, &animationStartTimeSteady,
                                                                  &isFullscreen, window, &maxFrames, &maxDuration,
-                                                                 inputPath, &currentFrameIndex, &g_animController](const std::string&) {
+                                                                 inputPath, &currentFrameIndex](const std::string&) {
             PlayerState state;
             state.playing = !animationPaused;
             state.paused = animationPaused;
@@ -2143,7 +2143,7 @@ int main(int argc, char* argv[]) {
 
         // GetStats - get performance statistics
         remoteServer->registerHandler(RemoteCommand::GetStats, [&frameTimes, &renderTimes, &framesDelivered,
-                                                                 &displayCycles, &renderWidth, &renderHeight, &g_animController](const std::string&) {
+                                                                 &displayCycles, &renderWidth, &renderHeight](const std::string&) {
             PlayerStats stats;
             stats.fps = frameTimes.count() > 0 ? 1000.0 / frameTimes.average() : 0.0;
             stats.avgFrameTime = frameTimes.average();
